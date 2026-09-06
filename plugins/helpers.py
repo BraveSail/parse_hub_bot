@@ -64,6 +64,7 @@ def build_caption(
         else parse_result.content,
         parse_result.raw_url,
         telegraph_url,
+        platform=parse_result.platform,
         hide_source=config.hide_source,
         custom_content=custom_content,
         author_name=get_parse_author_name(parse_result),
@@ -79,6 +80,7 @@ def build_caption_by_str(
     raw_url: str,
     telegraph_url: str | None = None,
     *,
+    platform: Platform | None = None,
     hide_source: bool = False,
     custom_content: str = "",
     author_name: str = "",
@@ -109,7 +111,9 @@ def build_caption_by_str(
 
     if hide_source:
         return body
-    return f"{body}\n\n{format_label(f"<a href='{raw_url}'>Source</a>")}"
+    platform = platform or ParseHub().get_platform(raw_url)
+    source = f"Source（{html.escape(platform.display_name)}）" if platform else "Source"
+    return f"{body}\n\n{format_label(f"<a href='{raw_url}'>{source}</a>")}"
 
 
 def get_parse_author_name(parse_result: AnyParseResult) -> str:

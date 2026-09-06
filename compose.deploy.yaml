@@ -1,0 +1,21 @@
+name: shirobakobot
+
+services:
+  bot:
+    image: shirobakobot:local
+    build:
+      context: .
+      dockerfile: Dockerfile.deploy
+      additional_contexts:
+        parsehub: ../ParseHub
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
