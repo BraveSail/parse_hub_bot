@@ -187,6 +187,7 @@ def build_cached_inline_results(
         raw_url,
         entry.telegraph_url,
         hide_source=config.hide_source,
+        author_name=entry.parse_result.author_name,
         hide_title=config.hide_title,
         hide_desc=config.hide_desc,
     )

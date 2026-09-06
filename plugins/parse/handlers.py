@@ -17,7 +17,7 @@ from plugins.filters import (
     platform_filter,
     via_me_filter,
 )
-from plugins.helpers import build_caption, create_richtext_telegraph, format_label
+from plugins.helpers import build_caption, create_richtext_telegraph, format_label, get_parse_author_name
 from plugins.parse.context import GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD, ParseOptions, ParseRequest
 from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
 from plugins.parse.sender import MessageSender, build_gif_button, send_cached, send_media, send_raw, send_zip
@@ -205,7 +205,12 @@ async def handle_parse(req: ParseRequest) -> bool:
             # 富文本发送
             if req.config.rich_mode:
                 await sender.typing()
-                caption = build_caption(parse_result, config=req.config, custom_content=req.custom_content, rich=True)
+                caption = build_caption(
+                    parse_result,
+                    config=req.config,
+                    custom_content=req.custom_content,
+                    rich=True,
+                )
                 if req.chat_id:
                     await sender.rich_message(
                         rich_message=InputRichMessage(markdown=caption),
@@ -214,7 +219,9 @@ async def handle_parse(req: ParseRequest) -> bool:
                         raw_url,
                         CacheEntry(
                             parse_result=CacheParseResult(
-                                title=parse_result.title, content=parse_result.markdown_content
+                                title=parse_result.title,
+                                content=parse_result.markdown_content,
+                                author_name=get_parse_author_name(parse_result),
                             ),
                             rich=True,
                         ),
@@ -237,7 +244,11 @@ async def handle_parse(req: ParseRequest) -> bool:
             await persistent_cache.set(
                 raw_url,
                 CacheEntry(
-                    parse_result=CacheParseResult(title=parse_result.title, content=parse_result.content),
+                    parse_result=CacheParseResult(
+                        title=parse_result.title,
+                        content=parse_result.content,
+                        author_name=get_parse_author_name(parse_result),
+                    ),
                     telegraph_url=ph_url,
                 ),
             )
@@ -265,7 +276,11 @@ async def handle_parse(req: ParseRequest) -> bool:
             await sender.typing()
             await sender.text_no_preview(caption)
             cache_entry = CacheEntry(
-                parse_result=CacheParseResult(title=parse_result.title, content=parse_result.content)
+                parse_result=CacheParseResult(
+                    title=parse_result.title,
+                    content=parse_result.content,
+                    author_name=get_parse_author_name(parse_result),
+                )
             )
             await persistent_cache.set(raw_url, cache_entry)
             await reporter.dismiss()

@@ -97,6 +97,7 @@ class CacheMediaType(StrEnum):
 class CacheParseResult(BaseModel):
     title: str = ""
     content: str = ""
+    author_name: str = ""
 
 
 class CacheMedia(BaseModel):

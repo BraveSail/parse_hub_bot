@@ -29,7 +29,7 @@ from pyrogram.types import (
 
 from core import bs
 from log import logger
-from plugins.helpers import build_caption, build_caption_by_str, format_label
+from plugins.helpers import build_caption, build_caption_by_str, format_label, get_parse_author_name
 from plugins.parse.cache import build_cached_media_group, cache_media_from_message
 from repo.settings import SettingsConfig
 from services import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult, PipelineResult, StatusReporter
@@ -332,7 +332,11 @@ async def send_raw(
     logger.debug("Raw 模式, 直接上传文件")
     await reporter.report(_t("上 传 中..."))
     try:
-        caption = build_caption(result.parse_result, config=sender.config, custom_content=custom_content)
+        caption = build_caption(
+            result.parse_result,
+            config=sender.config,
+            custom_content=custom_content,
+        )
         docs: list[InputMediaDocument] = []
         gifs = []
         livephoto_videos: dict[int, InputMediaDocument] = {}
@@ -400,7 +404,11 @@ async def send_zip(
     logger.debug("Zip 模式, 开始打包")
     await reporter.report(_t("打 包 中..."))
     try:
-        caption = build_caption(result.parse_result, config=sender.config, custom_content=custom_content)
+        caption = build_caption(
+            result.parse_result,
+            config=sender.config,
+            custom_content=custom_content,
+        )
         if result.output_dir is None:
             raise ValueError("缺少打包目录")
         pack_path = await asyncio.to_thread(pack_dir_to_tar_gz, result.output_dir)
@@ -453,7 +461,11 @@ async def send_media(
     if media_list is None:
         return None
     return CacheEntry(
-        parse_result=CacheParseResult(title=parse_result.title, content=parse_result.content),
+        parse_result=CacheParseResult(
+            title=parse_result.title,
+            content=parse_result.content,
+            author_name=get_parse_author_name(parse_result),
+        ),
         media=media_list,
     )
 
@@ -468,6 +480,7 @@ async def send_cached(sender: MessageSender, entry: CacheEntry, url: str, *, cus
         entry.telegraph_url,
         hide_source=sender.config.hide_source,
         custom_content=custom_content,
+        author_name=entry.parse_result.author_name,
         hide_title=sender.config.hide_title,
         hide_desc=sender.config.hide_desc,
         rich=entry.rich,

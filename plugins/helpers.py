@@ -1,5 +1,6 @@
 """plugins 共用的工具函数和数据类"""
 
+import html
 import re
 from urllib.parse import urlsplit
 
@@ -65,6 +66,7 @@ def build_caption(
         telegraph_url,
         hide_source=config.hide_source,
         custom_content=custom_content,
+        author_name=get_parse_author_name(parse_result),
         hide_title=config.hide_title,
         hide_desc=config.hide_desc,
         rich=rich,
@@ -79,6 +81,7 @@ def build_caption_by_str(
     *,
     hide_source: bool = False,
     custom_content: str = "",
+    author_name: str = "",
     hide_title: bool = False,
     hide_desc: bool = False,
     rich: bool = False,
@@ -98,12 +101,30 @@ def build_caption_by_str(
             parts.append(content)
         body = format_text(("\n\n".join(parts)).strip())
 
+    if author_name:
+        body = f"<b>{html.escape(author_name)}:</b>\n\n{body}" if body else f"<b>{html.escape(author_name)}:</b>"
+
     if custom_content:
         body += f"\n\n{custom_content}"
 
     if hide_source:
         return body
     return f"{body}\n\n{format_label(f"<a href='{raw_url}'>Source</a>")}"
+
+
+def get_parse_author_name(parse_result: AnyParseResult) -> str:
+    """读取解析器提供的文章作者，兼容未来平台扩展。"""
+    for field in ("author_name", "author", "author_info", "user"):
+        value = getattr(parse_result, field, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if value is None:
+            continue
+        for name_field in ("name", "full_name", "display_name", "username"):
+            name = getattr(value, name_field, None)
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+    return ""
 
 
 def format_text(text: str) -> str:
