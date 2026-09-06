@@ -111,6 +111,7 @@ class CacheEntry(BaseModel):
     media: list[CacheMedia] | None = None
     telegraph_url: str | None = None
     rich: bool = False
+    author_metadata_version: int = 1
 
 
 class PersistentCache:
@@ -152,6 +153,10 @@ class PersistentCache:
             except Exception as e:
                 self.logger.warning(f"缓存内容无效, 已删除: key={url}, error={e}")
                 await repo.remove(cache)
+                return None
+
+            if not entry.parse_result.author_name and "author_metadata_version" not in entry.model_fields_set:
+                self.logger.debug(f"旧缓存缺少作者信息, 重新解析: key={url}")
                 return None
 
             await repo.touch(cache, self._now())
