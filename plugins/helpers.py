@@ -137,19 +137,25 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
 
 
+def _strip_quote_prefix(match: re.Match) -> str:
+    """去掉引用块每行行首的 '>'。"""
+    lines = match.group(0).rstrip("\n").split("\n")
+    return "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
+
+
 def convert_markdown_quote(text: str, *, allow_blockquote: bool = True) -> str:
     """把 Markdown 引用行 (以 '>' 开头) 转成 Telegram 的 <blockquote>。
 
-    allow_blockquote=False 时原样保留 Markdown 引用行: 内联消息带上 blockquote
-    实体会被 Telegram 丢掉整批格式, 所以那条通道只能用纯文本引用。
+    allow_blockquote=False 时把引用前缀整个去掉: 内联消息带 blockquote 实体时,
+    Telegram 会丢掉整批格式、整条消息变成纯文本。注意不能只跳过 <blockquote> 标签,
+    pyrogram 的 Markdown 解析器只要看到行首 '>' 就会重新生成 blockquote 实体,
+    所以那条通道必须把 '>' 前缀也剥掉。
     """
     if not allow_blockquote:
-        return text
+        return _QUOTE_BLOCK_RE.sub(_strip_quote_prefix, text)
 
     def _replace(match: re.Match) -> str:
-        lines = match.group(0).rstrip("\n").split("\n")
-        body = "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
-        return f"<blockquote>{body}</blockquote>"
+        return f"<blockquote>{_strip_quote_prefix(match)}</blockquote>"
 
     return _QUOTE_BLOCK_RE.sub(_replace, text)
 

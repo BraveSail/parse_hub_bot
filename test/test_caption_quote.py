@@ -1,6 +1,31 @@
-"""推文/帖子正文里的 Markdown 引用块应转成 Telegram 的 blockquote。"""
+"""推文/帖子正文里的 Markdown 引用块应转成 Telegram 的 blockquote。
+
+注意: pyrogram 的 Markdown 解析器会把行首 '>' 重新解析成 blockquote 实体,
+而 Telegram 内联消息遇到 blockquote 实体会丢掉整批格式, 所以内联通道
+(allow_blockquote=False) 必须把 '>' 前缀整个去掉 —— 见
+test_inline_caption_parses_without_blockquote_entity。
+"""
+
+import asyncio
 
 from plugins.helpers import build_caption_by_str, convert_markdown_quote, format_text
+
+QUOTE_SAMPLE = "> \u56de\u590d @u\uff1a\n> hi\n\nbody"
+
+
+def _pyrogram_markdown_parse(text: str) -> dict:
+    """用 pyrogram 的 Markdown 解析器解析文本, 返回 {message, entities}。
+
+    pyrogram 的 client.parse_mode 默认是 DEFAULT, 与内联消息里
+    InputTextMessageContent 未显式指定 parse_mode 时走的路径一致。
+    """
+    from pyrogram.parser.markdown import Markdown
+
+    return asyncio.run(Markdown(None).parse(text))
+
+
+def _entity_types(parsed: dict) -> list[str]:
+    return [type(e).__name__ for e in (parsed.get("entities") or [])]
 
 
 def test_quote_lines_become_blockquote():
@@ -25,7 +50,7 @@ def test_multiple_quote_blocks():
 
 
 def test_format_text_does_not_nest_blockquote():
-    out = format_text("> 回复 @user：\n> " + "x" * 600)
+    out = format_text("> \u56de\u590d @user\uff1a\n> " + "x" * 600)
     assert out.count("<blockquote") == 1
     assert "expandable" not in out
 
@@ -44,25 +69,27 @@ def test_truncation_happens_before_html_conversion():
     assert out.count("<blockquote") == 1
 
 
-def test_allow_blockquote_false_keeps_markdown_prefix():
-    assert convert_markdown_quote("> a\n\nb", allow_blockquote=False) == "> a\n\nb"
+def test_allow_blockquote_false_strips_markdown_prefix():
+    assert convert_markdown_quote("> a\n\nb", allow_blockquote=False) == "a\n\nb"
 
 
 def test_format_text_without_blockquote_does_not_wrap_long_text():
     out = format_text("> " + "x" * 600, allow_blockquote=False)
     assert "<blockquote" not in out
-    assert out.startswith("> ")
+    assert not out.startswith(">")
+    assert out.startswith("x" * 600)
 
 
-def test_caption_without_blockquote_keeps_plain_quote_lines():
+def test_caption_without_blockquote_keeps_quote_content():
     caption = build_caption_by_str(
         "",
-        "> \u56de\u590d @u\uff1a\n> hi\n\nbody",
+        QUOTE_SAMPLE,
         "https://x.com/u/status/1",
         allow_blockquote=False,
     )
     assert "<blockquote" not in caption
-    assert "> \u56de\u590d @u\uff1a" in caption
+    assert "\u56de\u590d @u\uff1a" in caption
+    assert "hi" in caption
     assert "Source\uff08Twitter\uff09</a>" in caption
 
 
@@ -71,12 +98,33 @@ def test_caption_uses_blockquote_by_default():
     assert "<blockquote>" in caption
 
 
+def test_inline_caption_parses_without_blockquote_entity():
+    """回归: 内联 caption 经 pyrogram 的 Markdown 解析后不能出现 blockquote 实体。"""
+    caption = build_caption_by_str("", QUOTE_SAMPLE, "https://x.com/u/status/1", allow_blockquote=False)
+    parsed = _pyrogram_markdown_parse(caption)
+
+    types = _entity_types(parsed)
+    assert "MessageEntityBlockquote" not in types
+    # 来源链接必须还在
+    assert "MessageEntityTextUrl" in types
+    assert "MessageEntityBold" in types
+    # 引用内容以纯文本保留
+    assert "\u56de\u590d @u\uff1a" in parsed["message"]
+    assert not parsed["message"].startswith(">")
+
+
+def test_quote_prefix_would_otherwise_become_blockquote_entity():
+    """反证: 保留 '>' 前缀时 pyrogram 确实会造出 blockquote 实体。"""
+    parsed = _pyrogram_markdown_parse("> \u56de\u590d @u\uff1a\n> hi\n\nbody")
+    assert "MessageEntityBlockquote" in _entity_types(parsed)
+
+
 def test_inline_cached_caption_has_no_blockquote():
     from plugins.parse.inline import build_cached_inline_results
     from repo.settings import SettingsConfig
     from services.cache import CacheEntry, CacheParseResult
 
-    entry = CacheEntry(parse_result=CacheParseResult(content="> \u56de\u590d @u\uff1a\n> hi\n\nbody"))
+    entry = CacheEntry(parse_result=CacheParseResult(content=QUOTE_SAMPLE))
     results = build_cached_inline_results(entry, "https://x.com/u/status/1", "zh-hans", SettingsConfig())
 
     texts = [
@@ -87,4 +135,5 @@ def test_inline_cached_caption_has_no_blockquote():
     ]
     assert texts
     assert all("<blockquote" not in t for t in texts)
-    assert any("> \u56de\u590d @u\uff1a" in t for t in texts)
+    assert any("\u56de\u590d @u\uff1a" in t for t in texts)
+    assert all("MessageEntityBlockquote" not in _entity_types(_pyrogram_markdown_parse(t)) for t in texts)
