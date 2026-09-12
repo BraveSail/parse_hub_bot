@@ -1416,7 +1416,7 @@ wheels = [
 [[package]]
 name = "parsehub"
 version = "2.2.1"
-source = { git = "https://github.com/BraveSail/ParseHub.git#c6a3166c5739921b4678044fdbf7892905c16592" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
     { name = "beautifulsoup4" },
@@ -1438,6 +1438,10 @@ dependencies = [
     { name = "tenacity" },
     { name = "urlextract" },
     { name = "yt-dlp", extra = ["default"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/6e/43e43c69608d6ed2032cd603745b547b53351dde20363d5ba27f0bc6c4b6/parsehub-2.2.1.tar.gz", hash = "sha256:4c25dffbabdf1403a39505fb56ec0d03a943b4559f4b488380f05a3679938c70", size = 119693, upload-time = "2026-08-31T08:01:11.846Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/c4/95d6a9c262d17b84487f4721cc190b81ac302e25c770febda5cc6057d297/parsehub-2.2.1-py3-none-any.whl", hash = "sha256:9d3a962b51ebc3caf12c11e5b1f6fd1f2d835c87c270167862c873d0e4d150da", size = 132204, upload-time = "2026-08-31T08:01:10.409Z" },
 ]
 
 [[package]]
@@ -1486,7 +1490,7 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.6.0" },
     { name = "lxml-html-clean", specifier = ">=0.4.1" },
     { name = "markdown", specifier = ">=3.7" },
-    { name = "parsehub", git = "https://github.com/BraveSail/ParseHub.git" },
+    { name = "parsehub", specifier = ">=2.1.11" },
     { name = "pillow", specifier = ">=12.1.1" },
     { name = "pillow-heif", specifier = ">=1.1.1" },
     { name = "pydantic", specifier = ">=2.12.5" },
