@@ -96,14 +96,15 @@ def build_caption_by_str(
     if rich:
         body = f"### {title}\n\n <details><summary>📃</summary>\n\n{content}\n\n</details>"
     elif telegraph_url:
-        label = (title or content[:15]).replace("\n", " ") or "-"
+        label = neutralize_markdown((title or content[:15]).replace("\n", " ") or "-")
         body = f"**[{label}]({telegraph_url})**"
     else:
         parts = []
         if not hide_title and title:
             parts.append(f"**{neutralize_markdown(title)}**")
         if not hide_desc and content:
-            parts.append(content)
+            # 正文里的 URL 也要中和: URL 中的 '__' 会被 markdown 解析插进 <i> 破坏链接
+            parts.append(neutralize_markdown_urls(content))
         body = format_text(("\n\n".join(parts)).strip(), allow_blockquote=allow_blockquote)
 
     if author_name:
@@ -116,8 +117,11 @@ def build_caption_by_str(
     if hide_source:
         return body
     platform = platform or ParseHub().get_platform(raw_url)
-    source = f"Source（{html.escape(platform.display_name)}）" if platform else "Source"
-    return f"{body}\n\n{format_label(f"<a href='{raw_url}'>{source}</a>")}"
+    display = neutralize_markdown(html.escape(platform.display_name)) if platform else ""
+    source = f"Source（{display}）" if platform else "Source"
+    # href 里的 URL 必须中和: 否则 pyrogram 会把 URL 中的 '__' 解析成 <i> 塞进 href
+    safe_url = neutralize_markdown(raw_url)
+    return f"{body}\n\n{format_label(f"<a href='{safe_url}'>{source}</a>")}"
 
 
 def get_parse_author_name(parse_result: AnyParseResult) -> str:
@@ -154,6 +158,21 @@ _MD_DELIM_ENTITY = {
 def neutralize_markdown(text: str) -> str:
     """中和 Markdown 格式定界符, 防止正文本被 pyrogram 的 markdown 解析误伤。"""
     return text.translate(_MD_DELIM_ENTITY)
+
+
+_URL_RE = re.compile(r"https?://[^\s<>]+")
+
+
+def neutralize_markdown_urls(text: str) -> str:
+    """只中和 URL 里的 markdown 定界符。
+
+    URL 里出现 '__' 时 (例如 https://x.com/__yuuuumr__/status/...), pyrogram 的
+    markdown 解析器会把它当斜体定界符并插入 <i>/</i>, 于是
+    <a href='https://x.com/__yuuuumr__/...'> 的 href 被写成
+    'https://x.com/<i>yuuuumr</i>/...' —— 链接直接作废、变成不可点的纯文本。
+    只处理 URL 片段, 避免影响正文里有意写的 markdown。
+    """
+    return _URL_RE.sub(lambda m: neutralize_markdown(m.group(0)), text)
 
 
 def _strip_quote_prefix(match: re.Match) -> str:

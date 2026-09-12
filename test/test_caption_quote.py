@@ -170,3 +170,33 @@ def test_neutralize_markdown_keeps_text_readable():
     caption = neutralize_markdown("@__user__")
     parsed = _pyrogram_markdown_parse(caption)
     assert parsed["message"] == "@__user__"
+
+
+UNDERSCORE_URL = "https://x.com/__yuuuumr__/status/2095537240726450480"
+
+
+def _text_urls(parsed: dict) -> list[str]:
+    return [e.url for e in (parsed.get("entities") or []) if type(e).__name__ == "MessageEntityTextUrl"]
+
+
+def test_source_link_survives_underscored_url_inline():
+    """回归: handle 带 __ 的 URL 不能被 markdown 解析插进 <i> 把 href 写坏。"""
+    caption = build_caption_by_str("", QUOTE_SAMPLE, UNDERSCORE_URL, allow_blockquote=False)
+    parsed = _pyrogram_markdown_parse(caption)
+    assert _text_urls(parsed) == [UNDERSCORE_URL]
+    assert "MessageEntityItalic" not in _entity_types(parsed)
+
+
+def test_source_link_survives_underscored_url_dm():
+    caption = build_caption_by_str("", QUOTE_SAMPLE, UNDERSCORE_URL)
+    parsed = _pyrogram_markdown_parse(caption)
+    assert _text_urls(parsed) == [UNDERSCORE_URL]
+    assert "MessageEntityItalic" not in _entity_types(parsed)
+
+
+def test_body_url_with_underscores_survives():
+    body = "see https://example.com/a__b__c/page for details"
+    caption = build_caption_by_str("", body, "https://x.com/u/status/1", allow_blockquote=False)
+    parsed = _pyrogram_markdown_parse(caption)
+    assert "https://example.com/a__b__c/page" in parsed["message"]
+    assert "MessageEntityItalic" not in _entity_types(parsed)
