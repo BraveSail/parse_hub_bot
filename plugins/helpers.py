@@ -57,6 +57,7 @@ def build_caption(
     config: SettingsConfig,
     rich: bool = False,
     allow_blockquote: bool = True,
+    allow_expandable: bool = True,
 ) -> str:
     return build_caption_by_str(
         parse_result.title,
@@ -73,6 +74,7 @@ def build_caption(
         hide_desc=config.hide_desc,
         rich=rich,
         allow_blockquote=allow_blockquote,
+        allow_expandable=allow_expandable,
     )
 
 
@@ -90,6 +92,7 @@ def build_caption_by_str(
     hide_desc: bool = False,
     rich: bool = False,
     allow_blockquote: bool = True,
+    allow_expandable: bool = True,
 ) -> str:
     """构建消息正文：标题 + 内容 + 来源链接"""
     title, content = title or "", content or ""
@@ -105,7 +108,11 @@ def build_caption_by_str(
         if not hide_desc and content:
             # 正文里的 URL 也要中和: URL 中的 '__' 会被 markdown 解析插进 <i> 破坏链接
             parts.append(neutralize_markdown_urls(content))
-        body = format_text(("\n\n".join(parts)).strip(), allow_blockquote=allow_blockquote)
+        body = format_text(
+            ("\n\n".join(parts)).strip(),
+            allow_blockquote=allow_blockquote,
+            allow_expandable=allow_expandable,
+        )
 
     if author_name:
         label = neutralize_markdown(html.escape(author_name))
@@ -199,7 +206,7 @@ def convert_markdown_quote(text: str, *, allow_blockquote: bool = True) -> str:
     return _QUOTE_BLOCK_RE.sub(_replace, text)
 
 
-def format_text(text: str, *, allow_blockquote: bool = True) -> str:
+def format_text(text: str, *, allow_blockquote: bool = True, allow_expandable: bool = True) -> str:
     """格式化输出内容, 限制长度, 添加折叠块样式"""
     text = text.strip()
     if len(text) > 1000:
@@ -207,8 +214,8 @@ def format_text(text: str, *, allow_blockquote: bool = True) -> str:
         text = text[:900] + "......"
     text = convert_markdown_quote(text, allow_blockquote=allow_blockquote)
     if len(text) > 500 or len(text.splitlines()) > 10:
-        if "<blockquote>" in text or not allow_blockquote:
-            # Telegram 不支持嵌套 blockquote; 不允许引用块时也不能用 expandable
+        if "<blockquote>" in text or not allow_expandable:
+            # Telegram 不支持嵌套 blockquote; 不允许折叠块时直接返回
             return text
         return f"<blockquote expandable>{text}</blockquote>"
     return text
