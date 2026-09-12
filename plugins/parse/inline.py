@@ -190,6 +190,7 @@ def build_cached_inline_results(
         author_name=entry.parse_result.author_name,
         hide_title=config.hide_title,
         hide_desc=config.hide_desc,
+        allow_blockquote=False,
     )
     title = entry.parse_result.title or "-"
 
@@ -305,7 +306,7 @@ async def build_inline_results(
     # ── 富文本直接 telegraph 发送 ──
     if isinstance(parse_result, RichTextParseResult):
         if config.rich_mode:
-            caption = build_caption(parse_result, config=config, rich=True)
+            caption = build_caption(parse_result, config=config, rich=True, allow_blockquote=False)
             results.append(
                 InlineQueryResultArticle(
                     title=title,
@@ -318,7 +319,7 @@ async def build_inline_results(
             return results
 
         url = await create_richtext_telegraph(cli, parse_result)
-        caption = build_caption(parse_result, url, config=config)
+        caption = build_caption(parse_result, url, config=config, allow_blockquote=False)
         results.append(
             InlineQueryResultArticle(
                 title=title,
@@ -331,7 +332,7 @@ async def build_inline_results(
         )
         return results
 
-    caption = build_caption(parse_result, config=config)
+    caption = build_caption(parse_result, config=config, allow_blockquote=False)
 
     if not media_list:
         results.append(

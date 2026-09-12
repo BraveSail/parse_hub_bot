@@ -56,6 +56,7 @@ def build_caption(
     custom_content: str = "",
     config: SettingsConfig,
     rich: bool = False,
+    allow_blockquote: bool = True,
 ) -> str:
     return build_caption_by_str(
         parse_result.title,
@@ -71,6 +72,7 @@ def build_caption(
         hide_title=config.hide_title,
         hide_desc=config.hide_desc,
         rich=rich,
+        allow_blockquote=allow_blockquote,
     )
 
 
@@ -87,6 +89,7 @@ def build_caption_by_str(
     hide_title: bool = False,
     hide_desc: bool = False,
     rich: bool = False,
+    allow_blockquote: bool = True,
 ) -> str:
     """构建消息正文：标题 + 内容 + 来源链接"""
     title, content = title or "", content or ""
@@ -101,7 +104,7 @@ def build_caption_by_str(
             parts.append(f"**{title}**")
         if not hide_desc and content:
             parts.append(content)
-        body = format_text(("\n\n".join(parts)).strip())
+        body = format_text(("\n\n".join(parts)).strip(), allow_blockquote=allow_blockquote)
 
     if author_name:
         body = f"<b>{html.escape(author_name)}:</b>\n\n{body}" if body else f"<b>{html.escape(author_name)}:</b>"
@@ -134,8 +137,14 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
 
 
-def convert_markdown_quote(text: str) -> str:
-    """把 Markdown 引用行 (以 '>' 开头) 转成 Telegram 的 <blockquote>。"""
+def convert_markdown_quote(text: str, *, allow_blockquote: bool = True) -> str:
+    """把 Markdown 引用行 (以 '>' 开头) 转成 Telegram 的 <blockquote>。
+
+    allow_blockquote=False 时原样保留 Markdown 引用行: 内联消息带上 blockquote
+    实体会被 Telegram 丢掉整批格式, 所以那条通道只能用纯文本引用。
+    """
+    if not allow_blockquote:
+        return text
 
     def _replace(match: re.Match) -> str:
         lines = match.group(0).rstrip("\n").split("\n")
@@ -145,16 +154,16 @@ def convert_markdown_quote(text: str) -> str:
     return _QUOTE_BLOCK_RE.sub(_replace, text)
 
 
-def format_text(text: str) -> str:
+def format_text(text: str, *, allow_blockquote: bool = True) -> str:
     """格式化输出内容, 限制长度, 添加折叠块样式"""
     text = text.strip()
     if len(text) > 1000:
         # 在 Markdown 阶段截断, 避免切断后面生成的 blockquote 标签
         text = text[:900] + "......"
-    text = convert_markdown_quote(text)
+    text = convert_markdown_quote(text, allow_blockquote=allow_blockquote)
     if len(text) > 500 or len(text.splitlines()) > 10:
-        if "<blockquote>" in text:
-            # Telegram 不支持嵌套 blockquote, 已含引用块时不再折叠
+        if "<blockquote>" in text or not allow_blockquote:
+            # Telegram 不支持嵌套 blockquote; 不允许引用块时也不能用 expandable
             return text
         return f"<blockquote expandable>{text}</blockquote>"
     return text
