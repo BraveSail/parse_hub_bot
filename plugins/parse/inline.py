@@ -117,7 +117,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
     if inline_message_id is None:
         return
     query = chosen_result.query
-    logger.debug(f"inline 下载触发: media_index={media_index}, query={query}")
+    logger.info(f"inline 下载触发: media_index={media_index}, query={query}, inline_message_id={inline_message_id}")
     raw_url = await ParseService().get_raw_url(query)
 
     cached_result = await parse_cache.get(raw_url)
@@ -127,6 +127,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
     reporter = InlineStatusReporter(cli, inline_message_id, caption, t=_t, user_config=config)
     with ParsePipeline(query, raw_url, reporter, parse_result=cached_result, singleflight=False, t=_t) as pipeline:
         if (result := await pipeline.run()) is None:
+            logger.warning("inline 流水线无结果(下载/处理失败?), 放弃替换")
             return
 
         parse_result = result.parse_result
@@ -141,7 +142,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         try:
             file_paths = processed.output_paths or [processed.source.path]
             file_path_str = str(file_paths[0])
-            logger.debug(f"inline 上传文件: {file_path_str}")
+            logger.info(f"inline 上传文件: {file_path_str}")
             width, height, duration = resolve_media_info(processed, file_path_str)
 
             video_cover = str(video_ref.thumb_url) if video_ref and video_ref.thumb_url else None
@@ -166,6 +167,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 )
             )
             await cli.edit_inline_media(inline_message_id, media=media)
+            logger.info("inline 替换成功: 静态占位已换成视频")
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
             logger.error(f"inline 上传失败: {e}")
