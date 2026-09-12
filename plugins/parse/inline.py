@@ -1,4 +1,4 @@
-from pathlib import Path
+from collections.abc import Sequence
 
 from parsehub import AnyParseResult
 from parsehub.types import (
@@ -7,8 +7,7 @@ from parsehub.types import (
     RichTextParseResult,
     VideoRef,
 )
-from pyrogram import Client, raw
-from pyrogram.file_id import FileId, FileType
+from pyrogram import Client
 from pyrogram.types import (
     ChosenInlineResult,
     InlineQuery,
@@ -118,7 +117,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
     if inline_message_id is None:
         return
     query = chosen_result.query
-    logger.info(f"inline 下载触发: media_index={media_index}, query={query}, inline_message_id={inline_message_id}")
+    logger.debug(f"inline 下载触发: media_index={media_index}, query={query}")
     raw_url = await ParseService().get_raw_url(query)
 
     cached_result = await parse_cache.get(raw_url)
@@ -128,7 +127,6 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
     reporter = InlineStatusReporter(cli, inline_message_id, caption, t=_t, user_config=config)
     with ParsePipeline(query, raw_url, reporter, parse_result=cached_result, singleflight=False, t=_t) as pipeline:
         if (result := await pipeline.run()) is None:
-            logger.warning("inline 流水线无结果(下载/处理失败?), 放弃替换")
             return
 
         parse_result = result.parse_result
@@ -138,62 +136,36 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         await reporter.report(_t("上 传 中..."))
 
         processed = result.processed_list[media_index]
+        video_ref = parse_result.media[media_index] if isinstance(parse_result.media, Sequence) else parse_result.media
 
         try:
             file_paths = processed.output_paths or [processed.source.path]
             file_path_str = str(file_paths[0])
+            logger.debug(f"inline 上传文件: {file_path_str}")
             width, height, duration = resolve_media_info(processed, file_path_str)
 
-            # 编辑 inline 消息有两条死路：
-            #   1) 直接喂本地文件路径 -> pyrogram 会把它变成 InputMediaUploadedDocument，
-            #      而 Telegram 不允许在编辑 inline 消息时上传新文件 -> 服务端拒绝；
-            #   2) 喂视频原始 URL -> 让 TG 自己去抓，超过 20MB 会 WEBPAGE_CURL_FAILED，
-            #      带签名的 CDN 链接（Threads/Instagram）同样抓不到。
-            # 所以先单独把本地文件上传到服务器（messages.UploadMedia 不产生任何消息），
-            # 拿到 document 后自造 file_id，再用 file_id 去编辑 —— 既不是"编辑时上传"，
-            # 也不依赖 TG 抓外链。
-            # https://core.telegram.org/bots/api#editmessagemedia
-            uploaded = await cli.invoke(
-                raw.functions.messages.UploadMedia(
-                    peer=raw.types.InputPeerSelf(),
-                    media=raw.types.InputMediaUploadedDocument(
-                        mime_type="video/mp4",
-                        file=await cli.save_file(file_path_str),
-                        attributes=[
-                            raw.types.DocumentAttributeVideo(
-                                supports_streaming=True,
-                                duration=duration or 0,
-                                w=width or 0,
-                                h=height or 0,
-                            ),
-                            raw.types.DocumentAttributeFilename(file_name=Path(file_path_str).name),
-                        ],
-                    ),
+            video_cover = str(video_ref.thumb_url) if video_ref and video_ref.thumb_url else None
+            media = (
+                InputMediaVideo(
+                    file_path_str,
+                    caption=caption,
+                    video_cover=video_cover,
+                    duration=duration or 0,
+                    width=width or 0,
+                    height=height or 0,
+                    supports_streaming=True,
+                )
+                if video_cover
+                else InputMediaVideo(
+                    file_path_str,
+                    caption=caption,
+                    duration=duration or 0,
+                    width=width or 0,
+                    height=height or 0,
+                    supports_streaming=True,
                 )
             )
-            document = uploaded.document
-            file_id = FileId(
-                file_type=FileType.VIDEO,
-                dc_id=document.dc_id,
-                media_id=document.id,
-                access_hash=document.access_hash,
-                file_reference=document.file_reference,
-            ).encode()
-            logger.info(f"inline 替换媒体源: 服务端 file_id (len={len(file_id)})")
-
-            media = InputMediaVideo(
-                file_id,
-                caption=caption,
-                duration=duration or 0,
-                width=width or 0,
-                height=height or 0,
-                supports_streaming=True,
-            )
-            if not await cli.edit_inline_media(inline_message_id, media=media):
-                logger.error("inline 替换被 Telegram 拒绝(edit_inline_media 返回 False)")
-                await reporter.report_error(_t("上传"), RuntimeError("Telegram 拒绝了媒体编辑"))
-                return
-            logger.info("inline 替换成功: 静态占位已换成视频")
+            await cli.edit_inline_media(inline_message_id, media=media)
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
             logger.error(f"inline 上传失败: {e}")
