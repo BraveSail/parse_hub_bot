@@ -131,15 +131,33 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
     return ""
 
 
+_QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
+
+
+def convert_markdown_quote(text: str) -> str:
+    """把 Markdown 引用行 (以 '>' 开头) 转成 Telegram 的 <blockquote>。"""
+
+    def _replace(match: re.Match) -> str:
+        lines = match.group(0).rstrip("\n").split("\n")
+        body = "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
+        return f"<blockquote>{body}</blockquote>"
+
+    return _QUOTE_BLOCK_RE.sub(_replace, text)
+
+
 def format_text(text: str) -> str:
     """格式化输出内容, 限制长度, 添加折叠块样式"""
     text = text.strip()
+    if len(text) > 1000:
+        # 在 Markdown 阶段截断, 避免切断后面生成的 blockquote 标签
+        text = text[:900] + "......"
+    text = convert_markdown_quote(text)
     if len(text) > 500 or len(text.splitlines()) > 10:
-        if len(text) > 1000:
-            text = text[:900] + "......"
+        if "<blockquote>" in text:
+            # Telegram 不支持嵌套 blockquote, 已含引用块时不再折叠
+            return text
         return f"<blockquote expandable>{text}</blockquote>"
-    else:
-        return text
+    return text
 
 
 async def create_telegraph_page(html_content: str, cli: Client, parse_result: AnyParseResult) -> str:
