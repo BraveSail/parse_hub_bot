@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from pathlib import Path
 
 from parsehub import AnyParseResult
 from parsehub.types import (
@@ -7,7 +7,8 @@ from parsehub.types import (
     RichTextParseResult,
     VideoRef,
 )
-from pyrogram import Client
+from pyrogram import Client, raw
+from pyrogram.file_id import FileId, FileType
 from pyrogram.types import (
     ChosenInlineResult,
     InlineQuery,
@@ -137,23 +138,51 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         await reporter.report(_t("上 传 中..."))
 
         processed = result.processed_list[media_index]
-        video_ref = parse_result.media[media_index] if isinstance(parse_result.media, Sequence) else parse_result.media
 
         try:
             file_paths = processed.output_paths or [processed.source.path]
             file_path_str = str(file_paths[0])
             width, height, duration = resolve_media_info(processed, file_path_str)
 
-            # Telegram 不允许在编辑 inline 消息时上传新文件: 传本地路径会走
-            # InputMediaUploadedDocument, 被服务端静默拒绝(返回 False, 不抛异常),
-            # 消息就永远停在静态缩略图上。只能用服务端已有的 file_id 或 URL —— 这里
-            # 用视频原始 URL 让 Telegram 自己去取。
+            # Telegram 不允许在编辑 inline 消息时上传新文件，只能用服务端已有的
+            # file_id。而 pyrogram 的 InputMediaVideo(<URL>) 在 write() 里会退化成
+            # raw.types.InputMediaDocumentExternal —— 该类型不携带 width/height/
+            # duration/supports_streaming，Telegram 按普通文档处理，客户端只显示一张
+            # 静态缩略图（即用户看到的"静态图替换静态图"）。
+            # 正解：先用 messages.UploadMedia 把视频传到服务器（不产生任何消息），
+            # 再自行构造 file_id 交给 InputMediaVideo(file_id) —— 这条路径生成的是
+            # 带视频属性的 InputMediaDocument，替换后为真正可播放的视频。
             # https://core.telegram.org/bots/api#editmessagemedia
-            media_source = getattr(video_ref, "url", None) or file_path_str
-            logger.info(f"inline 替换媒体源: {media_source}")
+            uploaded = await cli.invoke(
+                raw.functions.messages.UploadMedia(
+                    peer=raw.types.InputPeerSelf(),
+                    media=raw.types.InputMediaUploadedDocument(
+                        mime_type="video/mp4",
+                        file=await cli.save_file(file_path_str),
+                        attributes=[
+                            raw.types.DocumentAttributeVideo(
+                                supports_streaming=True,
+                                duration=duration or 0,
+                                w=width or 0,
+                                h=height or 0,
+                            ),
+                            raw.types.DocumentAttributeFilename(file_name=Path(file_path_str).name),
+                        ],
+                    ),
+                )
+            )
+            document = uploaded.document
+            file_id = FileId(
+                file_type=FileType.VIDEO,
+                dc_id=document.dc_id,
+                media_id=document.id,
+                access_hash=document.access_hash,
+                file_reference=document.file_reference,
+            ).encode()
+            logger.info(f"inline 替换媒体源: 已上传为服务端 file_id (len={len(file_id)})")
 
             media = InputMediaVideo(
-                media_source,
+                file_id,
                 caption=caption,
                 duration=duration or 0,
                 width=width or 0,
