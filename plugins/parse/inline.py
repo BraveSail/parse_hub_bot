@@ -360,16 +360,11 @@ async def build_inline_results(
                 )
             )
         elif isinstance(media_ref, VideoRef):
-            # 发送时用的 photo_url 必须是 Telegram 手头已有的稳定资源。若填平台 CDN
-            # 上的封面（thumb_url），TG 得先去外网抓图；在抓完之前那条 inline 消息的
-            # photo 处于"处理中"状态，此时 bot 随后发起的媒体替换会被静默丢弃
-            # （edit_inline_media 仍返回 True），表现为"封面没加载完就点 → 永远停在
-            # 静态图；等封面出来了再点 → 替换成功"。因此 photo_url 用默认的
-            # telegra.ph 图（TG 自家 CDN，瞬间就绪），列表缩略图仍用真实封面。
             results.append(
                 InlineQueryResultPhoto(
-                    DEFAULT_PARSE_RESULT_THUMB_URL,
-                    thumb_url=media_ref.thumb_url or DEFAULT_PARSE_RESULT_THUMB_URL,
+                    media_ref.thumb_url or DEFAULT_PARSE_RESULT_THUMB_URL,
+                    photo_width=media_ref.width,
+                    photo_height=media_ref.height,
                     id=f"download_{index}",
                     title=title,
                     caption=caption,
