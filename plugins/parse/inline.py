@@ -142,31 +142,28 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         try:
             file_paths = processed.output_paths or [processed.source.path]
             file_path_str = str(file_paths[0])
-            logger.info(f"inline 上传文件: {file_path_str}")
             width, height, duration = resolve_media_info(processed, file_path_str)
 
-            video_cover = str(video_ref.thumb_url) if video_ref and video_ref.thumb_url else None
-            media = (
-                InputMediaVideo(
-                    file_path_str,
-                    caption=caption,
-                    video_cover=video_cover,
-                    duration=duration or 0,
-                    width=width or 0,
-                    height=height or 0,
-                    supports_streaming=True,
-                )
-                if video_cover
-                else InputMediaVideo(
-                    file_path_str,
-                    caption=caption,
-                    duration=duration or 0,
-                    width=width or 0,
-                    height=height or 0,
-                    supports_streaming=True,
-                )
+            # Telegram 不允许在编辑 inline 消息时上传新文件: 传本地路径会走
+            # InputMediaUploadedDocument, 被服务端静默拒绝(返回 False, 不抛异常),
+            # 消息就永远停在静态缩略图上。只能用服务端已有的 file_id 或 URL —— 这里
+            # 用视频原始 URL 让 Telegram 自己去取。
+            # https://core.telegram.org/bots/api#editmessagemedia
+            media_source = getattr(video_ref, "url", None) or file_path_str
+            logger.info(f"inline 替换媒体源: {media_source}")
+
+            media = InputMediaVideo(
+                media_source,
+                caption=caption,
+                duration=duration or 0,
+                width=width or 0,
+                height=height or 0,
+                supports_streaming=True,
             )
-            await cli.edit_inline_media(inline_message_id, media=media)
+            if not await cli.edit_inline_media(inline_message_id, media=media):
+                logger.error("inline 替换被 Telegram 拒绝(edit_inline_media 返回 False)")
+                await reporter.report_error(_t("上传"), RuntimeError("Telegram 拒绝了媒体编辑"))
+                return
             logger.info("inline 替换成功: 静态占位已换成视频")
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
