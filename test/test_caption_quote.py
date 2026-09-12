@@ -137,3 +137,36 @@ def test_inline_cached_caption_has_no_blockquote():
     assert all("<blockquote" not in t for t in texts)
     assert any("\u56de\u590d @u\uff1a" in t for t in texts)
     assert all("MessageEntityBlockquote" not in _entity_types(_pyrogram_markdown_parse(t)) for t in texts)
+
+
+UNDERSCORE_SAMPLE = "> \u56de\u590d @__yuuuumr__\uff1a\n> hi\n\nbody"
+
+
+def test_quote_handle_underscores_survive_markdown_parse():
+    """回归: @__user__ 这类 handle 不能被 markdown 当斜体、把下划线吃掉。"""
+    inline = build_caption_by_str("", UNDERSCORE_SAMPLE, "https://x.com/u/status/1", allow_blockquote=False)
+    parsed_inline = _pyrogram_markdown_parse(inline)
+    assert "MessageEntityItalic" not in _entity_types(parsed_inline)
+    assert "@__yuuuumr__" in parsed_inline["message"]
+
+    dm = build_caption_by_str("", UNDERSCORE_SAMPLE, "https://x.com/u/status/1")
+    parsed_dm = _pyrogram_markdown_parse(dm)
+    assert "MessageEntityItalic" not in _entity_types(parsed_dm)
+    assert "@__yuuuumr__" in parsed_dm["message"]
+    assert "MessageEntityBlockquote" in _entity_types(parsed_dm)
+
+
+def test_author_name_underscores_survive_markdown_parse():
+    caption = build_caption_by_str("", "body", "https://x.com/u/status/1", author_name="foo__bar")
+    parsed = _pyrogram_markdown_parse(caption)
+    assert "MessageEntityItalic" not in _entity_types(parsed)
+    assert "foo__bar" in parsed["message"]
+
+
+def test_neutralize_markdown_keeps_text_readable():
+    from plugins.helpers import neutralize_markdown
+
+    assert neutralize_markdown("@__user__ **bold** ~~x~~") != "@__user__ **bold** ~~x~~"
+    caption = neutralize_markdown("@__user__")
+    parsed = _pyrogram_markdown_parse(caption)
+    assert parsed["message"] == "@__user__"

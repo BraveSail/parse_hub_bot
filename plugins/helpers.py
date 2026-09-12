@@ -101,13 +101,14 @@ def build_caption_by_str(
     else:
         parts = []
         if not hide_title and title:
-            parts.append(f"**{title}**")
+            parts.append(f"**{neutralize_markdown(title)}**")
         if not hide_desc and content:
             parts.append(content)
         body = format_text(("\n\n".join(parts)).strip(), allow_blockquote=allow_blockquote)
 
     if author_name:
-        body = f"<b>{html.escape(author_name)}:</b>\n\n{body}" if body else f"<b>{html.escape(author_name)}:</b>"
+        label = neutralize_markdown(html.escape(author_name))
+        body = f"<b>{label}:</b>\n\n{body}" if body else f"<b>{label}:</b>"
 
     if custom_content:
         body += f"\n\n{custom_content}"
@@ -136,11 +137,30 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
 
+# pyrogram 的 Markdown 解析器 (client 默认 ParseMode.DEFAULT) 把成对的
+# __ ** -- ~~ || ` 当格式定界符, 定界符字符本身会被吃掉 —— 引用块里的推文 handle
+# (@__yuuuumr__ 显示成 @yuuuumr 并变成斜体) 就是这么被误伤的。
+# 换成 HTML 数字实体: markdown 阶段不再匹配, 后续 html.parse 阶段还原成原字符,
+# 最终显示完全一致。
+_MD_DELIM_ENTITY = {
+    ord("_"): "&#95;",
+    ord("*"): "&#42;",
+    ord("~"): "&#126;",
+    ord("`"): "&#96;",
+    ord("|"): "&#124;",
+}
+
+
+def neutralize_markdown(text: str) -> str:
+    """中和 Markdown 格式定界符, 防止正文本被 pyrogram 的 markdown 解析误伤。"""
+    return text.translate(_MD_DELIM_ENTITY)
+
 
 def _strip_quote_prefix(match: re.Match) -> str:
-    """去掉引用块每行行首的 '>'。"""
+    """去掉引用块每行行首的 '>', 并中和块内的 markdown 定界符。"""
     lines = match.group(0).rstrip("\n").split("\n")
-    return "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
+    body = "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
+    return neutralize_markdown(body)
 
 
 def convert_markdown_quote(text: str, *, allow_blockquote: bool = True) -> str:
