@@ -213,7 +213,8 @@ def format_text(text: str, *, allow_blockquote: bool = True, allow_expandable: b
         # 在 Markdown 阶段截断, 避免切断后面生成的 blockquote 标签
         text = text[:900] + "......"
     text = convert_markdown_quote(text, allow_blockquote=allow_blockquote)
-    if len(text) > 500 or len(text.splitlines()) > 10:
+    # 阈值按实际观感定: 中文一行约 30 字符, 350 字符已是十来行, 再长就该折起来
+    if len(text) > 350 or len(text.splitlines()) > 8:
         if "<blockquote>" in text or not allow_expandable:
             # Telegram 不支持嵌套 blockquote; 不允许折叠块时直接返回
             return text
