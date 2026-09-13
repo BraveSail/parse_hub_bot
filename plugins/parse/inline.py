@@ -26,6 +26,12 @@ from pyrogram.types import (
     InputTextMessageContent,
     LinkPreviewOptions,
 )
+from pyrogram.types import (
+    InlineKeyboardButton as Ikb,
+)
+from pyrogram.types import (
+    InlineKeyboardMarkup as Ikm,
+)
 
 from db import get_session
 from i18n import t_
@@ -113,10 +119,27 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     await inline_query.answer(results[:50], cache_time=0)
 
 
+async def _drop_inline_keyboard(cli: Client, inline_message_id: str) -> None:
+    """摘掉 inline 结果自带的键盘。
+
+    带键盘是 Telegram 回传 inline_message_id 的前提, 但用户并不需要这个按钮,
+    所以一拿到句柄就立刻清掉。
+    """
+    try:
+        await cli.edit_inline_reply_markup(inline_message_id, reply_markup=Ikm([]))
+    except Exception as e:
+        logger.debug(f"摘除 inline 键盘失败: {e}")
+
+
 @Client.on_chosen_inline_result()
 @with_request_id
 async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult) -> None:
+    logger.info(
+        f"收到 inline 选中回调: result_id={chosen_result.result_id!r}, "
+        f"inline_message_id={chosen_result.inline_message_id!r}, query={chosen_result.query!r}"
+    )
     if not chosen_result.result_id.startswith("download_"):
+        logger.info(f"跳过: result_id={chosen_result.result_id!r} 非下载结果")
         return
 
     async with get_session() as session:
@@ -126,7 +149,10 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
     media_index = int(chosen_result.result_id.split("_")[1])
     inline_message_id = chosen_result.inline_message_id
     if inline_message_id is None:
+        logger.warning("inline 选中回调缺少 inline_message_id, 无法更新消息")
         return
+    # 键盘只为换取 inline_message_id 而存在, 到手后立刻摘掉
+    await _drop_inline_keyboard(cli, inline_message_id)
     query = chosen_result.query
     logger.debug(f"inline 下载触发: media_index={media_index}, query={query}")
     raw_url = await ParseService().get_raw_url(query)
@@ -299,6 +325,10 @@ async def build_inline_results(
 
     title = clip_inline_text(parse_result.title, INLINE_TITLE_LIMIT) or "-"
     media_list = to_list(parse_result.media)
+    # 这个键盘不是为了给用户点: Telegram 只在消息带 inline keyboard 时才回传
+    # inline_message_id, 没有它 bot 既不能更新进度也无法把封面图替换成视频。
+    # 选中后 inline_result_download 会第一时间把它摘掉, 用户看不到按钮。
+    reply_markup = Ikm([[Ikb(_t("原链接"), url=parse_result.raw_url)]])
 
     results: list[InlineQueryResult] = []
     if config.enable_inline_raw_url:
@@ -382,6 +412,7 @@ async def build_inline_results(
                     id=f"download_{index}",
                     title=title,
                     caption=caption,
+                    reply_markup=reply_markup,
                 )
             )
         elif isinstance(media_ref, AniRef):
