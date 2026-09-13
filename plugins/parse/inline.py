@@ -140,14 +140,14 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
     cached_result = await parse_cache.get(raw_url)
     logger.debug(f"缓存命中: {cached_result is not None}")
 
-    caption = build_caption(cached_result, config=config, allow_expandable=False) if cached_result else ""
+    caption = build_caption(cached_result, config=config, allow_expandable=True) if cached_result else ""
     reporter = InlineStatusReporter(cli, inline_message_id, caption, t=_t, user_config=config)
     with ParsePipeline(query, raw_url, reporter, parse_result=cached_result, singleflight=False, t=_t) as pipeline:
         if (result := await pipeline.run()) is None:
             return
 
         parse_result = result.parse_result
-        caption = build_caption(parse_result, config=config, allow_expandable=False)
+        caption = build_caption(parse_result, config=config, allow_expandable=True)
 
         # ── 上传 ──
         await reporter.report(_t("上 传 中..."))
@@ -325,7 +325,7 @@ async def build_inline_results(
     # ── 富文本直接 telegraph 发送 ──
     if isinstance(parse_result, RichTextParseResult):
         if config.rich_mode:
-            caption = build_caption(parse_result, config=config, rich=True, allow_expandable=False)
+            caption = build_caption(parse_result, config=config, rich=True, allow_expandable=True)
             results.append(
                 InlineQueryResultArticle(
                     title=title,
@@ -338,7 +338,7 @@ async def build_inline_results(
             return results
 
         url = await create_richtext_telegraph(cli, parse_result)
-        caption = build_caption(parse_result, url, config=config, allow_expandable=False)
+        caption = build_caption(parse_result, url, config=config, allow_expandable=True)
         results.append(
             InlineQueryResultArticle(
                 title=title,
