@@ -190,7 +190,9 @@ def build_cached_inline_results(
         author_name=entry.parse_result.author_name,
         hide_title=config.hide_title,
         hide_desc=config.hide_desc,
-        allow_expandable=False,
+        # inline 也开折叠: 实测 pyrogram 会把 <blockquote expandable> 解析成
+        # collapsed=True 的 blockquote 实体, Telegram 服务端存成 expandable_blockquote
+        allow_expandable=True,
     )
     title = entry.parse_result.title or "-"
 
@@ -332,7 +334,8 @@ async def build_inline_results(
         )
         return results
 
-    caption = build_caption(parse_result, config=config, allow_expandable=False)
+    # inline 结果同样折叠长正文 (同 build_cached_inline_results 的理由)
+    caption = build_caption(parse_result, config=config, allow_expandable=True)
 
     if not media_list:
         results.append(
