@@ -53,6 +53,23 @@ from utils.helpers import to_list, with_request_id
 
 logger = logger.bind(name="InlineParse")
 
+INLINE_TITLE_LIMIT = 90
+"""inline 结果项标题上限 (列表里只显示一行, 超长会把结果项撑爆)"""
+
+INLINE_DESC_LIMIT = 200
+"""inline 结果项描述上限"""
+
+
+def clip_inline_text(text: str | None, limit: int) -> str:
+    """压平换行并截断, 用于 inline 结果项的 title/description。
+
+    有些平台的标题承载正文 (抖音把文案塞进 title, yt-dlp 对 Facebook 返回
+    "27K views · … | 正文 | 频道名"), 不截断会让 inline 结果列表变得极长。
+    """
+    flat = " ".join((text or "").split())
+    return flat if len(flat) <= limit else flat[:limit] + "…"
+
+
 SEARCH_ICON = "https://i.imgloc.com/2023/06/15/Vbfazk.png"
 DEFAULT_PARSE_RESULT_THUMB_URL = "https://telegra.ph/file/cdfdb65b83a4b7b2b6078.png"
 LINK_ICON_URL = "https://i.iij.li/i/20260627/6a3fb12066abb.png"
@@ -194,7 +211,7 @@ def build_cached_inline_results(
         # collapsed=True 的 blockquote 实体, Telegram 服务端存成 expandable_blockquote
         allow_expandable=True,
     )
-    title = entry.parse_result.title or "-"
+    title = clip_inline_text(entry.parse_result.title, INLINE_TITLE_LIMIT) or "-"
 
     results: list[InlineQueryResult] = []
 
@@ -229,7 +246,7 @@ def build_cached_inline_results(
         results.append(
             InlineQueryResultArticle(
                 title=title,
-                description=content,
+                description=clip_inline_text(content, INLINE_DESC_LIMIT),
                 input_message_content=InputTextMessageContent(
                     caption,
                     link_preview_options=LinkPreviewOptions(is_disabled=True),
@@ -246,7 +263,7 @@ def build_cached_inline_results(
                         photo_file_id=m.file_id,
                         title=title,
                         caption=caption,
-                        description=content,
+                        description=clip_inline_text(content, INLINE_DESC_LIMIT),
                     )
                 )
             case CacheMediaType.VIDEO:
@@ -255,7 +272,7 @@ def build_cached_inline_results(
                         video_file_id=m.file_id,
                         title=title,
                         caption=caption,
-                        description=content,
+                        description=clip_inline_text(content, INLINE_DESC_LIMIT),
                     )
                 )
             case CacheMediaType.ANIMATION:
@@ -272,7 +289,7 @@ def build_cached_inline_results(
                         document_file_id=m.file_id,
                         title=title,
                         caption=caption,
-                        description=content,
+                        description=clip_inline_text(content, INLINE_DESC_LIMIT),
                     )
                 )
 
@@ -286,7 +303,7 @@ async def build_inline_results(
     logger.debug(f"构建 inline 结果: type={parse_result.type}, title={parse_result.title}")
     _t = t_[lang]
 
-    title = parse_result.title or "-"
+    title = clip_inline_text(parse_result.title, INLINE_TITLE_LIMIT) or "-"
     media_list = to_list(parse_result.media)
     reply_markup = Ikm([[Ikb(_t("原链接"), url=parse_result.raw_url)]])
 
@@ -312,7 +329,7 @@ async def build_inline_results(
             results.append(
                 InlineQueryResultArticle(
                     title=title,
-                    description=parse_result.content,
+                    description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
                     input_message_content=InputRichMessageContent(
                         InputRichMessage(markdown=caption),
                     ),
@@ -325,7 +342,7 @@ async def build_inline_results(
         results.append(
             InlineQueryResultArticle(
                 title=title,
-                description=parse_result.content,
+                description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
                 input_message_content=InputTextMessageContent(
                     caption,
                     link_preview_options=LinkPreviewOptions(show_above_text=True),
@@ -341,7 +358,7 @@ async def build_inline_results(
         results.append(
             InlineQueryResultArticle(
                 title=title,
-                description=parse_result.content,
+                description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
                 input_message_content=InputTextMessageContent(
                     caption,
                     link_preview_options=LinkPreviewOptions(is_disabled=True),
@@ -360,7 +377,7 @@ async def build_inline_results(
                     photo_height=media_ref.height,
                     caption=caption,
                     title=title,
-                    description=parse_result.content,
+                    description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
                 )
             )
         elif isinstance(media_ref, VideoRef):
@@ -383,7 +400,7 @@ async def build_inline_results(
                         media_ref.thumb_url or DEFAULT_PARSE_RESULT_THUMB_URL,
                         caption=caption,
                         title=title,
-                        description=parse_result.content,
+                        description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
                     )
                 )
             else:
@@ -393,7 +410,7 @@ async def build_inline_results(
                         thumb_url=media_ref.thumb_url,
                         caption=caption,
                         title=title,
-                        description=parse_result.content,
+                        description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
                     )
                 )
 
