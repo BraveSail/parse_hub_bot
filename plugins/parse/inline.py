@@ -26,12 +26,6 @@ from pyrogram.types import (
     InputTextMessageContent,
     LinkPreviewOptions,
 )
-from pyrogram.types import (
-    InlineKeyboardButton as Ikb,
-)
-from pyrogram.types import (
-    InlineKeyboardMarkup as Ikm,
-)
 
 from db import get_session
 from i18n import t_
@@ -305,7 +299,6 @@ async def build_inline_results(
 
     title = clip_inline_text(parse_result.title, INLINE_TITLE_LIMIT) or "-"
     media_list = to_list(parse_result.media)
-    reply_markup = Ikm([[Ikb(_t("原链接"), url=parse_result.raw_url)]])
 
     results: list[InlineQueryResult] = []
     if config.enable_inline_raw_url:
@@ -389,7 +382,6 @@ async def build_inline_results(
                     id=f"download_{index}",
                     title=title,
                     caption=caption,
-                    reply_markup=reply_markup,
                 )
             )
         elif isinstance(media_ref, AniRef):
