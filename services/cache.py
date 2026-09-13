@@ -98,6 +98,7 @@ class CacheParseResult(BaseModel):
     title: str = ""
     content: str = ""
     author_name: str = ""
+    is_sensitive: bool = False
 
 
 class CacheMedia(BaseModel):

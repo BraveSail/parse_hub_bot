@@ -222,6 +222,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                                 title=parse_result.title,
                                 content=parse_result.markdown_content,
                                 author_name=get_parse_author_name(parse_result),
+                                is_sensitive=parse_result.is_sensitive,
                             ),
                             rich=True,
                         ),
@@ -248,6 +249,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                         title=parse_result.title,
                         content=parse_result.content,
                         author_name=get_parse_author_name(parse_result),
+                        is_sensitive=parse_result.is_sensitive,
                     ),
                     telegraph_url=ph_url,
                 ),
@@ -280,6 +282,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                     title=parse_result.title,
                     content=parse_result.content,
                     author_name=get_parse_author_name(parse_result),
+                    is_sensitive=parse_result.is_sensitive,
                 )
             )
             await persistent_cache.set(raw_url, cache_entry)

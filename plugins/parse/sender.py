@@ -191,11 +191,19 @@ class MessageSender:
             use_reply_policy=use_reply_policy,
         )
 
-    async def photo(self, photo: str | BinaryIO, *, caption: str | None = None) -> Message:
+    async def photo(
+        self, photo: str | BinaryIO, *, caption: str | None = None, has_spoiler: bool = False
+    ) -> Message:
         return cast(
             Message,
             await self._send_and_schedule_delete(
-                partial(self.msg.reply_photo, photo, caption=caption or "", reply_parameters=self.reply_parameters)
+                partial(
+                    self.msg.reply_photo,
+                    photo,
+                    caption=caption or "",
+                    has_spoiler=has_spoiler,
+                    reply_parameters=self.reply_parameters,
+                )
             ),
         )
 
@@ -209,6 +217,7 @@ class MessageSender:
         width: int | None = None,
         height: int | None = None,
         supports_streaming: bool | None = None,
+        has_spoiler: bool = False,
     ) -> Message:
         return cast(
             Message,
@@ -217,6 +226,7 @@ class MessageSender:
                     self.msg.reply_video,
                     video,
                     caption=caption or "",
+                    has_spoiler=has_spoiler,
                     video_cover=video_cover,
                     duration=duration or 0,
                     width=width or 0,
@@ -236,6 +246,7 @@ class MessageSender:
         duration: int | None = None,
         width: int | None = None,
         height: int | None = None,
+        has_spoiler: bool = False,
     ) -> Message:
         return await self.video(
             video,
@@ -245,6 +256,7 @@ class MessageSender:
             width=width,
             height=height,
             supports_streaming=True,
+            has_spoiler=has_spoiler,
         )
 
     async def streaming_video_with_cover_fallback(
@@ -256,6 +268,7 @@ class MessageSender:
         duration: int | None = None,
         width: int | None = None,
         height: int | None = None,
+        has_spoiler: bool = False,
     ) -> Message:
         try:
             return await self.streaming_video(
@@ -265,6 +278,7 @@ class MessageSender:
                 duration=duration,
                 width=width,
                 height=height,
+                has_spoiler=has_spoiler,
             )
         except (WebpageCurlFailed, WebpageMediaEmpty):
             logger.warning("Tg 获取封面失败, 移除封面上传")
@@ -274,9 +288,12 @@ class MessageSender:
                 duration=duration,
                 width=width,
                 height=height,
+                has_spoiler=has_spoiler,
             )
 
-    async def animation(self, animation: str | BinaryIO, *, caption: str | None = None) -> Message:
+    async def animation(
+        self, animation: str | BinaryIO, *, caption: str | None = None, has_spoiler: bool = False
+    ) -> Message:
         return cast(
             Message,
             await self._send_and_schedule_delete(
@@ -284,6 +301,7 @@ class MessageSender:
                     self.msg.reply_animation,
                     animation,
                     caption=caption or "",
+                    has_spoiler=has_spoiler,
                     reply_parameters=self.reply_parameters,
                 )
             ),
@@ -447,7 +465,12 @@ async def send_media(
 ) -> CacheEntry | None:
     """构建、发送媒体，并返回缓存条目。"""
     media_refs = to_list(parse_result.media)
-    photos_videos, animations = build_input_media(media_refs, processed_list, video_cover=sender.config.video_cover)
+    photos_videos, animations = build_input_media(
+        media_refs,
+        processed_list,
+        video_cover=sender.config.video_cover,
+        is_sensitive=parse_result.is_sensitive,
+    )
     all_count = len(photos_videos) + len(animations)
     logger.debug(f"媒体分类完成: animations={len(animations)}, photos_videos={len(photos_videos)}")
 
@@ -465,6 +488,7 @@ async def send_media(
             title=parse_result.title,
             content=parse_result.content,
             author_name=get_parse_author_name(parse_result),
+            is_sensitive=parse_result.is_sensitive,
         ),
         media=media_list,
     )
@@ -498,10 +522,15 @@ async def send_cached(sender: MessageSender, entry: CacheEntry, url: str, *, cus
         await sender.text_no_preview(caption)
         return
 
+    is_sensitive = entry.parse_result.is_sensitive
     if len(entry.media) == 1:
-        await send_cached_single(sender, entry.media[0], caption, video_cover=sender.config.video_cover)
+        await send_cached_single(
+            sender, entry.media[0], caption, video_cover=sender.config.video_cover, is_sensitive=is_sensitive
+        )
     else:
-        await send_cached_multi(sender, entry.media, caption, video_cover=sender.config.video_cover)
+        await send_cached_multi(
+            sender, entry.media, caption, video_cover=sender.config.video_cover, is_sensitive=is_sensitive
+        )
 
 
 def media_input(media: str | BinaryIO | None) -> str | BinaryIO:
@@ -509,7 +538,11 @@ def media_input(media: str | BinaryIO | None) -> str | BinaryIO:
 
 
 def build_input_media(
-    media_refs: Sequence[AnyMediaRef], processed_list: list[ProcessedMedia], *, video_cover: bool
+    media_refs: Sequence[AnyMediaRef],
+    processed_list: list[ProcessedMedia],
+    *,
+    video_cover: bool,
+    is_sensitive: bool = False,
 ) -> tuple[list[InputMediaPhoto | InputMediaVideo], list[InputMediaAnimation]]:
     """根据处理结果和媒体引用构建 Telegram InputMedia 列表。"""
     photos_videos: list[InputMediaPhoto | InputMediaVideo] = []
@@ -523,13 +556,14 @@ def build_input_media(
 
             match processed.source:
                 case ImageFile():
-                    photos_videos.append(InputMediaPhoto(media=file_path_str))
+                    photos_videos.append(InputMediaPhoto(media=file_path_str, has_spoiler=is_sensitive))
                 case AniFile():
-                    animations.append(InputMediaAnimation(media=file_path_str))
+                    animations.append(InputMediaAnimation(media=file_path_str, has_spoiler=is_sensitive))
                 case VideoFile():
                     photos_videos.append(
                         InputMediaVideo(
                             media=file_path_str,
+                            has_spoiler=is_sensitive,
                             video_cover=media_ref.thumb_url if video_cover else None,
                             duration=duration,
                             width=width,
@@ -541,6 +575,7 @@ def build_input_media(
                     photos_videos.append(
                         InputMediaVideo(
                             media=processed.source.video_path,
+                            has_spoiler=is_sensitive,
                             video_cover=file_path_str if video_cover else None,
                             duration=duration,
                             width=width,
@@ -566,13 +601,17 @@ async def send_single(
         sent: Message | None = None
         if animations:
             await sender.upload_photo()
-            sent = await sender.animation(media_input(animations[0].media), caption=caption)
+            sent = await sender.animation(
+                media_input(animations[0].media), caption=caption, has_spoiler=animations[0].has_spoiler
+            )
         else:
             single = photos_videos[0]
             match single:
                 case InputMediaPhoto():
                     await sender.upload_photo()
-                    sent = await sender.photo(media_input(single.media), caption=caption)
+                    sent = await sender.photo(
+                        media_input(single.media), caption=caption, has_spoiler=single.has_spoiler
+                    )
                 case InputMediaVideo():
                     await sender.upload_video()
                     sent = await sender.streaming_video_with_cover_fallback(
@@ -582,6 +621,7 @@ async def send_single(
                         duration=single.duration,
                         width=single.width,
                         height=single.height,
+                        has_spoiler=single.has_spoiler,
                     )
 
         if sent and (cm := cache_media_from_message(sent)):
@@ -628,7 +668,9 @@ async def send_multi(
             await sender.upload_photo()
             caption_ = caption if ani == animations[-1] and not photos_videos else ""
             try:
-                sent = await sender.animation(media_input(ani.media), caption=caption_)
+                sent = await sender.animation(
+                    media_input(ani.media), caption=caption_, has_spoiler=ani.has_spoiler
+                )
             except Exception as e:
                 logger.warning(f"上传失败 {e}, 使用兼容模式上传")
                 not_cache = True
@@ -666,37 +708,46 @@ async def send_multi(
     return None if not_cache else media_list
 
 
-async def send_cached_single(sender: MessageSender, m: CacheMedia, caption: str, *, video_cover: bool) -> None:
+async def send_cached_single(
+    sender: MessageSender, m: CacheMedia, caption: str, *, video_cover: bool, is_sensitive: bool = False
+) -> None:
     """从缓存发送单个媒体。"""
     match m.type:
         case CacheMediaType.PHOTO:
             await sender.upload_photo()
-            await sender.photo(m.file_id, caption=caption)
+            await sender.photo(m.file_id, caption=caption, has_spoiler=is_sensitive)
         case CacheMediaType.VIDEO:
             await sender.upload_video()
             await sender.streaming_video(
                 m.file_id,
                 caption=caption,
                 video_cover=m.cover_file_id if video_cover else None,
+                has_spoiler=is_sensitive,
             )
         case CacheMediaType.ANIMATION:
             await sender.upload_photo()
-            await sender.animation(m.file_id, caption=caption)
+            await sender.animation(m.file_id, caption=caption, has_spoiler=is_sensitive)
         case CacheMediaType.DOCUMENT:
             await sender.upload_document()
             await sender.force_document(m.file_id, caption=caption)
 
 
-async def send_cached_multi(sender: MessageSender, media: list[CacheMedia], caption: str, *, video_cover: bool) -> None:
+async def send_cached_multi(
+    sender: MessageSender, media: list[CacheMedia], caption: str, *, video_cover: bool, is_sensitive: bool = False
+) -> None:
     """从缓存发送多个媒体。"""
     animations = [m for m in media if m.type == CacheMediaType.ANIMATION]
     others = [m for m in media if m.type != CacheMediaType.ANIMATION]
 
     for ani in animations:
         await sender.upload_photo()
-        await sender.animation(ani.file_id, caption=caption if ani == animations[-1] and not others else "")
+        await sender.animation(
+            ani.file_id,
+            caption=caption if ani == animations[-1] and not others else "",
+            has_spoiler=is_sensitive,
+        )
 
-    media_group = build_cached_media_group(others, video_cover=video_cover)
+    media_group = build_cached_media_group(others, video_cover=video_cover, is_sensitive=is_sensitive)
     for batch in batched(media_group, 10):
         if batch[-1] == media_group[-1]:
             batch[0].caption = caption
