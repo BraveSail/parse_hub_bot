@@ -7,7 +7,7 @@ from parsehub.types import (
     RichTextParseResult,
     VideoRef,
 )
-from pyrogram import Client
+from pyrogram import Client, raw, utils
 from pyrogram.types import (
     ChosenInlineResult,
     InlineQuery,
@@ -124,9 +124,19 @@ async def _drop_inline_keyboard(cli: Client, inline_message_id: str) -> None:
 
     带键盘是 Telegram 回传 inline_message_id 的前提, 但用户并不需要这个按钮,
     所以一拿到句柄就立刻清掉。
+
+    不能用空的 InlineKeyboardMarkup: 它序列化成 ReplyInlineMarkup(rows=[]),
+    会被 Telegram 以 REPLY_MARKUP_INVALID 拒掉。移除键盘要用 ReplyKeyboardHide
+    (Bot API 传空 inline_keyboard 时映射的也是这个类型)。
     """
     try:
-        await cli.edit_inline_reply_markup(inline_message_id, reply_markup=Ikm([]))
+        unpacked = utils.unpack_inline_message_id(inline_message_id)
+        session = await cli.get_session(unpacked.dc_id, is_media=True)
+        await session.invoke(
+            raw.functions.messages.EditInlineBotMessage(
+                id=unpacked, reply_markup=raw.types.ReplyKeyboardHide()
+            )
+        )
     except Exception as e:
         logger.debug(f"摘除 inline 键盘失败: {e}")
 
