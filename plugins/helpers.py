@@ -148,6 +148,16 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
 
+# 折叠阈值按实际观感定: 中文一行约 30 字符, 350 字符已是十来行, 再长就该折起来。
+# 正文与引用块共用同一套阈值, 保证折叠规则统一。
+_FOLD_CHAR_THRESHOLD = 350
+_FOLD_LINE_THRESHOLD = 8
+
+
+def _should_fold(text: str) -> bool:
+    """文本是否超过折叠阈值 (字符数或行数任一超出)."""
+    return len(text) > _FOLD_CHAR_THRESHOLD or len(text.splitlines()) > _FOLD_LINE_THRESHOLD
+
 # pyrogram 的 Markdown 解析器 (client 默认 ParseMode.DEFAULT) 把成对的
 # __ ** -- ~~ || ` 当格式定界符, 定界符字符本身会被吃掉 —— 引用块里的推文 handle
 # (@__yuuuumr__ 显示成 @yuuuumr 并变成斜体) 就是这么被误伤的。
@@ -182,15 +192,43 @@ def neutralize_markdown_urls(text: str) -> str:
     return _URL_RE.sub(lambda m: neutralize_markdown(m.group(0)), text)
 
 
-def _strip_quote_prefix(match: re.Match) -> str:
+def _strip_quote_markers(block: str) -> str:
     """去掉引用块每行行首的 '>', 并中和块内的 markdown 定界符。"""
-    lines = match.group(0).rstrip("\n").split("\n")
+    lines = block.rstrip("\n").split("\n")
     body = "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
     return neutralize_markdown(body)
 
 
-def convert_markdown_quote(text: str, *, allow_blockquote: bool = True) -> str:
+def _strip_quote_prefix(match: re.Match) -> str:
+    return _strip_quote_markers(match.group(0))
+
+
+def _split_quote_segments(text: str) -> list[tuple[bool, str]]:
+    """把文本切成 (是否引用块, 片段) 序列; 引用块与其间文本各自独立成段。"""
+    segments: list[tuple[bool, str]] = []
+    pos = 0
+    for match in _QUOTE_BLOCK_RE.finditer(text):
+        if match.start() > pos:
+            segments.append((False, text[pos : match.start()]))
+        segments.append((True, match.group(0)))
+        pos = match.end()
+    if pos < len(text):
+        segments.append((False, text[pos:]))
+    return segments
+
+
+def _render_foldable(content: str) -> str:
+    """包成可折叠 blockquote (长内容展示用)。"""
+    return f"<blockquote expandable>{content}</blockquote>"
+
+
+def convert_markdown_quote(
+    text: str, *, allow_blockquote: bool = True, allow_expandable: bool = True
+) -> str:
     """把 Markdown 引用行 (以 '>' 开头) 转成 Telegram 的 <blockquote>。
+
+    引用块超长时按与正文相同的阈值折叠成 <blockquote expandable> (统一折叠规则);
+    allow_expandable=False 时引用块保持展开。
 
     allow_blockquote=False 时把引用前缀整个去掉: 内联消息带 blockquote 实体时,
     Telegram 会丢掉整批格式、整条消息变成纯文本。注意不能只跳过 <blockquote> 标签,
@@ -201,25 +239,46 @@ def convert_markdown_quote(text: str, *, allow_blockquote: bool = True) -> str:
         return _QUOTE_BLOCK_RE.sub(_strip_quote_prefix, text)
 
     def _replace(match: re.Match) -> str:
-        return f"<blockquote>{_strip_quote_prefix(match)}</blockquote>"
+        body = _strip_quote_markers(match.group(0))
+        if allow_expandable and _should_fold(body):
+            return _render_foldable(body)
+        return f"<blockquote>{body}</blockquote>"
 
     return _QUOTE_BLOCK_RE.sub(_replace, text)
 
 
 def format_text(text: str, *, allow_blockquote: bool = True, allow_expandable: bool = True) -> str:
-    """格式化输出内容, 限制长度, 添加折叠块样式"""
+    """格式化输出内容, 限制长度, 添加折叠块样式。
+
+    折叠规则统一: 引用块与正文各段共用同一阈值 (字符数或行数任一超出即折叠),
+    且各段独立折叠、互不外包 (Telegram 不支持嵌套 blockquote)。
+    """
     text = text.strip()
     if len(text) > 1000:
         # 在 Markdown 阶段截断, 避免切断后面生成的 blockquote 标签
         text = text[:900] + "......"
-    text = convert_markdown_quote(text, allow_blockquote=allow_blockquote)
-    # 阈值按实际观感定: 中文一行约 30 字符, 350 字符已是十来行, 再长就该折起来
-    if len(text) > 350 or len(text.splitlines()) > 8:
-        if "<blockquote>" in text or not allow_expandable:
-            # Telegram 不支持嵌套 blockquote; 不允许折叠块时直接返回
-            return text
-        return f"<blockquote expandable>{text}</blockquote>"
-    return text
+
+    if not allow_blockquote:
+        # 该通道不支持引用块: 剥掉前缀后按普通文本处理
+        text = _QUOTE_BLOCK_RE.sub(_strip_quote_prefix, text)
+        if allow_expandable and _should_fold(text):
+            return _render_foldable(text)
+        return text
+
+    out: list[str] = []
+    for is_quote, segment in _split_quote_segments(text):
+        if is_quote:
+            out.append(convert_markdown_quote(segment, allow_expandable=allow_expandable))
+            continue
+        core = segment.strip()
+        if allow_expandable and core and _should_fold(core):
+            # 保留片段两侧空白 (块间分隔), 只折叠核心内容
+            lead = segment[: len(segment) - len(segment.lstrip())]
+            trail = segment[len(segment.rstrip()) :]
+            out.append(f"{lead}{_render_foldable(core)}{trail}")
+        else:
+            out.append(segment)
+    return "".join(out)
 
 
 async def create_telegraph_page(html_content: str, cli: Client, parse_result: AnyParseResult) -> str:

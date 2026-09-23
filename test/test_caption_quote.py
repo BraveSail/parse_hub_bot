@@ -69,10 +69,32 @@ def test_multiple_quote_blocks():
     assert convert_markdown_quote(text) == "<blockquote>one</blockquote>\n\ntext\n\n<blockquote>two</blockquote>"
 
 
-def test_format_text_does_not_nest_blockquote():
+def test_format_text_folds_long_quote_without_nesting():
+    """超长引用块自行折叠, 但不外包第二层 blockquote (TG 不支持嵌套)."""
     out = format_text("> \u56de\u590d @user\uff1a\n> " + "x" * 600)
     assert out.count("<blockquote") == 1
+    assert "<blockquote expandable>" in out
+
+
+def test_format_text_keeps_short_quote_unfolded():
+    """短引用块保持展开 (与正文同一阈值)."""
+    out = format_text("> \u56de\u590d @u\uff1a\n> hi\n\nbody")
+    assert out.startswith("<blockquote>")
     assert "expandable" not in out
+
+
+def test_quote_and_body_fold_independently():
+    """引用块与正文各自按同一阈值折叠, 互不外包 (总长控制在截断线内)."""
+    out = format_text("> \u56de\u590d @u\uff1a\n> " + "q" * 400 + "\n\n" + "b" * 400)
+    assert out.count("<blockquote") == 2
+    assert out.count("<blockquote expandable>") == 2
+    assert "......" not in out  # 未触发 1000 字符截断
+
+
+def test_quote_not_folded_when_expandable_disabled():
+    out = format_text("> " + "x" * 600, allow_expandable=False)
+    assert "<blockquote expandable>" not in out
+    assert "<blockquote>" in out
 
 
 def test_format_text_folds_long_plain_text():
