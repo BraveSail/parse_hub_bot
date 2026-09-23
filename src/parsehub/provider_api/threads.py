@@ -86,7 +86,7 @@ class ThreadsAPI:
             doc_id=self.POST_DOC_ID,
             variables=self._build_variables(code),
         )
-        post = self._extract_post(payload, code)
+        post, reply_to = self._extract_post(payload, code)
         if post is None:
             raise ThreadsAPIError("Fetching Post metadata failed.")
         result = ThreadsPost.from_graphql(post)
@@ -94,6 +94,11 @@ class ThreadsAPI:
             try:
                 result.author_name = self.get_username_by_url(url).removeprefix("@")
             except ValueError:
+                pass
+        if reply_to is not None:
+            try:
+                result.reply_to = ThreadsPost.from_graphql(reply_to)
+            except Exception:  # noqa: BLE001 - 父帖解析失败不应阻断主帖
                 pass
         return result
 
@@ -130,21 +135,31 @@ class ThreadsAPI:
         return payload
 
     @staticmethod
-    def _extract_post(payload: dict[str, Any], code: str) -> dict[str, Any] | None:
+    def _extract_post(payload: dict[str, Any], code: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """返回 (目标帖, 被回复的父帖); 找不到精确匹配时退回第一条.
+
+        回复链与目标帖同处一个 thread_items 数组, 且按时间顺序排列;
+        目标帖紧邻的前一条即它回复的对象 (多层链中取直接回复对象).
+        仅当目标帖本身是回复 (is_reply) 时, 前一条才视为被回复帖.
+        """
         data = ((payload.get("data") or {}).get("data")) or {}
         edges = data.get("edges") or []
         fallback: dict[str, Any] | None = None
         for edge in edges:
-            for item in (edge.get("node") or {}).get("thread_items") or []:
+            items = (edge.get("node") or {}).get("thread_items") or []
+            prev: dict[str, Any] | None = None
+            for item in items:
                 post = item.get("post")
                 if not isinstance(post, dict):
                     continue
                 if fallback is None:
                     fallback = post
                 if post.get("code") == code:
-                    return post
+                    is_reply = bool((post.get("text_post_app_info") or {}).get("is_reply"))
+                    return post, (prev if is_reply else None)
+                prev = post
         # 找不到精确匹配时退回第一条 (通常即目标帖子本身)
-        return fallback
+        return fallback, None
 
     def _new_client(self) -> httpx.AsyncClient:
         cookies = self.DEFAULT_COOKIES | self.cookie
@@ -222,6 +237,8 @@ class ThreadsPost:
     content: str
     media: ThreadsMedia | list[ThreadsMedia] | None = None
     author_name: str = ""
+    author_handle: str = ""
+    reply_to: ThreadsPost | None = None
 
     @classmethod
     def from_graphql(cls, post: dict[str, Any]) -> ThreadsPost:
@@ -231,6 +248,7 @@ class ThreadsPost:
             content=str(content or ""),
             media=cls._fetch_media(post),
             author_name=get_author_name(post.get("user")),
+            author_handle=str((post.get("user") or {}).get("username") or ""),
         )
 
     @classmethod

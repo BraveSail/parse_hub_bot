@@ -23,7 +23,32 @@ class ThreadsParser(BaseParser):
                         media.append(VideoRef(url=m.url, thumb_url=m.thumb_url, width=m.width, height=m.height))
                     case ThreadsMediaType.IMAGE:
                         media.append(ImageRef(url=m.url, thumb_url=m.url, width=m.width, height=m.height))
-        return MultimediaParseResult(content=post.content, media=media, author_name=post.author_name)
+        quote = ThreadsParser._build_quote(post)
+        return MultimediaParseResult(
+            content=f"{quote}{post.content}",
+            media=media,
+            author_name=post.author_name,
+        )
+
+    @staticmethod
+    def _build_quote(post: ThreadsPost) -> str:
+        """把被回复的帖子渲染成 Markdown 引用块, 不是回复或内容为空时返回空串."""
+        reply = post.reply_to
+        if not reply:
+            return ""
+        text = (reply.content or "").strip()
+        if not text:
+            return ""
+        handle = (reply.author_handle or "").strip()
+        name = (reply.author_name or "").strip()
+        if handle:
+            head = f"> 回复 @{handle}："
+        elif name:
+            head = f"> 回复 {name}："
+        else:
+            head = "> 回复："
+        lines = "\n".join(f"> {line}" if line.strip() else ">" for line in text.splitlines())
+        return f"{head}\n{lines}\n\n"
 
     async def _parse(self, url: str) -> ThreadsPost:
         # 公开帖子无需登录即可解析; 登录墙内容 (私密/受限/年龄限制) 才需要 Cookie, 有则带上
