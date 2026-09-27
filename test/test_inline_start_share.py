@@ -72,7 +72,7 @@ def test_switch_pm_present_for_multi_media():
 
     url = "https://www.pixiv.net/artworks/149431603"
     text, param = asyncio.run(build_switch_pm(5, url, "zh-hans"))
-    assert text == "发送全部 5 项"
+    assert text == "获取全部 5 项"
     assert re.fullmatch(r"[A-Za-z0-9_-]{1,64}", param)
     assert asyncio.run(inline_start_link.resolve(param)) == url
 

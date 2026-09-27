@@ -18,6 +18,7 @@
 2bc28481a223: Tự động xóa tin nhắn liên kết
 30364e475d07: Đây không phải thao tác của bạn
 3065ed13e5f9: Lấy liên kết gốc
+31936e26c173: Nhận tất cả {media_count} mục
 33ccc7a4682a: Nền tảng không được hỗ trợ
 3795485677d6: Cấu hình nhóm
 39b75e75d433: Ảnh bìa video
@@ -104,7 +105,6 @@ c97827ba89ec: '**Gửi liên kết chia sẻ để phân tích**
 
   **Mã nguồn mở: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Bảng cấu hình
-d33bbf61037a: Gửi tất cả {media_count} mục
 d5631690265c: Không thể nhận diện mục tiêu cấu hình
 d59c948c471c: Đang phân tích...
 d5a73b0c7f2f: Tải lên

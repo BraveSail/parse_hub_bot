@@ -111,7 +111,7 @@ async def parse(cli: Client, msg: Message) -> None:
 async def parse_url(cli: Client, msg: Message, url: str) -> None:
     """按用户默认设置解析单个链接并发送。
 
-    /start 深链 (inline 多图 → "发送全部") 这类非文本入口用它走与普通消息完全
+    /start 深链 (inline 多图 → "获取全部") 这类非文本入口用它走与普通消息完全
     相同的解析/发送流程 (含限流与状态消息)。
     """
     async with get_session() as session:

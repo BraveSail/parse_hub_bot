@@ -17,6 +17,7 @@
 2bc28481a223: Bağlantı mesajlarını otomatik sil
 30364e475d07: Bu senin işlemin değil
 3065ed13e5f9: Orijinal bağlantıyı al
+31936e26c173: Tüm {media_count} öğelerini alın
 33ccc7a4682a: Desteklenmeyen platform
 3795485677d6: Grup yapılandırması
 39b75e75d433: Video kapağı
@@ -105,7 +106,6 @@ c97827ba89ec: '**Çözümleme için paylaşım bağlantısı gönderin**
 
   **Açık kaynak adresi: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Yapılandırma paneli
-d33bbf61037a: Tüm {media_count} öğelerini gönder
 d5631690265c: Yapılandırma hedefi tanınamadı
 d59c948c471c: Çözülüyor...
 d5a73b0c7f2f: Yükle

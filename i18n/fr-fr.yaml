@@ -19,6 +19,7 @@
 2bc28481a223: Suppression automatique des messages contenant des liens
 30364e475d07: Ce n'est pas votre action
 3065ed13e5f9: Obtenir le lien original
+31936e26c173: Obtenez tous les {media_count} articles
 33ccc7a4682a: Plateforme non supportée
 3795485677d6: Configuration du groupe
 39b75e75d433: Vignette vidéo
@@ -107,7 +108,6 @@ c97827ba89ec: '**Envoyez un lien de partage pour analyse**
 
   **Code source : [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Panneau de configuration
-d33bbf61037a: Envoyer tous les {media_count} articles
 d5631690265c: Impossible de reconnaître la cible de configuration
 d59c948c471c: Analyse en cours...
 d5a73b0c7f2f: Téléverser

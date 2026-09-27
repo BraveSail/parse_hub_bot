@@ -60,7 +60,7 @@ INLINE_DESC_LIMIT = 200
 """inline 结果项描述上限"""
 
 INLINE_SWITCH_PM_MIN_MEDIA = 2
-"""给"发送全部"按钮的最小媒体数 (inline 一次只能发一个媒体)"""
+"""给"获取全部"按钮的最小媒体数 (inline 一次只能发一个媒体)"""
 
 
 def clip_inline_text(text: str | None, limit: int) -> str:
@@ -93,7 +93,7 @@ async def build_switch_pm(media_count: int, raw_url: str, lang: str) -> tuple[st
         return "", ""
     _t = t_[lang]
     token = await inline_start_link.register(raw_url)
-    return _t(f"发送全部 {media_count} 项"), token
+    return _t(f"获取全部 {media_count} 项"), token
 
 
 SEARCH_ICON = "https://i.imgloc.com/2023/06/15/Vbfazk.png"

@@ -18,6 +18,7 @@
 2bc28481a223: Eliminazione automatica dei messaggi con link
 30364e475d07: Questa non è la tua operazione
 3065ed13e5f9: Ottieni link originale
+31936e26c173: Ottieni tutti i {media_count} elementi
 33ccc7a4682a: Piattaforma non supportata
 3795485677d6: Configurazione gruppo
 39b75e75d433: Copertina video
@@ -106,7 +107,6 @@ c97827ba89ec: '**Invia un link di condivisione per l''analisi**
 
   **Codice sorgente: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Pannello di configurazione
-d33bbf61037a: Invia tutti gli {media_count} elementi
 d5631690265c: Obiettivo di configurazione non riconosciuto
 d59c948c471c: Analisi in corso...
 d5a73b0c7f2f: Carica

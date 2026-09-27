@@ -19,6 +19,7 @@
 2bc28481a223: Automatisches Löschen von Linknachrichten
 30364e475d07: Das ist nicht Ihre Aktion
 3065ed13e5f9: Original-Link abrufen
+31936e26c173: Holen Sie sich alle {media_count} Artikel
 33ccc7a4682a: Nicht unterstützte Plattform
 3795485677d6: Gruppenkonfiguration
 39b75e75d433: Video-Cover
@@ -108,7 +109,6 @@ c97827ba89ec: '**Senden Sie einen Freigabelink zur Analyse**
 
   **Open-Source-Adresse: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Konfigurationspanel
-d33bbf61037a: Versende alle {media_count} Artikel
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
 d59c948c471c: Analysiere...
 d5a73b0c7f2f: Hochladen

@@ -18,6 +18,7 @@
 2bc28481a223: Hapus otomatis pesan tautan
 30364e475d07: Ini bukan tindakan Anda
 3065ed13e5f9: Dapatkan tautan asli
+31936e26c173: Dapatkan semua {media_count} item
 33ccc7a4682a: Platform tidak didukung
 3795485677d6: Konfigurasi grup
 39b75e75d433: Sampul video
@@ -106,7 +107,6 @@ c97827ba89ec: '**Kirim tautan berbagi untuk parsing**
 
   **Sumber terbuka: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Panel konfigurasi
-d33bbf61037a: Kirim semua {media_count} item
 d5631690265c: Target konfigurasi tidak dikenali
 d59c948c471c: Sedang memproses...
 d5a73b0c7f2f: Unggah

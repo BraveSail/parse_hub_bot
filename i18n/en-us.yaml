@@ -19,6 +19,7 @@
 2bc28481a223: Automatically delete link messages
 30364e475d07: This is not your operation
 3065ed13e5f9: Get original link
+31936e26c173: Get all {media_count} items
 33ccc7a4682a: Unsupported platform
 3795485677d6: Group Configuration
 39b75e75d433: Video cover
@@ -103,7 +104,6 @@ c97827ba89ec: '**Send share link for parsing**
 
   **Open source: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Configuration panel
-d33bbf61037a: Send all {media_count} items
 d5631690265c: Unrecognized configuration target
 d59c948c471c: Parsing...
 d5a73b0c7f2f: Upload

@@ -19,6 +19,7 @@
 2bc28481a223: Automatisch verwijderde linkberichten
 30364e475d07: Dit is niet jouw actie
 3065ed13e5f9: Oorspronkelijke link ophalen
+31936e26c173: Ontvang alle {media_count} artikelen
 33ccc7a4682a: Niet-ondersteund platform
 3795485677d6: Groepsconfiguratie
 39b75e75d433: Videominiatuur
@@ -107,7 +108,6 @@ c97827ba89ec: '**Stuur een deel-link om te parseren**
 
   **Open source adres: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Configuratiepaneel
-d33bbf61037a: Verstuur alle {media_count} artikelen
 d5631690265c: Kan configuratiedoel niet herkennen
 d59c948c471c: Bezig met ontleden...
 d5a73b0c7f2f: Uploaden
