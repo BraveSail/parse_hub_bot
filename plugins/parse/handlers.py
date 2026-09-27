@@ -108,6 +108,31 @@ async def parse(cli: Client, msg: Message) -> None:
     await asyncio.gather(*tasks)
 
 
+async def parse_url(cli: Client, msg: Message, url: str) -> None:
+    """按用户默认设置解析单个链接并发送。
+
+    /start 深链 (inline 多图 → "发送全部") 这类非文本入口用它走与普通消息完全
+    相同的解析/发送流程 (含限流与状态消息)。
+    """
+    async with get_session() as session:
+        if msg.from_user:
+            lang = await UserService(session).get_lang(msg.from_user.id)
+        else:
+            lang = bs.language
+        config = await SettingsService(session).get_config(get_config_target(msg))
+    _t = t_[lang]
+    await _handle_parse_request(
+        ParseRequest(
+            cli=cli,
+            msg=msg,
+            url=url,
+            mode=config.default_mode,
+            config=config,
+            t_=_t,
+        )
+    )
+
+
 @with_request_id
 async def _handle_parse_request(req: ParseRequest) -> None:
     try:

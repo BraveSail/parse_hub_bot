@@ -45,7 +45,7 @@ from plugins.helpers import (
 )
 from plugins.parse.reporters import InlineStatusReporter
 from repo.settings import SettingsConfig
-from services import ParseService, SettingsService, UserService
+from services import ParseService, SettingsService, UserService, inline_start_link
 from services.cache import CacheEntry, CacheMediaType, parse_cache, persistent_cache
 from services.media import resolve_media_info
 from services.pipeline import ParsePipeline
@@ -59,6 +59,9 @@ INLINE_TITLE_LIMIT = 90
 INLINE_DESC_LIMIT = 200
 """inline 结果项描述上限"""
 
+INLINE_SWITCH_PM_MIN_MEDIA = 2
+"""给"发送全部"按钮的最小媒体数 (inline 一次只能发一个媒体)"""
+
 
 def clip_inline_text(text: str | None, limit: int) -> str:
     """压平换行并截断, 用于 inline 结果项的 title/description。
@@ -68,6 +71,29 @@ def clip_inline_text(text: str | None, limit: int) -> str:
     """
     flat = " ".join((text or "").split())
     return flat if len(flat) <= limit else flat[:limit] + "…"
+
+
+def count_inline_media(media: object) -> int:
+    """inline 结果对应的媒体数量 (无媒体/None 都算 0)。"""
+    return 0 if media is None else len(to_list(media))  # type: ignore[arg-type]
+
+
+async def build_switch_pm(media_count: int, raw_url: str, lang: str) -> tuple[str, str]:
+    """多图时给 inline 结果加"切到私聊发全部"的 switch_pm 参数。
+
+    Telegram 的 switch_pm 会在 inline 结果上方显示一行文字, 点击后切到 bot 私聊
+    并发送 `/start <parameter>`。inline 一次只能发一个媒体, 多图作品只能这样把
+    整份内容交给 bot 在私聊里发 (相册), 所以仅媒体数 >= 2 时下发。
+
+    parameter 只允许 A-Za-z0-9_- 且不超过 64 字符, 装不下链接, 所以用短期映射的
+    token 代替 (见 services/inline_share.py)。无需按钮时返回两个空串 (pyrogram
+    只在 text 非空时才把 switch_pm 发给 Telegram)。
+    """
+    if media_count < INLINE_SWITCH_PM_MIN_MEDIA:
+        return "", ""
+    _t = t_[lang]
+    token = await inline_start_link.register(raw_url)
+    return _t(f"发送全部 {media_count} 项"), token
 
 
 SEARCH_ICON = "https://i.imgloc.com/2023/06/15/Vbfazk.png"
@@ -106,7 +132,15 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建 cached 结果")
         results = build_cached_inline_results(cached, raw_url, lang, config)
-        await inline_query.answer(results[:50], cache_time=60)
+        switch_pm_text, switch_pm_parameter = await build_switch_pm(
+            count_inline_media(cached.media), raw_url, lang
+        )
+        await inline_query.answer(
+            results[:50],
+            cache_time=60,
+            switch_pm_text=switch_pm_text,
+            switch_pm_parameter=switch_pm_parameter,
+        )
         return
 
     parse_result = await parse_cache.get(raw_url)
@@ -116,7 +150,15 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
 
     results = await build_inline_results(parse_result, cli, lang, config)
     logger.debug(f"inline 查询完成, 返回 {len(results)} 个结果")
-    await inline_query.answer(results[:50], cache_time=0)
+    switch_pm_text, switch_pm_parameter = await build_switch_pm(
+        count_inline_media(parse_result.media), raw_url, lang
+    )
+    await inline_query.answer(
+        results[:50],
+        cache_time=0,
+        switch_pm_text=switch_pm_text,
+        switch_pm_parameter=switch_pm_parameter,
+    )
 
 
 async def _drop_inline_keyboard(cli: Client, inline_message_id: str) -> None:

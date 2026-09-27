@@ -1,6 +1,7 @@
 from .cache import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult, parse_cache, persistent_cache
 from .chat import ChatService
 from .forum_topic import ForumTopicService
+from .inline_share import InlineStartLinkService, inline_start_link
 from .parser import ParseService
 from .pipeline import ParsePipeline, PipelineProgressCallback, PipelineResult, StatusReporter
 from .settings import (
@@ -20,6 +21,8 @@ __all__ = [
     "UserService",
     "ChatService",
     "ForumTopicService",
+    "InlineStartLinkService",
+    "inline_start_link",
     "ConfigPatch",
     "ParseService",
     "SettingsService",
