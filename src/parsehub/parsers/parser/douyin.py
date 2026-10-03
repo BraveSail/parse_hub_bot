@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Self, Union
@@ -17,7 +18,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import get_author_name
+from ...utils.helpers import get_author_name, to_datetime, to_int
 from ..base.base import BaseParser
 
 
@@ -71,6 +72,8 @@ class DouyinParser(BaseParser):
             title=result.desc,
             author_name=result.author_name,
             video=result.video,
+            published_at=result.published_at,
+            view_count=result.view_count,
         )
 
     @staticmethod
@@ -80,6 +83,8 @@ class DouyinParser(BaseParser):
             title=result.desc,
             author_name=result.author_name,
             photo=result.image_list,
+            published_at=result.published_at,
+            view_count=result.view_count,
         )
 
 
@@ -187,6 +192,8 @@ class DouyinApiResult:
     desc: str = ""
     image_list: list[ImageRef | LivePhotoRef] = field(default_factory=list)
     author_name: str = ""
+    published_at: datetime | None = None
+    view_count: int | None = None
 
     @classmethod
     def parse(cls, json_dict: dict) -> Self:
@@ -203,6 +210,9 @@ class DouyinApiResult:
         else:
             result = cls._parse_video(data, desc)
         result.author_name = get_author_name(data.get("author"))
+        # create_time 是 unix 秒; 浏览量在 statistics.play_count (部分作品不带该字段)
+        result.published_at = to_datetime(data.get("create_time"))
+        result.view_count = to_int((data.get("statistics") or {}).get("play_count"))
         return result
 
     @classmethod

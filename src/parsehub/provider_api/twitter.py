@@ -4,13 +4,14 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, NamedTuple
 
 import httpx
 from loguru import logger
 
 from ..types import ParseError
-from ..utils.helpers import UA
+from ..utils.helpers import UA, to_datetime, to_int
 
 
 class Twitter:
@@ -117,6 +118,9 @@ class Twitter:
         reply_to_id = str(legacy.get("in_reply_to_status_id_str") or "")
         quoted_status_id = str(legacy.get("quoted_status_id_str") or "")
         quoted_status = self._parse_quoted(result)
+        # 发布时间在 legacy.created_at, 浏览量在顶层的 views.count (字符串)
+        published_at = legacy.get("created_at")
+        view_count = (result.get("views") or {}).get("count")
 
         if article := result.get("article", {}):
             ta = ArticleRenderer(article["article_results"]["result"]).render()
@@ -128,6 +132,8 @@ class Twitter:
                 reply_to_id=reply_to_id,
                 quoted_status_id=quoted_status_id,
                 quoted_status=quoted_status,
+                published_at=published_at,
+                view_count=view_count,
                 is_sensitive=bool(legacy.get("possibly_sensitive")),
             )
 
@@ -192,6 +198,8 @@ class Twitter:
             reply_to_id=reply_to_id,
             quoted_status_id=quoted_status_id,
             quoted_status=quoted_status,
+            published_at=published_at,
+            view_count=view_count,
             is_sensitive=bool(legacy.get("possibly_sensitive")),
         )
 
@@ -271,6 +279,8 @@ class TwitterTweet:
         quoted_status_id: str = "",
         quoted_status: TwitterTweet | None = None,
         is_sensitive: bool = False,
+        published_at: datetime | None = None,
+        view_count: int | None = None,
     ):
         self.tweet_id = tweet_id
         self.full_text = re.sub(r"\s*https://t\.co/[^\s,]+$", "", full_text or "") if media else full_text
@@ -288,6 +298,10 @@ class TwitterTweet:
         """被引用的推文（优先取响应内嵌数据，缺失时由 fetch_tweet 按 ID 补取）"""
         self.is_sensitive = is_sensitive
         """推文是否被标记为敏感内容 (legacy.possibly_sensitive)"""
+        self.published_at = to_datetime(published_at)
+        """发布时间 (legacy.created_at)"""
+        self.view_count = to_int(view_count)
+        """浏览量 (views.count)"""
 
 
 @dataclass

@@ -184,6 +184,8 @@ class TestParseResultToDict(unittest.TestCase):
                 "author_name": "",
                 "raw_url": "https://www.bilibili.com/video/BV123",
                 "is_sensitive": False,
+                "published_at": None,
+                "view_count": None,
                 "media": {
                     "url": "https://cdn.example/video.mp4",
                     "ext": "mp4",
@@ -194,6 +196,19 @@ class TestParseResultToDict(unittest.TestCase):
                 },
             },
         )
+
+    def test_to_dict_normalizes_published_at_and_view_count(self):
+        """平台给的时间/计数五花八门, to_dict 里要已是归一化后的值"""
+        result = VideoParseResult(
+            title="T",
+            video=VideoRef(url="https://cdn.example/v.mp4"),
+            published_at="Tue Oct 01 12:00:00 +0000 2026",
+            view_count="1,455",
+        )
+
+        data = result.to_dict()
+        self.assertEqual(data["published_at"], "2026-10-01T12:00:00+00:00")
+        self.assertEqual(data["view_count"], 1455)
 
     def test_image_parse_result_to_dict_serializes_media_lists(self):
         result = ImageParseResult(

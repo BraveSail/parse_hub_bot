@@ -4,6 +4,7 @@ import time
 from abc import ABC
 from collections.abc import Sequence
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -15,7 +16,7 @@ from slugify import slugify
 from ..config import GlobalConfig
 from ..errors import DeleteError, DownloadError
 from ..utils.downloader import download
-from ..utils.helpers import run_sync
+from ..utils.helpers import run_sync, to_datetime, to_int
 from .callback import ProgressCallback
 from .media_file import AniFile, AnyMediaFile, ImageFile, LivePhotoFile, VideoFile
 from .media_ref import AniRef, AnyMediaRef, ImageRef, LivePhotoRef, VideoRef
@@ -36,6 +37,8 @@ class ParseResult(ABC):  # noqa: B024
         platform: Platform | None = None,
         author_name: str = "",
         is_sensitive: bool = False,
+        published_at: datetime | None = None,
+        view_count: int | None = None,
     ):
         """
         :param title: 标题
@@ -43,6 +46,8 @@ class ParseResult(ABC):  # noqa: B024
         :param content: 正文 (纯文本)
         :param platform: 平台
         :param is_sensitive: 敏感内容标记 (R18/NSFW), 仅在有平台官方标记时置位
+        :param published_at: 发布时间 (带时区), 平台没提供时为 None
+        :param view_count: 浏览量/播放量, 平台没提供时为 None
         """
         self.raw_url: str = ""
         self.title = title.strip()
@@ -51,6 +56,8 @@ class ParseResult(ABC):  # noqa: B024
         self.platform = platform
         self.author_name = author_name.strip()
         self.is_sensitive = is_sensitive
+        self.published_at = to_datetime(published_at)
+        self.view_count = to_int(view_count)
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -82,6 +89,8 @@ class ParseResult(ABC):  # noqa: B024
             "author_name": self.author_name,
             "raw_url": self.raw_url,
             "is_sensitive": self.is_sensitive,
+            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "view_count": self.view_count,
             "media": media,
         }
 
@@ -306,6 +315,8 @@ class VideoParseResult(ParseResult):
         content: str = "",
         author_name: str = "",
         is_sensitive: bool = False,
+        published_at: datetime | None = None,
+        view_count: int | None = None,
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -314,6 +325,8 @@ class VideoParseResult(ParseResult):
             content=content,
             author_name=author_name,
             is_sensitive=is_sensitive,
+            published_at=published_at,
+            view_count=view_count,
         )
 
 
@@ -329,10 +342,18 @@ class ImageParseResult(ParseResult):
         content: str = "",
         author_name: str = "",
         is_sensitive: bool = False,
+        published_at: datetime | None = None,
+        view_count: int | None = None,
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
-            title=title, media=media, content=content, author_name=author_name, is_sensitive=is_sensitive
+            title=title,
+            media=media,
+            content=content,
+            author_name=author_name,
+            is_sensitive=is_sensitive,
+            published_at=published_at,
+            view_count=view_count,
         )
 
 
@@ -348,9 +369,17 @@ class MultimediaParseResult(ParseResult):
         content: str = "",
         author_name: str = "",
         is_sensitive: bool = False,
+        published_at: datetime | None = None,
+        view_count: int | None = None,
     ):
         super().__init__(
-            title=title, media=media, content=content, author_name=author_name, is_sensitive=is_sensitive
+            title=title,
+            media=media,
+            content=content,
+            author_name=author_name,
+            is_sensitive=is_sensitive,
+            published_at=published_at,
+            view_count=view_count,
         )
 
 
@@ -366,6 +395,8 @@ class RichTextParseResult(ParseResult):
         markdown_content: str = "",
         author_name: str = "",
         is_sensitive: bool = False,
+        published_at: datetime | None = None,
+        view_count: int | None = None,
     ):
         """
         :param title: 标题
@@ -379,6 +410,8 @@ class RichTextParseResult(ParseResult):
             content=self.plaintext_content,
             author_name=author_name,
             is_sensitive=is_sensitive,
+            published_at=published_at,
+            view_count=view_count,
         )
 
     def __repr__(self) -> str:

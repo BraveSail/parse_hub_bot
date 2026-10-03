@@ -112,12 +112,16 @@ class TwitterParser(BaseParser):
                 media=media,
                 author_name=tweet.author_name,
                 is_sensitive=tweet.is_sensitive,
+                published_at=tweet.published_at,
+                view_count=tweet.view_count,
             )
         return MultimediaParseResult(
             content=TwitterParser._compose(tweet.full_text, tweet),
             media=media,
             author_name=tweet.author_name,
             is_sensitive=tweet.is_sensitive,
+            published_at=tweet.published_at,
+            view_count=tweet.view_count,
         )
 
 

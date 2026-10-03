@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
 import httpx
 
-from ..utils.helpers import UA, get_author_name
+from ..utils.helpers import UA, get_author_name, to_datetime, to_int
 
 
 class ThreadsAPIError(Exception):
@@ -239,16 +240,21 @@ class ThreadsPost:
     author_name: str = ""
     author_handle: str = ""
     reply_to: ThreadsPost | None = None
+    published_at: datetime | None = None
+    view_count: int | None = None
 
     @classmethod
     def from_graphql(cls, post: dict[str, Any]) -> ThreadsPost:
         caption = post.get("caption")
         content = caption.get("text") if isinstance(caption, dict) else caption
+        # taken_at 是 unix 秒; 浏览量不在该 GraphQL 响应里 (页面上的 views 另走接口), 因此留 None
         return cls(
             content=str(content or ""),
             media=cls._fetch_media(post),
             author_name=get_author_name(post.get("user")),
             author_handle=str((post.get("user") or {}).get("username") or ""),
+            published_at=to_datetime(post.get("taken_at")),
+            view_count=to_int(post.get("view_count")),
         )
 
     @classmethod

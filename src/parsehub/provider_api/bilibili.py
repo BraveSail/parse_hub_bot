@@ -75,14 +75,19 @@ class BiliAPI:
                     raise Exception(f"获取动态信息失败: {mj}")
         return BiliDynamic.parse(cast(dict[str, Any], data))
 
-    async def get_video_info(self, url: str):
-        """获取视频详细信息"""
+    async def get_video_info(self, url: str, cookie: dict | None = None):
+        """获取视频详细信息
+
+        bilibili 的 view/detail 端点对匿名请求会直接风控 (非 JSON 响应),
+        必须带登录 cookie 才能拿到数据。
+        """
         bvid = self.get_bvid(url)
         if not bvid:
             raise ValueError(f"Invalid url: {url}")
         response = await self._get_client().get(
             "https://api.bilibili.com/x/web-interface/view/detail",
             params={"bvid": bvid},
+            cookies=cookie,
         )
         if response.status_code == 412:
             raise Exception("由于触发哔哩哔哩安全风控策略，该次访问请求被拒绝。")

@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 from collections.abc import Coroutine, Mapping
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import SecretStr
@@ -111,3 +112,79 @@ class SecretCookie:
             return result or None
 
         raise ValueError("cookie 必须是字符串、字典、JSON 或 None")
+
+
+#: 各平台的时间字符串格式, 按出现频率排列
+_DATETIME_FORMATS = (
+    "%a %b %d %H:%M:%S %z %Y",  # Twitter/X: "Tue Oct 01 12:00:00 +0000 2026"
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%d %H:%M",
+    "%Y-%m-%d",
+)
+
+#: 超过这个数值就当成毫秒时间戳 (unix 秒到公元 5138 年才会达到)
+_MILLISECOND_THRESHOLD = 100_000_000_000
+
+
+def to_datetime(value: object) -> datetime | None:
+    """把平台五花八门的时间字段归一化成带时区的 datetime。
+
+    支持 unix 秒 / 毫秒 (数字或纯数字字符串)、ISO 8601 字符串、
+    ``%a %b %d %H:%M:%S %z %Y`` 这类英文格式, 以及已经是 datetime 的值。
+    识别不了时返回 None 而不是抛错 —— 元数据缺失不该让整条解析失败。
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+    seconds: float | None = None
+    if isinstance(value, int | float):
+        seconds = float(value)
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        if re.fullmatch(r"\d+(\.\d+)?", text):
+            seconds = float(text)
+        else:
+            parsed = _parse_datetime_text(text)
+            return parsed
+
+    if seconds is None or seconds <= 0:
+        return None
+    if seconds >= _MILLISECOND_THRESHOLD:
+        seconds /= 1000
+    try:
+        return datetime.fromtimestamp(seconds, tz=UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def to_int(value: object) -> int | None:
+    """把平台给的字符串计数 (如 twitter 的 ``views.count``) 归一化成 int。"""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(float(str(value).strip().replace(",", "")))
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_datetime_text(text: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        parsed = None
+    if parsed is None:
+        for fmt in _DATETIME_FORMATS:
+            try:
+                parsed = datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+            break
+    if parsed is None:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)

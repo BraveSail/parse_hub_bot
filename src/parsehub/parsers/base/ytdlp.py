@@ -8,6 +8,7 @@ from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,7 +23,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import get_author_name
+from ...utils.helpers import get_author_name, to_datetime, to_int
 from .base import BaseParser
 
 # 用一个不会和 yt-dlp 普通日志冲突的前缀标记进度行，stdout/stderr 读取时只解析这类行。
@@ -461,7 +462,14 @@ class YtVideoParseResult(VideoParseResult):
     ):
         """dl: yt-dlp解析结果"""
         self.dl = dl
-        super().__init__(title=title, video=video, content=content, author_name=author_name or dl.author_name)
+        super().__init__(
+            title=title,
+            video=video,
+            content=content,
+            author_name=author_name or dl.author_name,
+            published_at=dl.published_at,
+            view_count=dl.view_count,
+        )
 
     @property
     def cli_args(self) -> list[str]:
@@ -561,3 +569,13 @@ class YtVideoInfo:
     @property
     def author_name(self) -> str:
         return get_author_name(self.info_json, "uploader", "channel", "creator", "uploader_id", "channel_id")
+
+    @property
+    def published_at(self) -> datetime | None:
+        """yt-dlp 的 timestamp (unix 秒); release_timestamp 是首播时间, 作为兜底"""
+        return to_datetime(self.info_json.get("timestamp") or self.info_json.get("release_timestamp"))
+
+    @property
+    def view_count(self) -> int | None:
+        """yt-dlp 的 view_count; 不同站点可用性不一 (facebook 实测有, 点赞/评论通常没有)"""
+        return to_int(self.info_json.get("view_count"))

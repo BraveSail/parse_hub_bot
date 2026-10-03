@@ -102,7 +102,7 @@ class BiliParse(BaseParser):
 
     async def bili_api_parse(self, url: str) -> BiliVideoParseResult | ImageParseResult:
         async with BiliAPI(proxy=self.proxy) as bili:
-            video_info = await bili.get_video_info(url)
+            video_info = await bili.get_video_info(url, cookie=self.cookie.get_value())
 
             if not (data := video_info.get("data")):
                 raise ParseError("获取视频信息失败")
@@ -133,6 +133,8 @@ class BiliParse(BaseParser):
             title=data["View"]["title"],
             author_name=get_author_name(view.get("owner")),
             content=content,
+            published_at=view.get("pubdate"),
+            view_count=(view.get("stat") or {}).get("view"),
             video=VideoRef(
                 url=video_url,
                 thumb_url=data["View"]["pic"],
