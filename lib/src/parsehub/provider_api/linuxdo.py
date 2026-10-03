@@ -22,8 +22,9 @@ from typing import Any
 from bs4 import BeautifulSoup
 from markdownify import MarkdownConverter
 
+from ..types.platform import Platform
 from ..utils import http
-from ..utils.helpers import to_int
+from ..utils.helpers import format_author_link, format_quote_block, profile_url, to_int
 
 TOPIC_API = "https://linux.do/t/topic/{topic_id}.json"
 #: 带楼层号: Discourse 返回以该楼层为中心的窗口
@@ -136,8 +137,13 @@ class LinuxDoTopic:
         cooked: str = first.get("cooked") or ""
         soup = BeautifulSoup(cooked, "lxml")
         images = cls._extract_images(soup)
+        text_content = soup.get_text("\n", strip=True)
+        # 引用块先抽出来 (改写成占位符), 转完 markdown 再回填公共 helper 渲染的结果
+        rendered_quotes = cls._extract_quotes(soup)
         cls._simplify(soup)
         markdown_content = cls._to_markdown(str(soup))
+        for placeholder, block in rendered_quotes:
+            markdown_content = markdown_content.replace(placeholder, block)
 
         tags = [str(t.get("name")) for t in (payload.get("tags") or []) if isinstance(t, dict) and t.get("name")]
         created_by = (payload.get("details") or {}).get("created_by") or {}
@@ -148,18 +154,48 @@ class LinuxDoTopic:
             topic_id=str(payload.get("id") or topic_id),
             title=str(payload.get("title") or payload.get("fancy_title") or ""),
             markdown_content=markdown_content,
-            text_content=soup.get_text("\n", strip=True),
+            text_content=text_content,
             author_name=author_name,
             author_handle=author_handle,
-            published_at=str(payload.get("created_at") or first.get("created_at") or ""),
+            # 时间与点赞取**该楼层**的: 主题级 created_at / like_count 是楼主帖与全话题的,
+            # 指定楼层时用它们会显示成别人的时间与赞数
+            published_at=str(first.get("created_at") or payload.get("created_at") or ""),
             view_count=to_int(payload.get("views")),
-            like_count=to_int(payload.get("like_count")),
+            like_count=to_int(
+                first.get("reaction_users_count")
+                if first.get("reaction_users_count") is not None
+                else payload.get("like_count")
+            ),
             reply_count=to_int(payload.get("reply_count")),
             tags=tags,
             images=images,
             # 只认平台自己的标记: 标签里的 NSFW
             is_sensitive=any(t.casefold() == "nsfw" for t in tags),
         )
+
+    #: 引用块在正文里的占位标记 (转 markdown 后再替换成渲染结果)
+    _QUOTE_PLACEHOLDER = "@@linuxdo-quote-{}@@"
+
+    @classmethod
+    def _extract_quotes(cls, soup: BeautifulSoup) -> list[tuple[str, str]]:
+        """把 Discourse 的引用回复 (``aside.quote``) 抽出来, 交给**公共**排版 helper 渲染。
+
+        排版规则由 ``format_quote_block`` 决定 (整块斜体、作者行在块内、不写"引用/回复"字样),
+        与 twitter / threads 完全一致 —— 这里不要再自己拼引用块的 markdown。
+        """
+        rendered: list[tuple[str, str]] = []
+        for index, aside in enumerate(soup.find_all("aside", class_="quote")):
+            username = str(aside.get("data-username") or "")
+            blockquote = aside.find("blockquote")
+            text = blockquote.get_text("\n", strip=True) if blockquote else ""
+            placeholder = cls._QUOTE_PLACEHOLDER.format(index)
+            aside.replace_with(placeholder)
+            if not text:
+                rendered.append((placeholder, ""))
+                continue
+            author = format_author_link("", username, profile_url(Platform.LINUXDO, username))
+            rendered.append((placeholder, format_quote_block(text, author)))
+        return rendered
 
     @staticmethod
     def _simplify(soup: BeautifulSoup) -> None:
