@@ -14,6 +14,7 @@ from pyrogram.types import (
 from plugins.parse.inline import (
     _is_rich_result,
     build_inline_results,
+    inline_cover_url,
     inline_reply_markup,
     strip_media_markdown,
 )
@@ -85,6 +86,35 @@ def test_rich_result_strips_images_from_note_content():
     markdown = results[0].input_message_content.rich_message.markdown
     assert "![" not in markdown
     assert "正文" in markdown
+
+
+def test_inline_cover_url_prefers_video_thumb():
+    """视频/动图用平台缩略图当封面, 图片用自己的地址"""
+    from parsehub.types import AniRef
+
+    assert inline_cover_url(make_result(media=[VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg")])) == "https://a/c.jpg"
+    assert inline_cover_url(make_result(media=[AniRef(url="https://a/a.mp4", thumb_url="https://a/ac.jpg")])) == "https://a/ac.jpg"
+    assert inline_cover_url(make_result(media=[ImageRef(url="https://a/i.jpg", thumb_url="https://a/t.jpg")])) == "https://a/t.jpg"
+
+
+def test_inline_cover_url_without_media():
+    assert inline_cover_url(make_result()) == ""
+
+
+def test_media_result_uses_cover_placeholder():
+    """有封面时消息里先出现一张图 (老体验), 而不是纯文字"""
+    results = asyncio.run(build_inline_results(make_result(media=[VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg")]), None, "zh-hans", _config()))
+    item = results[0]
+    assert type(item).__name__ == "InlineQueryResultPhoto"
+    assert item.photo_url == "https://a/c.jpg"
+    assert item.id == "rich"
+    assert item.reply_markup is not None  # 需要句柄才能在选中后替换
+
+
+def test_single_media_ref_does_not_break_dimensions():
+    """media 是单个 ref (非 list) 时取尺寸不能抛"""
+    results = asyncio.run(build_inline_results(make_result(media=VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg", width=1080, height=1920)), None, "zh-hans", _config()))
+    assert results[0].photo_width == 1080
 
 
 def _config():

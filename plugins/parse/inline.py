@@ -184,6 +184,21 @@ async def answer_inline(
     )
 
 
+def inline_cover_url(parse_result: AnyParseResult) -> str:
+    """取一个可用于 inline 占位的封面 URL (Telegram 服务端去抓)。
+
+    视频/动图用平台的缩略图, 图片用它自己的地址 —— 这正是老模式的做法:
+    消息里先出现封面, 选中后处理完再换成真正的媒体。
+    """
+    for ref in to_list(parse_result.media):
+        thumb = getattr(ref, "thumb_url", None)
+        if isinstance(ref, VideoRef | AniRef) and thumb:
+            return str(thumb)
+        if isinstance(ref, ImageRef):
+            return str(thumb or ref.url)
+    return ""
+
+
 def inline_reply_markup(parse_result: AnyParseResult) -> Ikm | None:
     """富文本结果项的键盘。
 
@@ -197,7 +212,9 @@ def inline_reply_markup(parse_result: AnyParseResult) -> Ikm | None:
 
 
 def _is_rich_result(result: InlineQueryResult) -> bool:
-    """结果项里是不是富文本 (带 InputRichMessageContent 的那种)。"""
+    """结果项是不是那条需要 Telegram 特殊支持的富文本结果 (被拒时优先剔掉它)。"""
+    if getattr(result, "id", None) == RICH_RESULT_ID:
+        return True
     return isinstance(getattr(result, "input_message_content", None), InputRichMessageContent)
 
 
@@ -571,6 +588,29 @@ async def build_inline_results(
     # 所以这里只发文字占位; 用户选中后由 inline_result_download 下载+上传, 再编辑成带媒体的
     # 富文本。键盘是为了换取 inline_message_id (编辑的前提), 选中后立刻摘掉。
     if config.rich_mode:
+        # 有封面可用的媒体: 用封面图做占位 (消息里先出现一张图, 与老模式观感一致),
+        # 选中后再由 inline_result_download 编辑成带媒体的富文本。
+        # 富文本本身在回答查询时不能带外链媒体, 但 InlineQueryResultPhoto 的 URL 是
+        # Telegram 服务端去抓的, 这里没问题。
+        if cover := inline_cover_url(parse_result):
+            first = to_list(parse_result.media)[0]
+            results.append(
+                InlineQueryResultPhoto(
+                    cover,
+                    id=RICH_RESULT_ID,
+                    thumb_url=cover,
+                    photo_width=max(getattr(first, "width", 0) or 0, 0),
+                    photo_height=max(getattr(first, "height", 0) or 0, 0),
+                    title=title,
+                    description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
+                    caption=build_caption(
+                        parse_result, config=config, allow_expandable=True, lang=lang, view_label=_t("查看")
+                    ),
+                    reply_markup=inline_reply_markup(parse_result),
+                )
+            )
+            return results
+
         results.append(
             InlineQueryResultArticle(
                 id=RICH_RESULT_ID,
