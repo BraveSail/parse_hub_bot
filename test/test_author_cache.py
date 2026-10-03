@@ -173,6 +173,57 @@ def test_rich_markdown_author_label_with_handle():
     assert build_rich_markdown(only_handle, config=config).startswith("**@same：**")
 
 
+def test_rich_markdown_wraps_multiple_media_in_collage():
+    """多张媒体必须包在 <tg-collage> 里才是图集, 否则显示成各自独立的图"""
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="图集", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+
+    markdown = build_rich_markdown(
+        result,
+        config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False),
+        media_placeholders=["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"],
+    )
+    assert "<tg-collage>" in markdown
+    assert "</tg-collage>" in markdown
+    assert markdown.index("tg://photo?id=m0") < markdown.index("tg://photo?id=m1") < markdown.index("</tg-collage>")
+
+
+def test_rich_markdown_single_media_is_not_wrapped():
+    """单张媒体不需要图集包裹"""
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="单图", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+
+    markdown = build_rich_markdown(
+        result,
+        config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False),
+        media_placeholders=["![](tg://photo?id=m0)"],
+    )
+    assert "<tg-collage>" not in markdown
+    assert "tg://photo?id=m0" in markdown
+
+
+def test_rich_markdown_renders_tags():
+    """平台给的标签渲染成 #标签 一行"""
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+    result.tags = ["AI画像", "足裏"]
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
+    )
+    assert "#AI画像 #足裏" in markdown
+    assert markdown.index("正文") < markdown.index("#AI画像")
+
+
 def test_rich_markdown_places_media_between_body_and_footer():
     from parsehub.types import ImageParseResult, Platform
 

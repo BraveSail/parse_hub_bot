@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from pyrogram import raw
 from pyrogram.types import (
     InputRichBlockBlockQuotation,
+    InputRichBlockCollage,
     InputRichBlockDivider,
     InputRichBlockFooter,
     InputRichBlockList,
@@ -180,6 +181,25 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
             if block is not None:
                 blocks.append(block)
             i += 1
+            continue
+
+        # 图集: <tg-collage> 包住的若干媒体占位
+        if stripped.startswith("<tg-collage>"):
+            flush_paragraph(paragraph)
+            items: list = []
+            i += 1
+            while i < len(lines) and "</tg-collage>" not in lines[i]:
+                inner = lines[i].strip()
+                if m := _MEDIA_PLACEHOLDER_RE.match(inner):
+                    block = media_blocks.get(m.group(1))
+                    if block is not None:
+                        items.append(block)
+                i += 1
+            i += 1  # 跳过 </tg-collage>
+            if len(items) > 1:
+                blocks.append(InputRichBlockCollage(items))
+            else:
+                blocks.extend(items)
             continue
 
         # 分隔线

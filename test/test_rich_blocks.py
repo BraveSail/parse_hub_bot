@@ -97,6 +97,23 @@ def test_blocks_media_placeholder_uses_given_block():
     assert blocks[1] == "MEDIA"
 
 
+def test_blocks_collage_groups_multiple_media():
+    """<tg-collage> 包住的多个媒体要变成一个 Collage 块"""
+    from pyrogram.types import InputRichBlockCollage
+
+    md = "正文\n\n<tg-collage>\n\n![](tg://photo?id=m0)\n![](tg://photo?id=m1)\n\n</tg-collage>"
+    blocks = markdown_to_blocks(md, media_blocks={"m0": "M0", "m1": "M1"})
+    assert isinstance(blocks[1], InputRichBlockCollage)
+    assert blocks[1].blocks == ["M0", "M1"]
+
+
+def test_blocks_collage_with_single_media_flattens():
+    """只有一张时不套 Collage (没必要)"""
+    md = "<tg-collage>\n\n![](tg://photo?id=m0)\n\n</tg-collage>"
+    blocks = markdown_to_blocks(md, media_blocks={"m0": "M0"})
+    assert blocks == ["M0"]
+
+
 def test_blocks_unknown_media_placeholder_is_skipped():
     """占位没有对应媒体块时跳过, 不能把 tg:// 链接漏给用户看"""
     blocks = markdown_to_blocks("正文\n\n![](tg://photo?id=nope)")

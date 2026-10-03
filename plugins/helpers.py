@@ -220,7 +220,16 @@ def build_rich_markdown(
         parts.append(content)
     if custom_content:
         parts.append(custom_content)
-    parts.extend(media_placeholders)
+
+    tags = getattr(parse_result, "tags", None) or []
+    if tags:
+        parts.append(" ".join(f"#{tag}" for tag in tags))
+
+    if len(media_placeholders) > 1:
+        # 多张媒体要包在 <tg-collage> 里才显示成图集; 分开的图片块会变成各自独立的图
+        parts.append("<tg-collage>\n\n" + "\n".join(media_placeholders) + "\n\n</tg-collage>")
+    else:
+        parts.extend(media_placeholders)
 
     body = "\n\n".join(part for part in parts if part)
 
