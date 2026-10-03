@@ -120,6 +120,37 @@ def test_single_overlong_tag_is_still_rendered():
     assert "<a href=" in line
 
 
+def test_setext_underlines_are_escaped():
+    """整行只有 - 或 = 会让上面整段变成大标题 (setext), 必须转义"""
+    from plugins.helpers import escape_setext_underlines
+
+    assert escape_setext_underlines("正文\n--") == "正文\n\\--"
+    assert escape_setext_underlines("--") == "\\--"
+    assert escape_setext_underlines("===") == "\\==="
+    assert escape_setext_underlines("- 列表项") == "- 列表项"
+    assert escape_setext_underlines("正常行") == "正常行"
+
+
+def test_threads_body_is_not_a_heading():
+    """threads 节目表末尾的 -- 曾把整段正文变成 section heading (大字)"""
+    from parsehub.types import ImageParseResult
+
+    from plugins.helpers import build_rich_markdown
+    from plugins.parse.rich_blocks import markdown_to_blocks
+
+    result = ImageParseResult(content="【预告】\n18:00　動畫一\n21:00　動畫二\n--\n#敬請準時收看", photo=[])
+    result.platform = Platform.THREADS
+    result.raw_url = "https://www.threads.com/@a/post/x"
+
+    markdown = build_rich_markdown(result, config=_cfg())
+    blocks = markdown_to_blocks(markdown)
+    kinds = [type(b).__name__ for b in blocks]
+    assert not any("Heading" in k for k in kinds), kinds
+    assert "Paragraph" in " ".join(kinds)
+    # 媒体占位以外的正文块仍在
+    assert any("18:00" in str(getattr(b, "text", "")) or "Paragraph" in type(b).__name__ for b in blocks)
+
+
 def test_tag_page_url_platforms():
     assert tag_page_url(Platform.PIXIV, "足裏").startswith("https://www.pixiv.net/tags/")
     assert tag_page_url(Platform.COOLAPK, "x") == ""

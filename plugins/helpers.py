@@ -200,7 +200,11 @@ def build_rich_markdown(
     统计数据与来源放在页尾的 <footer> 里。
     """
     title = (parse_result.title or "").strip()
-    content = preserve_linebreaks(link_leading_hashtags(rich_content(parse_result).strip(), parse_result.platform))
+    content = preserve_linebreaks(
+        escape_setext_underlines(
+            link_leading_hashtags(rich_content(parse_result).strip(), parse_result.platform)
+        )
+    )
     parts: list[str] = []
     if title and not config.hide_title:
         parts.append(f"### {title}")
@@ -330,6 +334,21 @@ def link_leading_hashtags(text: str, platform: Platform | None = None) -> str:
         return f'{indent}<a href="{html.escape(url, quote=True)}">{label}</a>'
 
     return _LINE_HASH_TAG_RE.sub(repl, text)
+
+
+# 整行只有 - 或 = 的行: markdown 会把它当成 setext 标题下划线, 把上面整段变成标题(大字)
+_SETEXT_UNDERLINE_RE = re.compile(r"^([ \t]*)([-=]+)([ \t]*)$")
+
+
+def escape_setext_underlines(text: str) -> str:
+    """转义「整行只有 ``-`` 或 ``=``」的行, 防止它把上一行变成大标题。
+
+    markdown 的 setext 语法里「文本行 + 下一行是若干 ``=`` 或 ``-``」= 一级/二级标题,
+    而 ``--`` 两个减号就够触发。实测 threads 的节目表末尾有一行 ``--``, 结果**整个正文段**
+    被服务端解析成 ``section heading``(大字)。转义首个字符即可, 渲染出来仍是原来的 ``--``。
+    """
+    lines = text.split("\n")
+    return "\n".join(_SETEXT_UNDERLINE_RE.sub(r"\1\\\2\3", line) for line in lines)
 
 
 def preserve_linebreaks(text: str) -> str:
