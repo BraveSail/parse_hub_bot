@@ -2,14 +2,14 @@
 
 import asyncio
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, patch
 
 from parsehub.parsers.base.ytdlp import YtVideoInfo
 from parsehub.parsers.parser.bilibili import BiliParse
-from parsehub.parsers.parser.facebook import FacebookParse
 from parsehub.parsers.parser.douyin import DouyinApiResult, DouyinMediaType
+from parsehub.parsers.parser.facebook import FacebookParse
 from parsehub.parsers.parser.threads import ThreadsParser
 from parsehub.parsers.parser.twitter import TwitterParser
 from parsehub.provider_api.bilibili import BiliAPI
