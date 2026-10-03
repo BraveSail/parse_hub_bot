@@ -5,6 +5,7 @@ from .douban import *
 from .douyin import *
 from .facebook import *
 from .instagram import *
+from .linuxdo import *
 from .pixiv import *
 from .threads import *
 from .tieba import *

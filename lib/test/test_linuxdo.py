@@ -1,0 +1,165 @@
+"""linux.do (Discourse) 解析的离线用例 —— 用真实响应裁剪出的载荷，不联网。"""
+
+import pytest
+
+from parsehub.provider_api.linuxdo import LinuxDoError, LinuxDoTopic
+
+
+def make_payload(**overrides):
+    payload = {
+        "id": 2979226,
+        "title": "国庆快乐www今天是腿子纯享",
+        "fancy_title": "国庆快乐www今天是腿子纯享",
+        "posts_count": 28,
+        "reply_count": 5,
+        "views": 927,
+        "like_count": 125,
+        "created_at": "2026-10-03T04:30:45.726Z",
+        "tags": [
+            {"id": 1461, "name": "纯水", "slug": "1461-tag"},
+            {"id": 248, "name": "NSFW", "slug": "nsfw"},
+        ],
+        "details": {"created_by": {"id": 462812, "username": "VerenQwQ", "name": "VerenOwO"}},
+        "post_stream": {
+            "posts": [
+                {
+                    "id": 23298920,
+                    "post_number": 1,
+                    "username": "VerenQwQ",
+                    "name": "VerenOwO",
+                    "created_at": "2026-10-03T04:30:46.334Z",
+                    "cooked": (
+                        "<p>杂鱼杂鱼杂鱼</p>\n"
+                        "<details>\n<summary>\n总结</summary>\n<div class=\"spoiler\">\n"
+                        "<p><div class=\"lightbox-wrapper\">"
+                        "<a class=\"lightbox\" href=\"https://cdn3.ldstatic.com/original/4X/e/c/c/abc.jpeg\" "
+                        "title=\"IMG_7961\"><img src=\"https://cdn3.ldstatic.com/optimized/4X/e/c/c/abc_2_375x500.jpeg\" "
+                        "width=\"375\" height=\"500\"></a>"
+                        "<div class=\"meta\"><span class=\"filename\">IMG_7961</span></div>"
+                        "</div></p>\n</div>\n</details>"
+                    ),
+                }
+            ]
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+# ── URL 形态 ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://linux.do/t/topic/2979226",
+        "https://linux.do/t/2979226",
+        "https://linux.do/t/国庆快乐/2979226",
+        "https://linux.do/t/some-slug/2979226/12",
+        "http://linux.do/t/topic/2979226",
+    ],
+)
+def test_topic_id_is_extracted(url):
+    assert LinuxDoTopic.get_topic_id(url) == "2979226"
+
+
+def test_unsupported_url_is_rejected():
+    """用户页/其它站点不能被当成话题解析"""
+    for url in ("https://linux.do/u/VerenQwQ", "https://linux.do/latest", "https://example.com/t/topic/1"):
+        with pytest.raises(LinuxDoError):
+            LinuxDoTopic.get_topic_id(url)
+
+
+# ── 字段映射 ─────────────────────────────────────────────────
+
+
+def test_topic_fields_are_mapped():
+    topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
+    assert topic.topic_id == "2979226"
+    assert topic.title == "国庆快乐www今天是腿子纯享"
+    assert topic.author_name == "VerenOwO"
+    assert topic.author_handle == "VerenQwQ"
+    assert topic.published_at == "2026-10-03T04:30:45.726Z"
+    assert topic.view_count == 927
+    assert topic.like_count == 125
+    assert topic.reply_count == 5
+
+
+def test_tags_and_nsfw_flag():
+    """只有平台自己的 NSFW 标签才置敏感位"""
+    topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
+    assert topic.tags == ["纯水", "NSFW"]
+    assert topic.is_sensitive is True
+
+
+def test_not_sensitive_without_nsfw_tag():
+    payload = make_payload(tags=[{"name": "纯水"}])
+    assert LinuxDoTopic._from_payload(payload, "2979226").is_sensitive is False
+
+
+def test_missing_counts_stay_none():
+    """平台不给的计数留 None, 展示层整段跳过"""
+    payload = make_payload()
+    payload.pop("views")
+    payload.pop("like_count")
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    assert topic.view_count is None
+    assert topic.like_count is None
+
+
+def test_author_falls_back_to_post_author():
+    payload = make_payload(details={})
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    assert topic.author_handle == "VerenQwQ"
+    assert topic.author_name == "VerenOwO"
+
+
+# ── 正文与媒体 ───────────────────────────────────────────────
+
+
+def test_cooked_is_converted_and_cleaned():
+    """details 展开、lightbox 包裹去掉, 正文不再是嵌套图片语法"""
+    topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
+    assert "杂鱼杂鱼杂鱼" in topic.markdown_content
+    assert "</details>" not in topic.markdown_content
+    assert "lightbox-wrapper" not in topic.markdown_content
+    # 图片走 media, 正文里不重复
+    assert "![IMG_7961]" not in topic.markdown_content
+
+
+def test_image_uses_original_url_with_dimensions():
+    """lightbox 的 href 是原图, img 的宽高用来声明比例"""
+    topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
+    assert len(topic.images) == 1
+    image = topic.images[0]
+    assert image.url == "https://cdn3.ldstatic.com/original/4X/e/c/c/abc.jpeg"
+    assert (image.width, image.height) == (375, 500)
+
+
+def test_image_without_lightbox_uses_src():
+    cooked = '<p><img src="https://cdn3.ldstatic.com/a.jpeg" width="10" height="20"></p>'
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = cooked
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    assert topic.images[0].url == "https://cdn3.ldstatic.com/a.jpeg"
+
+
+def test_duplicate_images_are_deduped():
+    cooked = (
+        '<p><img src="https://cdn3.ldstatic.com/a.jpeg" width="1" height="1">'
+        '<img src="https://cdn3.ldstatic.com/a.jpeg" width="1" height="1"></p>'
+    )
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = cooked
+    assert len(LinuxDoTopic._from_payload(payload, "2979226").images) == 1
+
+
+def test_empty_post_stream_is_an_error():
+    with pytest.raises(LinuxDoError):
+        LinuxDoTopic._from_payload(make_payload(post_stream={"posts": []}), "2979226")
+
+
+def test_text_content_is_plain():
+    topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
+    assert "杂鱼杂鱼杂鱼" in topic.text_content
+    assert "<p>" not in topic.text_content

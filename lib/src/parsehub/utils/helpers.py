@@ -65,6 +65,7 @@ PROFILE_URL_TEMPLATES: dict[Platform, str] = {
     Platform.BILIBILI: "https://space.bilibili.com/{id}",
     Platform.DOUBAN: "https://www.douban.com/people/{id}/",
     Platform.INSTAGRAM: "https://www.instagram.com/{handle}/",
+    Platform.LINUXDO: "https://linux.do/u/{handle}",
     Platform.PIXIV: "https://www.pixiv.net/users/{id}",
     Platform.THREADS: "https://www.threads.com/@{handle}",
     Platform.TIKTOK: "https://www.tiktok.com/@{handle}",
