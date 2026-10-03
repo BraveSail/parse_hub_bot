@@ -209,7 +209,7 @@ def build_rich_markdown(
     统计数据与来源放在页尾的 <footer> 里。
     """
     title = (parse_result.title or "").strip()
-    content = rich_content(parse_result).strip()
+    content = preserve_linebreaks(link_leading_hashtags(rich_content(parse_result).strip(), parse_result.platform))
     parts: list[str] = []
     if title and not config.hide_title:
         parts.append(f"### {title}")
@@ -314,6 +314,45 @@ def rich_content(parse_result: AnyParseResult) -> str:
     if isinstance(parse_result, RichTextParseResult) and markdown_content:
         return markdown_content
     return parse_result.content or ""
+
+
+# 行首的 "#标签" (# 后紧跟非空白, 标签里不含空白与常见标点)
+_LINE_HASH_TAG_RE = re.compile(r"(?m)^([ \t]*)#([^\s#，。！？、,.!?）)】\]]+)")
+
+
+def link_leading_hashtags(text: str, platform: Platform | None = None) -> str:
+    """处理行首的 ``#标签``: 渲染成标签页链接 (拿不到标签页时只转义)。
+
+    两件事同时解决:
+    1. 行首 ``#xxx`` 是富文本 markdown 的一级标题语法, threads 正文末尾的
+       ``#敬請準時收看`` 会变成巨大的 section heading;
+    2. 裸 hashtag 里 Telegram 遇到 ``・`` 之类的字符就停止解析, 长标签会"断"。
+    带空格的 ``# 标题`` 是真标题, 保持不动。
+    """
+
+    def repl(match: re.Match[str]) -> str:
+        indent, tag = match.group(1), match.group(2)
+        label = f"\\#{tag}"
+        url = tag_page_url(platform, tag)
+        if not url:
+            return f"{indent}{label}"
+        return f'{indent}<a href="{html.escape(url, quote=True)}">{label}</a>'
+
+    return _LINE_HASH_TAG_RE.sub(repl, text)
+
+
+def preserve_linebreaks(text: str) -> str:
+    """把单换行变成 markdown 硬换行 (行尾两个空格)。
+
+    富文本 markdown 解析时**单个换行会被吞成空格** —— threads 这种一行一条的
+    排版会挤成一整段。行尾补两个空格即保留换行, 又不像空行那样拉开段间距。
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    for index, line in enumerate(lines):
+        followed_by_text = index + 1 < len(lines) and bool(lines[index + 1].strip())
+        out.append(line.rstrip() + "  " if line.strip() and followed_by_text else line)
+    return "\n".join(out)
 
 
 def split_trailing_quote(content: str) -> tuple[str, str]:
