@@ -10,9 +10,11 @@ from parsehub.parsers.base.ytdlp import YtVideoInfo
 from parsehub.parsers.parser.bilibili import BiliParse
 from parsehub.parsers.parser.douyin import DouyinApiResult, DouyinMediaType
 from parsehub.parsers.parser.facebook import FacebookParse
+from parsehub.parsers.parser.pixiv import PixivParser
 from parsehub.parsers.parser.threads import ThreadsParser
 from parsehub.parsers.parser.twitter import TwitterParser
 from parsehub.provider_api.bilibili import BiliAPI
+from parsehub.provider_api.pixiv import Pixiv, PixivIllust
 from parsehub.provider_api.threads import ThreadsAPI, ThreadsPost
 from parsehub.provider_api.twitter import Twitter
 from parsehub.utils.helpers import SecretCookie
@@ -258,6 +260,51 @@ def test_douyin_without_statistics():
     result = DouyinApiResult.parse(payload)
     assert result.view_count is None
     assert result.published_at == datetime.fromtimestamp(1790887010, tz=UTC)
+
+
+# ── pixiv: createDate + viewCount + userAccount ───────────────
+
+
+def pixiv_payload():
+    return {
+        "illustId": "149431603",
+        "illustTitle": "無題",
+        "userName": "隣人X",
+        "userAccount": "user_ydyj5227",
+        "userId": "123568955",
+        "createDate": "2026-09-08T11:44:00+00:00",
+        "uploadDate": "2026-09-08T11:44:00+00:00",
+        "viewCount": 4971,
+        "likeCount": 157,
+        "bookmarkCount": 436,
+        "commentCount": 2,
+        "xRestrict": 0,
+        "pageCount": 1,
+        "tags": {"tags": []},
+        "urls": {},
+    }
+
+
+def test_pixiv_reads_metadata():
+    page = {
+        "urls": {"original": "https://i.pximg.net/img-original/img/x_p0.png", "thumb_mini": "t"},
+        "width": 800,
+        "height": 600,
+    }
+    illust = PixivIllust.parse(pixiv_payload(), [page], illust_id="149431603")
+    assert illust.create_date == "2026-09-08T11:44:00+00:00"
+    assert illust.view_count == 4971
+    assert illust.user_account == "user_ydyj5227"
+
+
+def test_pixiv_parser_forwards_metadata():
+    page = {"urls": {"original": "https://i.pximg.net/img-original/img/x_p0.png"}, "width": 800, "height": 600}
+    illust = PixivIllust.parse(pixiv_payload(), [page], illust_id="149431603")
+    with patch.object(Pixiv, "parse", new=AsyncMock(return_value=illust)):
+        result = asyncio.run(PixivParser(cookie=SecretCookie({"PHPSESSID": "x"}))._do_parse("https://www.pixiv.net/artworks/149431603"))
+    assert result.author_handle == "user_ydyj5227"
+    assert result.published_at == datetime(2026, 9, 8, 11, 44, tzinfo=UTC)
+    assert result.view_count == 4971
 
 
 # ── threads: taken_at (无浏览量字段) ──────────────────────────

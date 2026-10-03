@@ -52,6 +52,9 @@ class PixivParser(BaseParser):
             title=illust.title,
             content=illust.description,
             author_name=illust.author_name,
+            author_handle=illust.user_account,
+            published_at=illust.create_date,
+            view_count=illust.view_count,
             # pixiv 的 xRestrict > 0 即 R-18, 用作打码标记
             is_sensitive=illust.is_r18,
             media=[

@@ -39,6 +39,7 @@ class ParseResult(ABC):  # noqa: B024
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        author_handle: str = "",
     ):
         """
         :param title: 标题
@@ -48,6 +49,7 @@ class ParseResult(ABC):  # noqa: B024
         :param is_sensitive: 敏感内容标记 (R18/NSFW), 仅在有平台官方标记时置位
         :param published_at: 发布时间 (带时区), 平台没提供时为 None
         :param view_count: 浏览量/播放量, 平台没提供时为 None
+        :param author_handle: 作者的用户名/账号 (不带 @), 平台没提供时为空
         """
         self.raw_url: str = ""
         self.title = title.strip()
@@ -55,6 +57,7 @@ class ParseResult(ABC):  # noqa: B024
         self.media = media
         self.platform = platform
         self.author_name = author_name.strip()
+        self.author_handle = author_handle.strip().lstrip("@")
         self.is_sensitive = is_sensitive
         self.published_at = to_datetime(published_at)
         self.view_count = to_int(view_count)
@@ -87,6 +90,7 @@ class ParseResult(ABC):  # noqa: B024
             "title": self.title,
             "content": self.content,
             "author_name": self.author_name,
+            "author_handle": self.author_handle,
             "raw_url": self.raw_url,
             "is_sensitive": self.is_sensitive,
             "published_at": self.published_at.isoformat() if self.published_at else None,
@@ -317,6 +321,7 @@ class VideoParseResult(ParseResult):
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        author_handle: str = "",
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -327,6 +332,7 @@ class VideoParseResult(ParseResult):
             is_sensitive=is_sensitive,
             published_at=published_at,
             view_count=view_count,
+            author_handle=author_handle,
         )
 
 
@@ -344,6 +350,7 @@ class ImageParseResult(ParseResult):
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        author_handle: str = "",
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
@@ -354,6 +361,7 @@ class ImageParseResult(ParseResult):
             is_sensitive=is_sensitive,
             published_at=published_at,
             view_count=view_count,
+            author_handle=author_handle,
         )
 
 
@@ -371,6 +379,7 @@ class MultimediaParseResult(ParseResult):
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        author_handle: str = "",
     ):
         super().__init__(
             title=title,
@@ -380,6 +389,7 @@ class MultimediaParseResult(ParseResult):
             is_sensitive=is_sensitive,
             published_at=published_at,
             view_count=view_count,
+            author_handle=author_handle,
         )
 
 
@@ -397,6 +407,7 @@ class RichTextParseResult(ParseResult):
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        author_handle: str = "",
     ):
         """
         :param title: 标题
@@ -412,6 +423,7 @@ class RichTextParseResult(ParseResult):
             is_sensitive=is_sensitive,
             published_at=published_at,
             view_count=view_count,
+            author_handle=author_handle,
         )
 
     def __repr__(self) -> str:

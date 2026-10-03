@@ -56,6 +56,9 @@ class PixivIllust:
     page_count: int
     is_r18: bool
     create_date: str
+    user_account: str = ""
+    """作者的用户名 (@ 后面的部分), 与显示名 userName 可能不同"""
+    view_count: int = 0
 
     @classmethod
     def parse(
@@ -85,6 +88,8 @@ class PixivIllust:
             page_count=int(data.get("pageCount") or len(images)),
             is_r18=int(data.get("xRestrict") or 0) > 0,
             create_date=str(data.get("createDate") or ""),
+            user_account=str(data.get("userAccount") or ""),
+            view_count=int(data.get("viewCount") or 0),
         )
 
 

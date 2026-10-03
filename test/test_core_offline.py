@@ -182,6 +182,7 @@ class TestParseResultToDict(unittest.TestCase):
                 "title": "Video title",
                 "content": "Video body",
                 "author_name": "",
+                "author_handle": "",
                 "raw_url": "https://www.bilibili.com/video/BV123",
                 "is_sensitive": False,
                 "published_at": None,
@@ -196,6 +197,12 @@ class TestParseResultToDict(unittest.TestCase):
                 },
             },
         )
+
+    def test_to_dict_strips_at_prefix_from_author_handle(self):
+        """handle 存不带 @ 的形态, 由展示层决定加不加 @"""
+        result = VideoParseResult(title="T", video=VideoRef(url="https://cdn.example/v.mp4"), author_handle="  @abc ")
+        assert result.to_dict()["author_handle"] == "abc"
+        assert result.author_handle == "abc"
 
     def test_to_dict_normalizes_published_at_and_view_count(self):
         """平台给的时间/计数五花八门, to_dict 里要已是归一化后的值"""

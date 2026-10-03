@@ -28,6 +28,7 @@ class ThreadsParser(BaseParser):
             content=f"{quote}{post.content}",
             media=media,
             author_name=post.author_name,
+            author_handle=post.author_handle,
             published_at=post.published_at,
             view_count=post.view_count,
         )
