@@ -120,6 +120,43 @@ def test_single_overlong_tag_is_still_rendered():
     assert "<a href=" in line
 
 
+def test_linuxdo_tags_link_to_the_tag_page():
+    """linux.do 的标签也要是链接 (Discourse 的标签页是 /tag/<名字>)"""
+    from plugins.helpers import format_tags
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.LINUXDO
+    result.raw_url = "https://linux.do/t/topic/2979226"
+    result.tags = ["纯水", "NSFW", "女装"]
+
+    line = format_tags(result)
+    assert line.count("<a href=") == 3
+    assert "https://linux.do/tag/%E7%BA%AF%E6%B0%B4" in line
+    assert "https://linux.do/tag/NSFW" in line
+    assert ">\\#女装</a>" in line
+
+
+def test_tags_sit_under_the_title_not_after_the_body():
+    """标签是标题的元信息: 要排在标题/作者下面、正文之前"""
+    from plugins.helpers import build_rich_markdown
+
+    result = ImageParseResult(content="我的回复", photo=[])
+    result.title = "话题标题"
+    result.author_name = "某人"
+    result.author_handle = "someone"
+    result.platform = Platform.LINUXDO
+    result.raw_url = "https://linux.do/t/topic/1"
+    result.tags = ["纯水"]
+
+    md = build_rich_markdown(result, config=_cfg(), lang="zh-hans", view_label="查看")
+    pos_title = md.index("话题标题")
+    pos_author = md.index("someone")
+    pos_tags = md.index("linux.do/tag/")
+    pos_body = md.index("我的回复")
+
+    assert pos_title < pos_author < pos_tags < pos_body
+
+
 def test_setext_underlines_are_escaped():
     """整行只有 - 或 = 会让上面整段变成大标题 (setext), 必须转义"""
     from plugins.helpers import escape_setext_underlines

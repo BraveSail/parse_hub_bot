@@ -301,7 +301,7 @@ def test_rich_markdown_single_media_is_not_wrapped():
 
 
 def test_rich_markdown_renders_tags():
-    """平台给的标签渲染成 #标签 一行"""
+    """平台给的标签渲染成 #标签 一行, 排在标题下面 (正文之前)"""
     from parsehub.types import ImageParseResult, Platform
 
     result = ImageParseResult(content="正文", photo=[])
@@ -315,7 +315,8 @@ def test_rich_markdown_renders_tags():
     # # 要转义 (否则被当一级标题/字号巨大), 并渲染成标签页链接
     assert '<a href="https://www.pixiv.net/tags/AI%E7%94%BB%E5%83%8F">\\#AI画像</a>' in markdown
     assert '<a href="https://www.pixiv.net/tags/%E8%B6%B3%E8%A3%8F">\\#足裏</a>' in markdown
-    assert markdown.index("正文") < markdown.index("AI画像")
+    # 标签是标题的元信息: 在正文之前 (紧跟标题/作者)
+    assert markdown.index("AI画像") < markdown.index("正文")
 
 
 def test_author_handle_links_to_profile():

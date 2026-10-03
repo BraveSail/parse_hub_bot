@@ -215,14 +215,14 @@ def build_rich_markdown(
         parts.append(f"### {title}")
     if author := format_author_line(parse_result):
         parts.append(author)
+    # 标签紧跟在标题/作者下面 (它们是标题的元信息, 不该跑到正文后面去)
+    if tag_line := format_tags(parse_result):
+        parts.append(tag_line)
     body_text, quote = split_trailing_quote(content) if content else ("", "")
     if body_text and not config.hide_desc:
         parts.append(body_text)
     if custom_content:
         parts.append(custom_content)
-
-    if tag_line := format_tags(parse_result):
-        parts.append(tag_line)
 
     parts.extend(wrap_collage(media_placeholders))
 
@@ -441,6 +441,8 @@ TAG_PAGE_URLS: dict[Platform, str] = {
     Platform.TIEBA: "https://tieba.baidu.com/f/search/res?qw={tag}",
     Platform.DOUBAN: "https://www.douban.com/search?q={tag}",
     Platform.XHS: "https://www.xiaohongshu.com/search_result?keyword={tag}",
+    # Discourse 论坛: /tag/<名字> 会重定向到规范地址 /tag/<slug>/<id>, 浏览器自动跟随
+    Platform.LINUXDO: "https://linux.do/tag/{tag}",
 }
 
 
