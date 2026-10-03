@@ -26,7 +26,7 @@ def platform_filter(use_config: bool = False) -> filters.Filter:
             case InlineQuery():
                 t = update.query
 
-        if not (platform := ParseService().parser.get_platform(t)):
+        if not (platform := ParseService().parser.get_platform(t or "")):
             return False
 
         if flt.use_config is False:
@@ -78,7 +78,8 @@ async def _allow_channel_auto_forward_parse_filter(_: Any, cli: Client, update: 
     except Exception:
         return True
 
-    if not (platform := ParseService().parser.get_platform(update.text)):
+    # 带 caption 的媒体消息 text 是 None: 必须两个都看, 否则这类自动转发会漏解析
+    if not (platform := ParseService().parser.get_platform(update.caption or update.text)):
         return False
 
     async with get_session() as session:

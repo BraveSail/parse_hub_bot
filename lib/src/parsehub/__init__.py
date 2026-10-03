@@ -188,6 +188,10 @@ class ParseHub:
         """选择解析器
         :param url: 分享文案 / 分享链接
         """
+        # 聊天消息的 text/caption 可能是 None (纯媒体消息): 直接当"没匹配上",
+        # 不能让 AttributeError 从过滤器里冒出去
+        if not isinstance(url, str) or not url:
+            return None
         for parser in self.parsers:
             if parser.match(url):
                 return parser

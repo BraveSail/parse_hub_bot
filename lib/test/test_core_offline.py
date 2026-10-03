@@ -68,6 +68,14 @@ class TestCoreUtilities(unittest.TestCase):
 
         self.assertEqual(match_url(text), "https://example.com/posts/1?foo=bar")
 
+    def test_platform_lookup_survives_missing_text(self):
+        """聊天消息的 text/caption 可能是 None: 识别平台要返回 None, 不能抛异常"""
+        parsehub = ParseHub()
+        assert parsehub.get_platform(None) is None  # type: ignore[arg-type]
+        assert parsehub.get_platform("") is None
+        assert parsehub.get_platform("普通聊天内容") is None
+        assert parsehub.get_platform("https://x.com/a/status/1") is not None
+
     def test_match_url_returns_empty_string_without_url(self):
         self.assertEqual(match_url(""), "")
         self.assertEqual(match_url("plain text without a link"), "")
