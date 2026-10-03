@@ -14,7 +14,9 @@ dependencies = [
     "loguru>=0.6.0",
     "lxml-html-clean>=0.4.1",
     "markdown>=3.7",
-    "parsehub @ git+https://github.com/BraveSail/ParseHub.git",
+    # 镜像构建时从 PyPI 装一个占位版本, Dockerfile 随后用 additional_context 的
+    # /opt/parsehub (本仓库 checkout) 覆盖安装 —— builder 阶段没有 git, 不能写 git 源
+    "parsehub>=2.2.4",
     "pillow>=12.1.1",
     "pillow-heif>=1.1.1",
     "pydantic>=2.12.5",
