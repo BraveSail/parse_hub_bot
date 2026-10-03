@@ -10,6 +10,7 @@ blocks。markdown 路径 (`InputRichBlockPhoto`) 打不了码, 敏感内容走�
 
 from __future__ import annotations
 
+import html
 import re
 from typing import TYPE_CHECKING
 
@@ -92,6 +93,8 @@ class SpoilerVideoBlock(InputRichBlock):
 # ── 行内格式 ──────────────────────────────────────────────────
 
 _INLINE_PATTERNS: list[tuple[re.Pattern, type]] = [
+    # footer 里的来源链接用的是 HTML (markdown 链接语法在 footer 块里不解析)
+    (re.compile(r'<a\s+href="([^"]+)"\s*>(.*?)</a>', re.S), RichTextUrl),
     (re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)"), RichTextUrl),  # [文字](链接)
     (re.compile(r"\*\*([^*\n]+)\*\*"), RichTextBold),
     (re.compile(r"`([^`\n]+)`"), RichTextCode),
@@ -122,13 +125,17 @@ def parse_inline(text: str) -> str | list:
         if m.start() > pos:
             parts.append(text[pos : m.start()])
         if cls is RichTextUrl:
-            parts.append(RichTextUrl(parse_inline(m.group(1)), url=m.group(2)))
+            if m.re.pattern.startswith("<a"):
+                url, label = m.group(1), m.group(2)  # <a href="url">label</a>
+            else:
+                label, url = m.group(1), m.group(2)  # [label](url)
+            parts.append(RichTextUrl(parse_inline(html.unescape(label)), url=html.unescape(url)))
         else:
             parts.append(cls(parse_inline(m.group(1))))
         pos = m.end()
 
     if len(parts) == 1 and isinstance(parts[0], str):
-        return parts[0]
+        return html.unescape(parts[0])
     return parts
 
 
