@@ -53,24 +53,38 @@ class TwitterParser(BaseParser):
         return tweet
 
     @staticmethod
-    def _build_quote(tweet: TwitterTweet) -> str:
-        """把被回复的推文渲染成 Markdown 引用块, 不是回复或内容为空时返回空串."""
-        reply = tweet.reply_to
-        if not reply:
-            return ""
-        text = (reply.full_text or "").strip()
+    def _quote_block(source: TwitterTweet, label: str) -> str:
+        """把一条被回复/被引用的推文渲染成 Markdown 引用块, 内容为空时返回空串."""
+        text = (source.full_text or "").strip()
         if not text:
             return ""
-        handle = (reply.author_handle or "").strip()
-        name = (reply.author_name or "").strip()
+        handle = (source.author_handle or "").strip()
+        name = (source.author_name or "").strip()
         if handle:
-            head = f"> 回复 @{handle}："
+            head = f"> {label} @{handle}："
         elif name:
-            head = f"> 回复 {name}："
+            head = f"> {label} {name}："
         else:
-            head = "> 回复："
+            head = f"> {label}："
         lines = "\n".join(f"> {line}" if line.strip() else ">" for line in text.splitlines())
         return f"{head}\n{lines}\n\n"
+
+    @staticmethod
+    def _build_quote(tweet: TwitterTweet) -> str:
+        """把被回复的推文渲染成 Markdown 引用块, 不是回复或内容为空时返回空串."""
+        return TwitterParser._quote_block(tweet.reply_to, "回复") if tweet.reply_to else ""
+
+    @staticmethod
+    def _build_quoted_block(tweet: TwitterTweet) -> str:
+        """把被引用的推文渲染成 Markdown 引用块, 不是引用推文或内容为空时返回空串."""
+        return TwitterParser._quote_block(tweet.quoted_status, "引用") if tweet.quoted_status else ""
+
+    @staticmethod
+    def _compose(body: str, tweet: TwitterTweet) -> str:
+        """组装正文: 被回复推文在最前, 被引用推文在最后 (与 X 上的卡片位置一致)."""
+        text = f"{TwitterParser._build_quote(tweet)}{body}"
+        quoted = TwitterParser._build_quoted_block(tweet).strip()
+        return f"{text}\n\n{quoted}" if quoted else text
 
     @staticmethod
     async def media_parse(tweet: TwitterTweet) -> MultimediaParseResult | RichTextParseResult:
@@ -91,17 +105,16 @@ class TwitterParser(BaseParser):
                     case TwitterAni():
                         path = AniRef(url=m.url, ext="mp4", height=m.height, width=m.width, thumb_url=m.thumb_url)
                 media.append(path)
-        quote = TwitterParser._build_quote(tweet)
         if article := tweet.article:
             return RichTextParseResult(
-                markdown_content=f"{quote}{article.content}",
+                markdown_content=TwitterParser._compose(article.content, tweet),
                 title=article.title,
                 media=media,
                 author_name=tweet.author_name,
                 is_sensitive=tweet.is_sensitive,
             )
         return MultimediaParseResult(
-            content=f"{quote}{tweet.full_text}",
+            content=TwitterParser._compose(tweet.full_text, tweet),
             media=media,
             author_name=tweet.author_name,
             is_sensitive=tweet.is_sensitive,

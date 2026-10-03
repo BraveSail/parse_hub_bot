@@ -25,13 +25,18 @@ class Twitter:
     async def fetch_tweet(self, url: str) -> TwitterTweet:
         tweet = self.parse(await self._fetch_result(self.get_id_by_url(url)))
         if tweet.reply_to_id:
-            try:
-                reply_to = self.parse(await self._fetch_result(tweet.reply_to_id))
-            except Exception as e:
-                logger.warning(f"获取被回复推文失败, 跳过引用: {e}")
-            else:
-                tweet.reply_to = reply_to
+            tweet.reply_to = await self._fetch_related(tweet.reply_to_id, "被回复推文")
+        if tweet.quoted_status_id and tweet.quoted_status is None:
+            tweet.quoted_status = await self._fetch_related(tweet.quoted_status_id, "被引用推文")
         return tweet
+
+    async def _fetch_related(self, tweet_id: str, label: str) -> TwitterTweet | None:
+        """补取一条关联推文 (被回复/被引用), 失败只跳过, 不阻断主解析."""
+        try:
+            return self.parse(await self._fetch_result(tweet_id))
+        except Exception as e:
+            logger.warning(f"获取{label}失败, 跳过引用: {e}")
+            return None
 
     async def _fetch_result(self, tweet_id: str) -> dict:
         headers = {
@@ -91,6 +96,10 @@ class Twitter:
         if not result:
             raise ParseError("error -4: 帖子或用户不存在")
 
+        return self._parse_result(result)
+
+    def _parse_result(self, result: dict) -> TwitterTweet:
+        """解析 tweetResult.result 结构 (顶层与内嵌的被引用推文同构)."""
         if tweet := result.get("tweet"):
             tweet_id = tweet.get("rest_id", {})
             legacy: dict | None = tweet.get("legacy")
@@ -106,6 +115,8 @@ class Twitter:
         author_name = self._extract_author_name(result)
         author_handle = self._extract_author_handle(result)
         reply_to_id = str(legacy.get("in_reply_to_status_id_str") or "")
+        quoted_status_id = str(legacy.get("quoted_status_id_str") or "")
+        quoted_status = self._parse_quoted(result)
 
         if article := result.get("article", {}):
             ta = ArticleRenderer(article["article_results"]["result"]).render()
@@ -115,6 +126,8 @@ class Twitter:
                 author_name=author_name,
                 author_handle=author_handle,
                 reply_to_id=reply_to_id,
+                quoted_status_id=quoted_status_id,
+                quoted_status=quoted_status,
                 is_sensitive=bool(legacy.get("possibly_sensitive")),
             )
 
@@ -177,8 +190,26 @@ class Twitter:
             author_name=author_name,
             author_handle=author_handle,
             reply_to_id=reply_to_id,
+            quoted_status_id=quoted_status_id,
+            quoted_status=quoted_status,
             is_sensitive=bool(legacy.get("possibly_sensitive")),
         )
+
+    def _parse_quoted(self, result: dict) -> TwitterTweet | None:
+        """解析内嵌的被引用推文.
+
+        被引用推文的数据通常就在同一份响应里 (quoted_status_result), 不需要额外请求;
+        但 X 会把它降级成 TweetUnavailable (实测匿名请求下稳定如此), 也可能已被删除或受限,
+        因此失败一律只跳过 —— 缺失时由 fetch_tweet 按 quoted_status_id 补取一次.
+        """
+        quoted = (result.get("quoted_status_result") or {}).get("result")
+        if not quoted:
+            return None
+        try:
+            return self._parse_result(quoted)
+        except Exception as e:
+            logger.debug(f"内嵌的被引用推文不可用, 稍后按 ID 补取: {e}")
+            return None
 
     @staticmethod
     def _restore_short_urls(text: str, url_entities: list[dict]) -> str:
@@ -237,6 +268,8 @@ class TwitterTweet:
         author_handle: str = "",
         reply_to_id: str = "",
         reply_to: TwitterTweet | None = None,
+        quoted_status_id: str = "",
+        quoted_status: TwitterTweet | None = None,
         is_sensitive: bool = False,
     ):
         self.tweet_id = tweet_id
@@ -249,6 +282,10 @@ class TwitterTweet:
         """被回复推文的 ID，空字符串表示不是回复"""
         self.reply_to: TwitterTweet | None = reply_to
         """被回复的推文（由 fetch_tweet 填充，仅在是回复时）"""
+        self.quoted_status_id = quoted_status_id
+        """被引用推文的 ID，空字符串表示不是引用推文"""
+        self.quoted_status: TwitterTweet | None = quoted_status
+        """被引用的推文（优先取响应内嵌数据，缺失时由 fetch_tweet 按 ID 补取）"""
         self.is_sensitive = is_sensitive
         """推文是否被标记为敏感内容 (legacy.possibly_sensitive)"""
 
