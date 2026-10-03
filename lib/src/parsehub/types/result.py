@@ -440,6 +440,12 @@ class RichTextParseResult(ParseResult):
 
     type = PostType.RICHTEXT
 
+    #: 正文里已经内嵌了图片的外链, Telegram 会自己去抓, 不需要下载后当附件重发
+    #: (流水线的 richtext_skip_download 依赖这个语义)。
+    #: 若平台把图片从正文**抽走**当成附件放在 ``media`` 里 (如 linux.do),
+    #: 子类要置 True, 否则流水线会跳过下载, 图片就彻底丢了。
+    requires_media_download: ClassVar[bool] = False
+
     def __init__(
         self,
         title: str = "",

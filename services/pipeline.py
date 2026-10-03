@@ -64,6 +64,20 @@ class PipelineProgressCallback:
         await self._reporter.report(text)
 
 
+def should_skip_richtext_download(parse_result: AnyParseResult, *, richtext_skip_download: bool) -> bool:
+    """富文本结果能否跳过下载。
+
+    只有当图片**已经内嵌在正文 markdown 里**（Telegram 自己去抓外链）时才能跳过。
+    平台若把图片从正文抽走、当成附件放在 ``media`` 里（``requires_media_download``），
+    跳过下载就等于把图片丢了。
+    """
+    if not richtext_skip_download:
+        return False
+    if parse_result.type != PostType.RICHTEXT:
+        return False
+    return not getattr(parse_result, "requires_media_download", False)
+
+
 class ParsePipeline:
     """
     将 解析 → 下载 → 格式转换 封装为一条流水线。
@@ -183,7 +197,7 @@ class ParsePipeline:
             if parse_result is None:
                 return None
 
-        if self._richtext_skip_download and parse_result.type == PostType.RICHTEXT:
+        if should_skip_richtext_download(parse_result, richtext_skip_download=self._richtext_skip_download):
             logger.debug("富文本跳过下载")
             return PipelineResult(parse_result=parse_result)
 

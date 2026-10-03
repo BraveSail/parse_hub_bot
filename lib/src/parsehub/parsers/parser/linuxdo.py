@@ -17,6 +17,9 @@ from ..base.base import BaseParser
 class LinuxDoRichTextParseResult(RichTextParseResult):
     """linux.do 的图文主题（正文是 markdown）。"""
 
+    # 图片从正文里抽出来放在 media (正文不含外链图), 必须下载后当附件发送
+    requires_media_download = True
+
 
 class LinuxDoImageParseResult(ImageParseResult):
     """linux.do 的纯图主题。"""
