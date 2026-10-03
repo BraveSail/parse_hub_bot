@@ -41,7 +41,7 @@ from parsehub.provider_api.threads import ThreadsAPI, ThreadsPost
 from parsehub.provider_api.tieba import TieBa, TieBaPost
 from parsehub.provider_api.twitter import TwitterTweet
 from parsehub.provider_api.weibo import Data, WeiboAPI, WeiboContent, WeiboTVContent
-from parsehub.provider_api.weixin import WX
+from parsehub.provider_api.weixin import WX, WXItemShowType
 from parsehub.provider_api.xhs import XHSAPI, XHSPost, XHSPostType
 from parsehub.provider_api.xiaoheihe import XiaoHeiHeAPI, XiaoHeiHePost, XiaoHeiHePostType
 from parsehub.provider_api.zhihu import ZhihuAPI, ZhihuPin, ZhihuQA, ZhihuZhuanLan
@@ -204,15 +204,23 @@ def test_xiaoheihe_user(video):
 
 
 @pytest.mark.parametrize(
-    "body",
+    ("field", "expected"),
     [
-        '<div class="rich_media_content">Body</div>',
-        '<div class="share_content_page"></div><meta name="description" content="Body">',
+        ("nick_name: 'Publisher Name'", "Publisher Name"),
+        ("author: 'Fallback Author'", "Fallback Author"),
     ],
 )
-def test_weixin_publisher_name(body):
-    post = WX._parse_html('<a id="js_name">Publisher &amp; Name</a>' + body)
-    assert post.author_name == "Publisher & Name"
+def test_weixin_publisher_name(field, expected):
+    html = (
+        "<script>var cgiDataNew = {"
+        "item_show_type: '0' * 1,"
+        "title: 'T',"
+        f"{field},"
+        "content_noencode: '<div class=\"rich_media_content\">Body</div>'"
+        "};</script>"
+    )
+    post = WX._parse_data(html)
+    assert post.author_name == expected
 
 
 @pytest.mark.parametrize(
@@ -346,7 +354,7 @@ FORWARD_CASES = [
     (TwitterParser, TwitterParser, "_parse", TwitterTweet(tweet_id="1", author_name=AUTHOR)),
     (WeiboParser, WeiboAPI, "parse", WeiboContent(Data(text_raw="Body", author_name=AUTHOR))),
     (WeiboParser, WeiboAPI, "parse", WeiboTVContent("Body", VIDEO, 1, "", author_name=AUTHOR)),
-    (WXParser, WX, "parse", WX("T", [], "Body", "Body", author_name=AUTHOR)),
+    (WXParser, WX, "parse", WX(WXItemShowType.ARTICLE, "T", "Body", [], "Body", [], author_name=AUTHOR)),
     (XHSParser, XHSAPI, "extract", XHSPost(XHSPostType.IMAGE, "T", "Body", author_name=AUTHOR)),
     (
         XiaoHeiHeParser,

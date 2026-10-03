@@ -11,7 +11,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from ..errors import ParseError
-from ..utils.helpers import get_author_name
+from ..utils.helpers import UA, get_author_name
 
 
 class XHSAPI:
@@ -21,7 +21,15 @@ class XHSAPI:
 
     async def __fetch_html(self, url: str) -> str:
         async with httpx.AsyncClient(proxy=self.proxy, cookies=self.cookie, follow_redirects=True) as client:
-            result = await client.get(url, timeout=30)
+            result = await client.get(
+                url,
+                headers={
+                    "User-Agent": UA,
+                    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp"
+                    ",image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                },
+                timeout=30,
+            )
             if "/login" in str(result.url):
                 raise ParseError("该帖子需要登录后查看")
             elif "/404" in str(result.url):
