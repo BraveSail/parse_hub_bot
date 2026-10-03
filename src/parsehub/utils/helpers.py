@@ -37,6 +37,24 @@ def get_author_name(author: object, *fields: str) -> str:
     return ""
 
 
+def format_author_label(name: str, handle: str = "") -> str:
+    """把作者显示名与用户名拼成一行标签.
+
+    - 两者都有且不同 → ``名字 @handle``
+    - 两者相同 (忽略大小写与首尾空白, handle 的 ``@`` 前缀也会去掉) → 只留 ``@handle``
+    - 只有一边 → 返回那一边; 都没有 → 空串
+    """
+    name = (name or "").strip()
+    handle = (handle or "").strip().lstrip("@").strip()
+    if not name:
+        return f"@{handle}" if handle else ""
+    if not handle:
+        return name
+    if name.casefold() == handle.casefold():
+        return f"@{handle}"
+    return f"{name} @{handle}"
+
+
 def run_sync[T](coro: Coroutine[Any, Any, T]) -> T:
     try:
         asyncio.get_running_loop()

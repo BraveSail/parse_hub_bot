@@ -120,6 +120,17 @@ def test_quoted_block_falls_back_to_author_name():
     assert TwitterParser._build_quoted_block(tweet) == "> 引用 夏吉ゆうこ：\n> x\n\n"
 
 
+def test_quoted_block_uses_handle_only_when_name_matches():
+    """显示名与用户名相同时只写 @用户名, 避免 "same @same" 这种重复"""
+    tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="same", name="same"))
+    assert TwitterParser._build_quoted_block(tweet) == "> 引用 @same：\n> x\n\n"
+
+
+def test_quoted_block_shows_name_and_handle():
+    tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="huacnlee", name="Jason Lee"))
+    assert TwitterParser._build_quoted_block(tweet) == "> 引用 Jason Lee @huacnlee：\n> x\n\n"
+
+
 def test_quoted_block_without_author():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="", name=""))
     assert TwitterParser._build_quoted_block(tweet) == "> 引用：\n> x\n\n"
@@ -144,10 +155,11 @@ def test_media_parse_keeps_reply_before_and_quote_after():
     tweet = TwitterTweet(
         tweet_id="1",
         full_text="mine",
-        reply_to=TwitterTweet(tweet_id="2", full_text="parent", author_handle="parent"),
+        reply_to=TwitterTweet(tweet_id="2", full_text="parent", author_name="Parent", author_handle="parent"),
         quoted_status=quoted_tweet("original"),
     )
     result = asyncio.run(TwitterParser.media_parse(tweet))
+    # "Parent"/"parent" 与 "Other"/"other" 忽略大小写视为同一名字, 只出 @用户名
     assert result.content == "> 回复 @parent：\n> parent\n\nmine\n\n> 引用 @other：\n> original"
 
 
@@ -173,7 +185,9 @@ def test_quote_end_to_end_from_payload():
     quoted = make_result("Vibe coding 的时候…", rest_id="999", handle="huacnlee", name="Jason Lee")
     payload = make_payload(make_result("往代码仓库里拉屎的就这些人"), quoted=quoted)
     result = asyncio.run(TwitterParser.media_parse(Twitter().parse(payload)))
-    assert result.content == "往代码仓库里拉屎的就这些人\n\n> 引用 @huacnlee：\n> Vibe coding 的时候…"
+    assert result.content == (
+        "往代码仓库里拉屎的就这些人\n\n> 引用 Jason Lee @huacnlee：\n> Vibe coding 的时候…"
+    )
 
 
 # ── provider: 内嵌数据被降级时按 ID 补取 ─────────────────────

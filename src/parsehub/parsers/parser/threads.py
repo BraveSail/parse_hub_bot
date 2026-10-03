@@ -1,5 +1,6 @@
 from ...provider_api.threads import ThreadsAPI, ThreadsAPIError, ThreadsMedia, ThreadsMediaType, ThreadsPost
 from ...types import AnyMediaRef, ImageRef, MultimediaParseResult, ParseError, Platform, VideoRef
+from ...utils.helpers import format_author_label
 from ..base.base import BaseParser
 
 
@@ -42,14 +43,8 @@ class ThreadsParser(BaseParser):
         text = (reply.content or "").strip()
         if not text:
             return ""
-        handle = (reply.author_handle or "").strip()
-        name = (reply.author_name or "").strip()
-        if handle:
-            head = f"> 回复 @{handle}："
-        elif name:
-            head = f"> 回复 {name}："
-        else:
-            head = "> 回复："
+        author = format_author_label(reply.author_name or "", reply.author_handle or "")
+        head = f"> 回复 {author}：" if author else "> 回复："
         lines = "\n".join(f"> {line}" if line.strip() else ">" for line in text.splitlines())
         return f"{head}\n{lines}\n\n"
 

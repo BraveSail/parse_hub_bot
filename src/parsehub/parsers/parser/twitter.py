@@ -18,6 +18,7 @@ from ...types import (
     RichTextParseResult,
     VideoRef,
 )
+from ...utils.helpers import format_author_label
 from ..base.base import BaseParser
 
 
@@ -58,14 +59,8 @@ class TwitterParser(BaseParser):
         text = (source.full_text or "").strip()
         if not text:
             return ""
-        handle = (source.author_handle or "").strip()
-        name = (source.author_name or "").strip()
-        if handle:
-            head = f"> {label} @{handle}："
-        elif name:
-            head = f"> {label} {name}："
-        else:
-            head = f"> {label}："
+        author = format_author_label(source.author_name or "", source.author_handle or "")
+        head = f"> {label} {author}：" if author else f"> {label}："
         lines = "\n".join(f"> {line}" if line.strip() else ">" for line in text.splitlines())
         return f"{head}\n{lines}\n\n"
 
