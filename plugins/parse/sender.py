@@ -579,6 +579,7 @@ def _rich_cache_entry(parse_result: AnyParseResult, media: list[CacheMedia]) -> 
             is_sensitive=parse_result.is_sensitive,
             published_at=getattr(parse_result, "published_at", None),
             view_count=getattr(parse_result, "view_count", None),
+            like_count=getattr(parse_result, "like_count", None),
             tags=list(getattr(parse_result, "tags", None) or []),
         ),
         media=media or None,

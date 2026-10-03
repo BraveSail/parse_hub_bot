@@ -16,6 +16,7 @@
 27350d00b70d: Przesyłanie...
 295bb704f520: Język
 2bc28481a223: Automatyczne usuwanie wiadomości z linkami
+2c055973c8bc: Spróbuj ponownie później lub wyślij link na czacie
 30364e475d07: To nie jest twoja operacja
 3065ed13e5f9: Pobierz oryginalny link
 31936e26c173: Pobierz wszystkie {media_count} elementy
@@ -40,6 +41,7 @@
 
 
   **Repozytorium otwartego źródła: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
+5348dcac296c: Analiza nie powiodła się
 569c1f28ab00: Pakowanie...
 5861d620c41d: Pobieranie... | {current}/{total}
 5a9f36a77173: Pakuj
@@ -54,9 +56,9 @@
 68957ac274c5: Pobieranie... | {current * 100 / total:.0f}%
 '734176584215': Nie jesteś właścicielem tego kanału, nie masz uprawnień do zmiany
   konfiguracji kanału
+75f0fa966d82: polubień
 769d88e425e0: Zakończono
 77274b54a324: 'Błąd {stage}:'
-77db686f0262: Wysyłaj jako wiadomość rozszerzoną
 7eafd0a497bd: '
 
 
@@ -64,7 +66,6 @@
 816de50b9e0e: Wpisz link w polu czatu
 868afb493654: Wybierz cel konfiguracji
 8a8672da4ab7: Nieobsługiwany element konfiguracji
-8f555aa82c87: Oryginalny link
 945599b91845: Wyłącz postęp analizy
 9b3dbf3e3f85: Ukryj dolny „Źródło”
 a3e3b88377c8: Start

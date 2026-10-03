@@ -242,6 +242,7 @@ class ThreadsPost:
     reply_to: ThreadsPost | None = None
     published_at: datetime | None = None
     view_count: int | None = None
+    like_count: int | None = None
 
     @classmethod
     def from_graphql(cls, post: dict[str, Any]) -> ThreadsPost:
@@ -255,6 +256,7 @@ class ThreadsPost:
             author_handle=str((post.get("user") or {}).get("username") or ""),
             published_at=to_datetime(post.get("taken_at")),
             view_count=to_int(post.get("view_count")),
+            like_count=to_int(post.get("like_count")),
         )
 
     @classmethod

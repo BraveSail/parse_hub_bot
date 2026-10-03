@@ -16,6 +16,7 @@
 27350d00b70d: Đang tải lên...
 295bb704f520: Ngôn ngữ
 2bc28481a223: Tự động xóa tin nhắn liên kết
+2c055973c8bc: Vui lòng thử lại sau hoặc gửi liên kết vào cuộc trò chuyện
 30364e475d07: Đây không phải thao tác của bạn
 3065ed13e5f9: Lấy liên kết gốc
 31936e26c173: Nhận tất cả {media_count} mục
@@ -37,6 +38,7 @@
 
 
   **Địa chỉ mã nguồn mở: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
+5348dcac296c: Phân tích thất bại
 569c1f28ab00: Đang đóng gói...
 5861d620c41d: Đang tải xuống... | {current}/{total}
 5a9f36a77173: Đóng gói
@@ -51,9 +53,9 @@
 68957ac274c5: Đang tải xuống... | {current * 100 / total:.0f}%
 '734176584215': Bạn không phải là chủ sở hữu của kênh này, không có quyền thay đổi
   cấu hình kênh
+75f0fa966d82: lượt thích
 769d88e425e0: Hoàn thành
 77274b54a324: 'Lỗi {stage}:'
-77db686f0262: Gửi dưới dạng tin nhắn phong phú
 7eafd0a497bd: '
 
 
@@ -61,7 +63,6 @@
 816de50b9e0e: Vui lòng nhập liên kết trong hộp chat
 868afb493654: Chọn mục tiêu cấu hình
 8a8672da4ab7: Mục cấu hình không được hỗ trợ
-8f555aa82c87: Liên kết gốc
 945599b91845: Vô hiệu hóa tiến trình phân tích
 9b3dbf3e3f85: Ẩn "Nguồn" ở dưới cùng
 a3e3b88377c8: Bắt đầu

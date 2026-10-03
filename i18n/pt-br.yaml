@@ -16,6 +16,7 @@
 27350d00b70d: Enviando...
 295bb704f520: Idioma
 2bc28481a223: Excluir automaticamente mensagens de link
+2c055973c8bc: Tente novamente mais tarde ou envie o link no chat
 30364e475d07: Esta não é a sua operação
 3065ed13e5f9: Obter link original
 31936e26c173: Obter todos os {media_count} itens
@@ -32,6 +33,7 @@
   necessidade de análise frequente ou em lote, recomenda-se implantar sua própria
   instância para evitar acionar o limite global de taxa da API do Telegram\n\n**Código
   aberto disponível em: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
+5348dcac296c: Falha na análise
 569c1f28ab00: Empacotando...
 5861d620c41d: Baixando... | {current}/{total}
 5a9f36a77173: Empacotar
@@ -46,9 +48,9 @@
 68957ac274c5: Baixando... | {current * 100 / total:.0f}%
 '734176584215': Você não é o proprietário deste canal, não tem permissão para modificar
   a configuração do canal
+75f0fa966d82: curtidas
 769d88e425e0: Concluído
 77274b54a324: 'Erro em {stage}:'
-77db686f0262: Enviar como mensagem rica
 7eafd0a497bd: '
 
 
@@ -56,7 +58,6 @@
 816de50b9e0e: Por favor, insira o link na caixa de chat
 868afb493654: Selecione o alvo da configuração
 8a8672da4ab7: Opção de configuração não suportada
-8f555aa82c87: Link original
 945599b91845: Desativar progresso de análise
 9b3dbf3e3f85: Ocultar "Source" na parte inferior
 a3e3b88377c8: Iniciar

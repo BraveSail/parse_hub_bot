@@ -33,6 +33,7 @@ class ThreadsParser(BaseParser):
             author_url=profile_url(Platform.THREADS, post.author_handle),
             published_at=post.published_at,
             view_count=post.view_count,
+            like_count=post.like_count,
         )
 
     @staticmethod

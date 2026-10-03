@@ -22,6 +22,7 @@ def test_cache_refreshes_only_legacy_entries_missing_author(author, versioned, h
             "author_name": author,
             "published_at": None,
             "view_count": None,
+            "like_count": None,
             "tags": [],
         }
     }
@@ -55,6 +56,53 @@ def test_cache_refreshes_entries_written_before_metadata_line():
         result = asyncio.run(PersistentCache().get("https://www.threads.com/@user/post/Abc"))
     assert result is None
     assert repo.touch.await_count == 0
+
+
+def test_cache_refreshes_entries_written_before_like_count():
+    """没有 like_count 字段的缓存要重新解析, 否则页脚缺点赞那段"""
+    payload = {
+        "parse_result": {
+            "title": "T",
+            "author_name": "Author",
+            "published_at": None,
+            "view_count": None,
+            "tags": [],
+        },
+        "author_metadata_version": 1,
+    }
+    stored = SimpleNamespace(entry_json=payload)
+    repo = SimpleNamespace(get=AsyncMock(return_value=stored), touch=AsyncMock())
+
+    @asynccontextmanager
+    async def session():
+        yield None
+
+    with patch("services.cache.get_session", session), patch("services.cache.CacheRepo", return_value=repo):
+        result = asyncio.run(PersistentCache().get("https://www.threads.com/@a/post/x"))
+    assert result is None
+    assert repo.touch.await_count == 0
+
+
+def test_metadata_line_includes_like_count():
+    """点赞数按平台给的值渲染, 拿不到就不显示那一段"""
+    import datetime
+
+    line = build_metadata_line(
+        published_at=datetime.datetime(2026, 10, 3, 11, 0, tzinfo=datetime.UTC),
+        view_count=4984,
+        like_count=158,
+        lang="zh-hans",
+        view_label="查看",
+        like_label="点赞",
+    )
+    assert line == "19:00 · 2026年10月3日 · 4,984 查看 · 158 点赞"
+
+
+def test_metadata_line_with_like_only():
+    """threads 拿不到浏览量但有点赞: 只显示点赞, 不留空占位"""
+    line = build_metadata_line(view_count=None, like_count=303, lang="zh-hans", view_label="查看", like_label="点赞")
+    assert line == "303 点赞"
+    assert " ·  · " not in line
 
 
 def test_cache_refreshes_entries_written_before_tags():

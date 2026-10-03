@@ -80,8 +80,10 @@ def build_caption(
         metadata_line=build_metadata_line(
             published_at=getattr(parse_result, "published_at", None),
             view_count=getattr(parse_result, "view_count", None),
+            like_count=getattr(parse_result, "like_count", None),
             lang=lang,
             view_label=view_label,
+            like_label=t_("点赞") if view_label else "",
         ),
     )
 
@@ -100,20 +102,23 @@ def build_metadata_line(
     *,
     published_at: datetime | None = None,
     view_count: int | None = None,
+    like_count: int | None = None,
     lang: str = "",
     view_label: str = "",
+    like_label: str = "",
 ) -> str:
-    """把发布时间/浏览量渲染成一行, 例如「19:00 · 2026年10月3日 · 1,455 查看」。
+    """把发布时间/浏览量/点赞渲染成一行, 例如「19:00 · 2026年10月3日 · 1,455 查看 · 158 点赞」。
 
-    两项都没有 (或平台不提供) 时返回空串, 不会留下空占位符。
-    view_label 由调用方用 ``t_("查看")`` 提供以获得正确语言。
+    平台不提供的项直接跳过, 不会留下空占位符。
+    view_label / like_label 由调用方用 ``t_("查看")`` / ``t_("点赞")`` 提供以获得正确语言。
     """
     parts: list[str] = []
     if published_at:
         parts.extend(_format_published(published_at, lang))
     if view_count is not None:
-        label = view_label or str(t_("查看"))
-        parts.append(f"{view_count:,} {label}".strip())
+        parts.append(f"{view_count:,} {view_label or t_('查看')}".strip())
+    if like_count is not None:
+        parts.append(f"{like_count:,} {like_label or t_('点赞')}".strip())
     return _METADATA_SEPARATOR.join(part for part in parts if part)
 
 
@@ -231,8 +236,10 @@ def build_rich_markdown(
     metadata = build_metadata_line(
         published_at=getattr(parse_result, "published_at", None),
         view_count=getattr(parse_result, "view_count", None),
+        like_count=getattr(parse_result, "like_count", None),
         lang=lang,
         view_label=view_label,
+        like_label=t_("点赞") if view_label else "",
     )
     if metadata:
         footer_parts.append(metadata)
@@ -263,6 +270,7 @@ def build_rich_markdown_by_str(
     author_url: str = "",
     published_at: datetime | None = None,
     view_count: int | None = None,
+    like_count: int | None = None,
     tags: Sequence[str] | None = None,
     custom_content: str = "",
     media_placeholders: Sequence[str] = (),
@@ -270,7 +278,16 @@ def build_rich_markdown_by_str(
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。"""
     return build_rich_markdown(
         _RichFields(  # type: ignore[arg-type]
-            title, content, raw_url, author_name, author_handle, author_url, published_at, view_count, tags
+            title,
+            content,
+            raw_url,
+            author_name,
+            author_handle,
+            author_url,
+            published_at,
+            view_count,
+            like_count,
+            tags,
         ),
         config=config,
         lang=lang,
@@ -284,7 +301,17 @@ class _RichFields:
     """最小 duck-type: 让 build_rich_markdown 能吃缓存里的字段。"""
 
     def __init__(
-        self, title, content, raw_url, author_name, author_handle, author_url, published_at, view_count, tags=None
+        self,
+        title,
+        content,
+        raw_url,
+        author_name,
+        author_handle,
+        author_url,
+        published_at,
+        view_count,
+        like_count=None,
+        tags=None,
     ):
         self.title = title or ""
         self.content = content or ""
@@ -294,6 +321,7 @@ class _RichFields:
         self.author_url = author_url or ""
         self.published_at = published_at
         self.view_count = view_count
+        self.like_count = like_count
         self.tags = list(tags or [])
         self.platform = None
         self.markdown_content = ""

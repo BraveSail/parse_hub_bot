@@ -59,6 +59,7 @@ class PixivIllust:
     user_account: str = ""
     """作者的用户名 (@ 后面的部分), 与显示名 userName 可能不同"""
     view_count: int = 0
+    like_count: int = 0
 
     @classmethod
     def parse(
@@ -90,6 +91,7 @@ class PixivIllust:
             create_date=str(data.get("createDate") or ""),
             user_account=str(data.get("userAccount") or ""),
             view_count=int(data.get("viewCount") or 0),
+            like_count=int(data.get("likeCount") or 0),
         )
 
 

@@ -15,6 +15,7 @@
 27350d00b70d: Yükleniyor...
 295bb704f520: Dil
 2bc28481a223: Bağlantı mesajlarını otomatik sil
+2c055973c8bc: Daha sonra tekrar deneyin veya bağlantıyı sohbete gönderin
 30364e475d07: Bu senin işlemin değil
 3065ed13e5f9: Orijinal bağlantıyı al
 31936e26c173: Tüm {media_count} öğeyi al
@@ -38,6 +39,7 @@
 
 
   **Açık kaynak adresi: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
+5348dcac296c: Ayrıştırma başarısız
 569c1f28ab00: Paketleniyor...
 5861d620c41d: İndiriliyor... | {current}/{total}
 5a9f36a77173: Paketle
@@ -52,9 +54,9 @@
 68957ac274c5: İndiriliyor... | {current * 100 / total:.0f}%
 '734176584215': Bu kanalın sahibi değilsiniz, kanal yapılandırmasını değiştirme yetkiniz
   yok
+75f0fa966d82: beğeni
 769d88e425e0: Tamamlandı
 77274b54a324: '{stage} hata:'
-77db686f0262: Zengin mesaj olarak gönder
 7eafd0a497bd: '
 
 
@@ -62,7 +64,6 @@
 816de50b9e0e: Lütfen sohbet kutusuna bağlantı girin
 868afb493654: Yapılandırma hedefi seçin
 8a8672da4ab7: Desteklenmeyen yapılandırma öğesi
-8f555aa82c87: Orijinal bağlantı
 945599b91845: Çözümleme ilerlemesini devre dışı bırak
 9b3dbf3e3f85: Alt "Kaynak"u gizle
 a3e3b88377c8: Başlat

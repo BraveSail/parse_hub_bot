@@ -16,6 +16,7 @@
 27350d00b70d: Sedang mengunggah...
 295bb704f520: Bahasa
 2bc28481a223: Hapus otomatis pesan tautan
+2c055973c8bc: Coba lagi nanti, atau kirim tautan di chat
 30364e475d07: Ini bukan tindakan Anda
 3065ed13e5f9: Dapatkan tautan asli
 31936e26c173: Dapatkan semua {media_count} item
@@ -40,6 +41,7 @@
 
 
   **Alamat sumber terbuka: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
+5348dcac296c: Gagal mengurai
 569c1f28ab00: Sedang mengemas...
 5861d620c41d: Sedang mengunduh... | {current}/{total}
 5a9f36a77173: Mengemas
@@ -53,9 +55,9 @@
 68957ac274c5: Sedang mengunduh... | {current * 100 / total:.0f}%
 '734176584215': Anda bukan pemilik saluran ini, tidak berwenang mengubah konfigurasi
   saluran
+75f0fa966d82: suka
 769d88e425e0: Selesai
 77274b54a324: 'Kesalahan {stage}:'
-77db686f0262: Kirim sebagai pesan kaya
 7eafd0a497bd: '
 
 
@@ -63,7 +65,6 @@
 816de50b9e0e: Silakan masukkan tautan di kotak obrolan
 868afb493654: Pilih target konfigurasi
 8a8672da4ab7: Opsi konfigurasi tidak didukung
-8f555aa82c87: Tautan asli
 945599b91845: Nonaktifkan progres parsing
 9b3dbf3e3f85: Sembunyikan "Sumber" di bagian bawah
 a3e3b88377c8: Mulai

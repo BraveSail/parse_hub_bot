@@ -103,6 +103,7 @@ class CacheParseResult(BaseModel):
     is_sensitive: bool = False
     published_at: datetime | None = None
     view_count: int | None = None
+    like_count: int | None = None
     tags: list[str] = []
 
 
@@ -167,6 +168,11 @@ class PersistentCache:
             if "published_at" not in entry.parse_result.model_fields_set:
                 # 旧缓存没有统计字段: 直接复用会让同一条链接第二次发送时缺统计行
                 self.logger.debug(f"旧缓存缺少发布时间/浏览量, 重新解析: key={url}")
+                return None
+
+            if "like_count" not in entry.parse_result.model_fields_set:
+                # 旧缓存没有点赞数: 复用会让页脚缺那一段
+                self.logger.debug(f"旧缓存缺少点赞数, 重新解析: key={url}")
                 return None
 
             if "tags" not in entry.parse_result.model_fields_set:

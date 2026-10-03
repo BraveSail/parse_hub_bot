@@ -188,6 +188,7 @@ class TestParseResultToDict(unittest.TestCase):
                 "is_sensitive": False,
                 "published_at": None,
                 "view_count": None,
+                "like_count": None,
                 "tags": [],
                 "media": {
                     "url": "https://cdn.example/video.mp4",
@@ -205,6 +206,17 @@ class TestParseResultToDict(unittest.TestCase):
         result = VideoParseResult(title="T", video=VideoRef(url="https://cdn.example/v.mp4"), author_handle="  @abc ")
         assert result.to_dict()["author_handle"] == "abc"
         assert result.author_handle == "abc"
+
+    def test_like_count_is_kept_and_parsed(self):
+        """点赞数原样保留 (字符串也接受), 没传时为空"""
+        result = VideoParseResult(
+            title="T",
+            video=VideoRef(url="https://cdn.example/v.mp4"),
+            like_count="303",
+        )
+        assert result.like_count == 303
+        assert result.to_dict()["like_count"] == 303
+        assert VideoParseResult(title="T", video=VideoRef(url="https://cdn.example/v.mp4")).like_count is None
 
     def test_author_url_is_kept_and_stripped(self):
         """作者主页地址原样保留 (只去首尾空白); 没传时为空串"""

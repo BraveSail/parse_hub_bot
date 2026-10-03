@@ -182,6 +182,7 @@ def build_cached_rich_content(
         author_url=entry.parse_result.author_url,
         published_at=entry.parse_result.published_at,
         view_count=entry.parse_result.view_count,
+        like_count=entry.parse_result.like_count,
         tags=entry.parse_result.tags,
         custom_content=custom_content,
         media_placeholders=wrap_collage(placeholders),

@@ -17,6 +17,7 @@
 27350d00b70d: Uploading...
 295bb704f520: Language
 2bc28481a223: Automatically delete link messages
+2c055973c8bc: Please try again later, or send the link in the chat
 30364e475d07: This is not your operation
 3065ed13e5f9: Get original link
 31936e26c173: Get all {media_count} items
@@ -38,6 +39,7 @@
 
 
   **Open source repository: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
+5348dcac296c: Parse failed
 569c1f28ab00: Packaging...
 5861d620c41d: Downloading... | {current}/{total}
 5a9f36a77173: Package
@@ -51,9 +53,9 @@
 68957ac274c5: Downloading... | {current * 100 / total:.0f}%
 '734176584215': You are not the owner of this channel, no permission to modify channel
   configuration
+75f0fa966d82: likes
 769d88e425e0: Done
 77274b54a324: '{stage} error:'
-77db686f0262: Send as rich message
 7eafd0a497bd: '
 
 
@@ -61,7 +63,6 @@
 816de50b9e0e: Please enter the link in the chat box
 868afb493654: Select configuration target
 8a8672da4ab7: Unsupported configuration item
-8f555aa82c87: Original link
 945599b91845: Disable parsing progress
 9b3dbf3e3f85: Hide bottom "Source"
 a3e3b88377c8: Start

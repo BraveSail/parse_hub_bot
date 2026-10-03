@@ -16,6 +16,7 @@
 27350d00b70d: Subiendo...
 295bb704f520: Idioma
 2bc28481a223: Eliminar automáticamente mensajes con enlaces
+2c055973c8bc: Vuelve a intentarlo más tarde o envía el enlace al chat
 30364e475d07: Esta no es tu acción
 3065ed13e5f9: Obtener enlace original
 31936e26c173: Obtener los {media_count} elementos
@@ -40,6 +41,7 @@
 
 
   **Repositorio abierto: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
+5348dcac296c: Error de análisis
 569c1f28ab00: Empaquetando...
 5861d620c41d: Descargando... | {current}/{total}
 5a9f36a77173: Empaquetar
@@ -54,9 +56,9 @@
 68957ac274c5: Descargando... | {current * 100 / total:.0f}%
 '734176584215': No eres el propietario de este canal, no tienes permiso para modificar
   la configuración del canal
+75f0fa966d82: Me gusta
 769d88e425e0: Completado
 77274b54a324: 'Error en {stage}:'
-77db686f0262: Enviar como mensaje enriquecido
 7eafd0a497bd: '
 
 
@@ -64,7 +66,6 @@
 816de50b9e0e: Por favor, introduce un enlace en el chat
 868afb493654: Seleccionar objetivo de configuración
 8a8672da4ab7: Opción de configuración no soportada
-8f555aa82c87: Enlace original
 945599b91845: Desactivar progreso de análisis
 9b3dbf3e3f85: Ocultar "Fuente" en la parte inferior
 a3e3b88377c8: Iniciar

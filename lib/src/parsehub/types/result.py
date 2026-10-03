@@ -39,6 +39,7 @@ class ParseResult(ABC):  # noqa: B024
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        like_count: int | None = None,
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
@@ -51,6 +52,7 @@ class ParseResult(ABC):  # noqa: B024
         :param is_sensitive: 敏感内容标记 (R18/NSFW), 仅在有平台官方标记时置位
         :param published_at: 发布时间 (带时区), 平台没提供时为 None
         :param view_count: 浏览量/播放量, 平台没提供时为 None
+        :param like_count: 点赞数, 平台没提供时为 None
         :param author_handle: 作者的用户名/账号 (不带 @), 平台没提供时为空
         :param author_url: 作者主页地址, 平台没提供或拿不到时为空
         :param tags: 作品标签 (平台提供时才有, 去重且保持原顺序)
@@ -66,6 +68,7 @@ class ParseResult(ABC):  # noqa: B024
         self.is_sensitive = is_sensitive
         self.published_at = to_datetime(published_at)
         self.view_count = to_int(view_count)
+        self.like_count = to_int(like_count)
         self.tags = self._clean_tags(tags)
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
@@ -114,6 +117,7 @@ class ParseResult(ABC):  # noqa: B024
             "is_sensitive": self.is_sensitive,
             "published_at": self.published_at.isoformat() if self.published_at else None,
             "view_count": self.view_count,
+            "like_count": self.like_count,
             "tags": list(self.tags),
             "media": media,
         }
@@ -341,6 +345,7 @@ class VideoParseResult(ParseResult):
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        like_count: int | None = None,
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
@@ -354,6 +359,7 @@ class VideoParseResult(ParseResult):
             is_sensitive=is_sensitive,
             published_at=published_at,
             view_count=view_count,
+            like_count=like_count,
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
@@ -374,6 +380,7 @@ class ImageParseResult(ParseResult):
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        like_count: int | None = None,
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
@@ -387,6 +394,7 @@ class ImageParseResult(ParseResult):
             is_sensitive=is_sensitive,
             published_at=published_at,
             view_count=view_count,
+            like_count=like_count,
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
@@ -407,6 +415,7 @@ class MultimediaParseResult(ParseResult):
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        like_count: int | None = None,
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
@@ -419,6 +428,7 @@ class MultimediaParseResult(ParseResult):
             is_sensitive=is_sensitive,
             published_at=published_at,
             view_count=view_count,
+            like_count=like_count,
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
@@ -439,6 +449,7 @@ class RichTextParseResult(ParseResult):
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        like_count: int | None = None,
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
@@ -457,6 +468,7 @@ class RichTextParseResult(ParseResult):
             is_sensitive=is_sensitive,
             published_at=published_at,
             view_count=view_count,
+            like_count=like_count,
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
