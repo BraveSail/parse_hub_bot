@@ -168,14 +168,11 @@ class LinuxDoTopic:
         - ``div.lightbox-wrapper``：图片会作为媒体单独发送，正文里不再重复
         - ``details`` / ``summary``：富文本渲染不支持折叠，这里展开（保留内容、去掉外壳标题）
         - ``div.spoiler``：只保留内容
-        - ``img.emoji``：转回文本形式（``:name:``），否则正文里会出现外链图片语法，
-          而富文本/inline 不接受外部媒体
-        - ``img.avatar``：引用回复头部的头像，去掉即可（用户名就在旁边）
+        - ``img.emoji`` / ``img.avatar``：直接去掉 —— emoji 的 alt 是 ``:name:`` 形式,
+          留在正文里既不美观也不是原样文本; 头像则是引用回复头部的装饰
         """
-        for emoji in soup.find_all("img", class_="emoji"):
-            emoji.replace_with(str(emoji.get("alt") or emoji.get("title") or ""))
-        for avatar in soup.find_all("img", class_="avatar"):
-            avatar.decompose()
+        for tag in soup.find_all("img", class_=["emoji", "avatar"]):
+            tag.decompose()
         for wrapper in soup.find_all("div", class_="lightbox-wrapper"):
             wrapper.decompose()
         for details in soup.find_all("details"):
@@ -192,7 +189,7 @@ class LinuxDoTopic:
             return ""
         converter = MarkdownConverter(heading_style="ATX")
         markdown_content = str(converter.convert(html))
-        # 去掉转换后的空行堆积与 markdownify 对普通文字里的下划线转义
+        # 去掉转换后的空行堆积（删掉表情/头像后可能多出空段落）
         markdown_content = re.sub(r"\n{3,}", "\n\n", markdown_content)
         return markdown_content.strip()
 

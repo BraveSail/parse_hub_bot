@@ -116,10 +116,8 @@ def test_emoji_is_not_treated_as_media():
     payload["post_stream"]["posts"][0]["cooked"] = cooked
     topic = LinuxDoTopic._from_payload(payload, "2979226")
     assert topic.images == []
-    # 表情以文本形式留在正文里, 不产生外链图片语法
-    # (markdownify 会把下划线转义成 \_ , 渲染后仍是 _)
-    assert ":enraged" in topic.markdown_content
-    assert "![" not in topic.markdown_content
+    # 表情直接从正文里去掉, 不产生外链图片语法也不留下 :name: 形式的文本
+    assert topic.markdown_content.strip() == "好看"
     assert "twemoji" not in topic.markdown_content
 
 
