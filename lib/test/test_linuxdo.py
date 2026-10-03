@@ -123,6 +123,28 @@ def test_emoji_is_not_treated_as_media():
     assert "twemoji" not in topic.markdown_content
 
 
+def test_avatar_is_not_media_and_is_removed_from_the_body():
+    """引用回复的头像 (img.avatar) 不是帖子媒体, 正文里也不该出现"""
+    cooked = (
+        '<aside class="quote no-group" data-username="paomian_1">'
+        '<div class="title"><img alt="" width="24" height="24" '
+        'src="https://cdn.ldstatic.com/user_avatar/linux.do/paomian_1/48/430070_2.png" '
+        'class="avatar"> paomian_1:</div>'
+        "<blockquote><p>被引用的内容</p></blockquote></aside>"
+        "<p>我的回复</p>"
+    )
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = cooked
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+
+    assert topic.images == []
+    assert "user_avatar" not in topic.markdown_content
+    # 引用块与用户名保留
+    assert "paomian" in topic.markdown_content
+    assert "被引用的内容" in topic.markdown_content
+    assert "我的回复" in topic.markdown_content
+
+
 def test_unsupported_url_is_rejected():
     """用户页/其它站点不能被当成话题解析"""
     for url in ("https://linux.do/u/VerenQwQ", "https://linux.do/latest", "https://example.com/t/topic/1"):

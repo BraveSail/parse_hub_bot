@@ -170,9 +170,12 @@ class LinuxDoTopic:
         - ``div.spoiler``：只保留内容
         - ``img.emoji``：转回文本形式（``:name:``），否则正文里会出现外链图片语法，
           而富文本/inline 不接受外部媒体
+        - ``img.avatar``：引用回复头部的头像，去掉即可（用户名就在旁边）
         """
         for emoji in soup.find_all("img", class_="emoji"):
             emoji.replace_with(str(emoji.get("alt") or emoji.get("title") or ""))
+        for avatar in soup.find_all("img", class_="avatar"):
+            avatar.decompose()
         for wrapper in soup.find_all("div", class_="lightbox-wrapper"):
             wrapper.decompose()
         for details in soup.find_all("details"):
@@ -200,9 +203,9 @@ class LinuxDoTopic:
         seen: set[str] = set()
 
         for img in soup.find_all("img"):
-            # Discourse 把表情也渲染成 <img class="emoji" src=".../twemoji/xxx.png">,
-            # 20x20 的小图不该当成帖子媒体发送
-            if "emoji" in (img.get("class") or []):
+            classes = img.get("class") or []
+            # 表情 (img.emoji) 与头像 (img.avatar, 引用回复里那个 24x24 小图) 都不是帖子媒体
+            if "emoji" in classes or "avatar" in classes:
                 continue
             src = str(img.get("src") or "")
             link = img.find_parent("a")
