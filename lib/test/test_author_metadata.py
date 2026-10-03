@@ -416,6 +416,7 @@ def test_all_registered_platforms_have_author_coverage():
             Platform.FACEBOOK,
             Platform.YOUTUBE,
             Platform.SNAPCHAT,
+            Platform.LINUXDO,
         }
     )
     assert platforms == {p.__platform__ for p in ParseHub().parsers}
