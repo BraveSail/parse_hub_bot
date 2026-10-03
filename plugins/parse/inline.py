@@ -1,14 +1,15 @@
+import re
 from collections.abc import Sequence
 
 from parsehub import AnyParseResult
 from parsehub.types import (
     AniRef,
-    AnyMediaRef,
     ImageRef,
     RichTextParseResult,
     VideoRef,
 )
 from pyrogram import Client, raw, utils
+from pyrogram.errors import BadRequest
 from pyrogram.types import (
     ChosenInlineResult,
     InlineQuery,
@@ -124,10 +125,85 @@ async def inline_parse_tip(_: Client, inline_query: InlineQuery) -> None:
     await inline_query.answer(results=results, cache_time=1)
 
 
+async def answer_inline(
+    inline_query: InlineQuery,
+    results: list[InlineQueryResult],
+    *,
+    lang: str,
+    cache_time: int = 0,
+    switch_pm_text: str = "",
+    switch_pm_parameter: str = "",
+) -> None:
+    """回答内联查询, 失败时退化成一条可读的错误结果。
+
+    Telegram 对内联回答很挑 (例如富文本里带外部媒体会直接
+    ``400 EXTERNAL_MEDIA_NOT_SUPPORTED``); 一旦答案送不出去, 客户端只会一直转圈,
+    用户完全看不到原因。所以这里兜一层: 先按完整结果发, 失败就把富文本项剔掉再试,
+    仍失败则回一条纯文字提示。
+    """
+    _t = t_[lang]
+    try:
+        await inline_query.answer(
+            results[:50],
+            cache_time=cache_time,
+            switch_pm_text=switch_pm_text,
+            switch_pm_parameter=switch_pm_parameter,
+        )
+        return
+    except BadRequest as e:
+        logger.warning(f"内联回答被拒: {e}")
+
+    # 富文本项最可能是元凶 (它依赖的设置最多), 去掉后再试一次
+    plain = [r for r in results if not _is_rich_result(r)]
+    if plain and len(plain) != len(results):
+        try:
+            await inline_query.answer(
+                plain[:50],
+                cache_time=cache_time,
+                switch_pm_text=switch_pm_text,
+                switch_pm_parameter=switch_pm_parameter,
+            )
+            return
+        except BadRequest as e:
+            logger.warning(f"去掉富文本项后仍被拒: {e}")
+
+    await inline_query.answer(
+        results=[
+            InlineQueryResultArticle(
+                title=_t("解析失败"),
+                description=_t("请稍后重试, 或直接把链接发到聊天里"),
+                input_message_content=InputTextMessageContent(
+                    _t("解析失败"), link_preview_options=LinkPreviewOptions(is_disabled=True)
+                ),
+            )
+        ],
+        cache_time=1,
+    )
+
+
+def _is_rich_result(result: InlineQueryResult) -> bool:
+    """结果项里是不是富文本 (带 InputRichMessageContent 的那种)。"""
+    return isinstance(getattr(result, "input_message_content", None), InputRichMessageContent)
+
+
 @Client.on_inline_query(platform_filter(False))
 @with_request_id
 async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     logger.info(f"收到内联解析请求: query={inline_query.query}, from_user={inline_query.from_user.id}")
+    try:
+        await _call_inline_parse(cli, inline_query)
+    except Exception as e:
+        # 解析异常同样不能让客户端转圈: 给一条可读的结果
+        logger.opt(exception=e).warning(f"内联解析失败: {e}")
+        try:
+            async with get_session() as session:
+                lang = await UserService(session).get_lang(inline_query.from_user.id)
+        except Exception:  # noqa: BLE001 - 兜底路径不再抛错
+            lang = ""
+        await answer_inline(inline_query, [], lang=lang)
+
+
+async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     raw_url = await ParseService().get_raw_url(inline_query.query)
     async with get_session() as session:
         lang = await UserService(session).get_lang(inline_query.from_user.id)
@@ -138,8 +214,10 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         switch_pm_text, switch_pm_parameter = await build_switch_pm(
             count_inline_media(cached.media), raw_url, lang
         )
-        await inline_query.answer(
-            results[:50],
+        await answer_inline(
+            inline_query,
+            results,
+            lang=lang,
             cache_time=60,
             switch_pm_text=switch_pm_text,
             switch_pm_parameter=switch_pm_parameter,
@@ -156,12 +234,8 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     switch_pm_text, switch_pm_parameter = await build_switch_pm(
         count_inline_media(parse_result.media), raw_url, lang
     )
-    await inline_query.answer(
-        results[:50],
-        cache_time=0,
-        switch_pm_text=switch_pm_text,
-        switch_pm_parameter=switch_pm_parameter,
-    )
+    await answer_inline(inline_query, results, lang=lang, cache_time=0,
+                        switch_pm_text=switch_pm_text, switch_pm_parameter=switch_pm_parameter)
 
 
 async def _drop_inline_keyboard(cli: Client, inline_message_id: str) -> None:
@@ -383,33 +457,27 @@ def build_cached_inline_results(
     return results
 
 
-def _inline_media_placeholder(media_ref: AnyMediaRef) -> str:
-    """内联结果里的媒体占位: 直接把 URL 写进 markdown, 不传 media 字段。"""
-    match media_ref:
-        case ImageRef() | VideoRef() | AniRef():
-            return f"![]({media_ref.url})"
-    return ""
+#: markdown 里的图片/视频语法 (![](url) / ![alt](url)); inline 不支持外部媒体, 必须剥掉
+_MEDIA_MARKDOWN_RE = re.compile(r"!\[[^\]]*\]\([^)\s]+\)")
+
+
+def strip_media_markdown(markdown: str) -> str:
+    """剥掉正文里的媒体语法。
+
+    inline 结果**不支持外部媒体** —— 带 URL 的图片会让 Telegram 直接回
+    ``400 EXTERNAL_MEDIA_NOT_SUPPORTED``, 整条 inline 回答失败 (表现是客户端一直转圈)。
+    所以 inline 的富文本只保留文字排版, 图由单独的 InlineQueryResultPhoto/Video 提供。
+    """
+    return _MEDIA_MARKDOWN_RE.sub("", markdown or "")
 
 
 def build_inline_rich_content(
     parse_result: AnyParseResult, *, lang: str, config: SettingsConfig
 ) -> InputRichMessageContent:
-    """inline 结果的富文本内容。
-
-    inline 构建结果时拿不到本地文件 (不下载), 所以媒体用 URL 直接写进 markdown 交给
-    Telegram 服务端抓取 —— **不传 media 字段**, 因此也不会在此刻触发 peer=self 的
-    UploadMedia (那条路一旦失败, 整条 inline 回答都会失败)。图抓不到只是不显示。
-    """
+    """inline 结果的富文本内容 (纯文字排版 + 页尾, 不带任何媒体)。"""
     _t = t_[lang]
-    placeholders = [_inline_media_placeholder(ref) for ref in to_list(parse_result.media)]
-    markdown = build_rich_markdown(
-        parse_result,
-        config=config,
-        lang=lang,
-        view_label=_t("查看"),
-        media_placeholders=[p for p in placeholders if p],
-    )
-    return InputRichMessageContent(InputRichMessage(markdown=markdown))
+    markdown = build_rich_markdown(parse_result, config=config, lang=lang, view_label=_t("查看"))
+    return InputRichMessageContent(InputRichMessage(markdown=strip_media_markdown(markdown)))
 
 
 async def build_inline_results(
