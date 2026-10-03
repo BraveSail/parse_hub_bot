@@ -20,8 +20,9 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
 
 - **HTML 锚点**：footer 与正文里的链接必须写 `<a href="url">文字</a>` —— 富文本的 markdown
   链接语法在 footer 块里不生效，会原样显示成 `[文字](url)`。
-- **页尾统计行**：发布时间 + 浏览量，**一律 24 小时制**（中文只有日期部分是中文格式，
-  如 `19:00 · 2026年10月3日`），拿不到的项直接不显示，不留空占位。
+- **页尾统计行**：发布时间 + 浏览量 + 点赞数，**一律 24 小时制**（中文只有日期部分是中文格式，
+  如 `19:00 · 2026年10月3日 · 4,985 查看 · 158 点赞`），拿不到的项直接不显示，不留空占位
+  （threads 没有浏览量但有点赞时只显示 `303 点赞`）。
 - **标签行**：平台提供的标签渲染成指向该平台标签页的链接；行首 `#标签` 必须转义
   （否则被当成一级标题，字号巨大），裸 hashtag 遇到 `・` 之类的字符会被服务端截断，
   链接形式两个问题都没有。标签多时按显示宽度截断（`TAG_LINE_DISPLAY_BUDGET`）。
@@ -55,7 +56,7 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
 ## 3. 元数据与作者
 
 - **库侧新增字段的消费端**（`lib/src/parsehub`）：`published_at` / `view_count` /
-  `author_handle` / `author_url` / `tags`。每个字段的落地清单是
+  `like_count` / `author_handle` / `author_url` / `tags`。每个字段的落地清单是
   库 → 直发路径 → 缓存路径（`build_rich_markdown_by_str`）→ `CacheParseResult` →
   「缺字段即过期」的重解析判据，漏一处就是「有时候有、有时候没有」。
 - **作者行**：`名字 @handle：`，其中 `@handle` 链到作者主页；显示名与用户名相同时只写
@@ -89,9 +90,10 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
 - **帖子与作者元数据**（上层消费方依赖）：
   - `is_sensitive` —— 平台有官方标记才置位（pixiv `xRestrict > 0`、twitter `possibly_sensitive`），
     4 个 `ParseResult` 子类同参转发 + `to_dict()` 带上；**不靠关键词猜**。
-  - `published_at` / `view_count` —— 取值来源：twitter `legacy.created_at` + `views.count`、
-    threads `taken_at`、douyin `create_time` + `statistics.play_count`、bilibili `View.pubdate` +
-    `stat.view`、yt-dlp `timestamp` + `view_count`、pixiv `createDate` + `viewCount`。
+  - `published_at` / `view_count` / `like_count` —— 取值来源：twitter `legacy.created_at` +
+    `views.count`、threads `taken_at` + `like_count`、douyin `create_time` +
+    `statistics.play_count`、bilibili `View.pubdate` + `stat.view`、yt-dlp `timestamp` +
+    `view_count`、pixiv `createDate` + `viewCount` + `likeCount`。
   - `author_name` / `author_handle` / `author_url` —— 给所有支持平台补齐作者名与主页地址，
     只用**明确的作者对象**取值，**绝不从正文猜**（`utils/helpers.get_author_name`）。
   - `tags` —— 平台自带标签（pixiv `tags.tags[].tag` 等），归一化（去空、忽略大小写去重、
