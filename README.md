@@ -2,12 +2,13 @@
 
 # 🎬 shirobako
 
-**Telegram 多平台聚合解析机器人**
+**Telegram Multi-Platform Content Parsing Bot**
 
-本项目基于 [z-mio/parse_hub_bot](https://github.com/z-mio/parse_hub_bot) 与
-[z-mio/ParseHub](https://github.com/z-mio/ParseHub) 改造，已独立维护（不是任何仓库的 fork）。
-解析库以 **git subtree** 内置于 `lib/`，单仓库即可构建、测试、部署。
-本地改动清单见 [LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md)。
+Built on [z-mio/parse_hub_bot](https://github.com/z-mio/parse_hub_bot) and
+[z-mio/ParseHub](https://github.com/z-mio/ParseHub), and maintained independently — this is
+not a fork of either. The parser library is vendored under `lib/` (git subtree), so one clone
+builds, tests and deploys everything. See
+[LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md) for the list of local changes.
 
 <p align="center">
   <a href="https://github.com/BraveSail/shirobako/blob/main/LICENSE">
@@ -24,201 +25,206 @@
   </a>
 </p>
 
-简体中文 |
-[English](README.en.md)
+[简体中文](README.zh-CN.md) | English
 
-[**🤖 上游实例**](https://t.me/ParseHubot) ·
-[**📚 解析库 (lib/)**](https://github.com/BraveSail/shirobako/tree/main/lib) ·
-[**🐛 问题反馈**](https://github.com/BraveSail/shirobako/issues)
+[**🤖 Upstream Demo**](https://t.me/ParseHubot) ·
+[**📚 Parser Library (lib/)**](https://github.com/BraveSail/shirobako/tree/main/lib) ·
+[**🐛 Report an Issue**](https://github.com/BraveSail/shirobako/issues)
 
 </div>
 
 ---
 
-> 上游官方实例：[@ParseHubot](https://t.me/ParseHubot)（本项目是独立的自托管版本）
+> Upstream official bot: [@ParseHubot](https://t.me/ParseHubot) (this repository is an independent, self-hosted build)
 
-## ✨ 功能特性
+## ✨ Features
 
-- 🎬 **多平台解析** — 抖音、B站、YouTube、小红书、Twitter 等 16+ 主流平台一站搞定
-- 📰 **富文本排版** — 正文按 Telegram 富文本消息还原原文格式, 发布时间/浏览量/来源收在页尾
-- ⚡ **内联模式** — 在任意聊天窗口输入 `@BotUsername <链接>` 即可解析
-- 🖼️ **Tg 兼容** — 自动转码、长图切割、大视频分段
-- 📦 **多种模式** — 在线预览, 原始文件, 打包下载
-- 🐳 **Docker 部署** — 开箱即用
+- 🎬 **Multi-platform parsing** — Parse content from 16+ major platforms, including Douyin, Bilibili, YouTube,
+  Xiaohongshu, and Twitter
+- ⚡ **Inline mode** — Parse a link from any chat by typing `@BotUsername <link>`
+- 🖼️ **Telegram-ready media** — Automatic transcoding, long-image splitting, and large-video segmentation
+- 📰 **Rich formatting** — The body is sent as a Telegram rich message that keeps the original
+  layout, with publish time, view count and source in the footer
+- 📦 **Multiple delivery modes** — Online preview, original file, or packaged download
+- 🐳 **Docker deployment** — Ready to use out of the box
 
-## 📦 支持平台一览
+## 📦 Supported Platforms
 
-| 平台            | 视频 | 图文 |           其他            |
-|:----------------|:----:|:----:|:-------------------------:|
-| **Twitter / X** |  ✅  |  ✅  |          📝 文章          |
-| **Instagram**   |  ✅  |  ✅  |                           |
-| **YouTube**     |  ✅  |      |          🎵 音乐          |
-| **Facebook**    |  ✅  |      |                           |
-| **Threads**     |  ✅  |  ✅  |                           |
-| **Bilibili**    |  ✅  |      |          📝 动态          |
-| **抖音**        |  ✅  |  ✅  |          ☀️日常           |
-| **TikTok**      |  ✅  |  ✅  |                           |
-| **微博**        |  ✅  |  ✅  |                           |
-| **小红书**      |  ✅  |  ✅  |                           |
-| **贴吧**        |  ✅  |  ✅  |                           |
-| **微信公众号**  |      |  ✅  |                           |
-| **快手**        |  ✅  |  ✅  |                           |
-| **酷安**        |      |  ✅  |                           |
-| **皮皮虾**      |  ✅  |  ✅  |                           |
-| **最右**        |  ✅  |  ✅  |                           |
-| **小黑盒**      |  ✅  |  ✅  |                           |
-| **Snapchat**    |  ✅  |      |                           |
-| **知乎**        |  ✅  |  ✅  | 🐶 问答, 专栏, 圈子, 日报 |
-| **豆瓣**        |  ✅  |  ✅  |        👥 小组话题        |
+| Platform        | Video | Image Posts |              Other              |
+|:----------------|:-----:|:-----------:|:-------------------------------:|
+| **Twitter / X** |  ✅   |     ✅      |           📝 Articles           |
+| **Instagram**   |  ✅   |     ✅      |                                 |
+| **YouTube**     |  ✅   |             |            🎵 Music             |
+| **Facebook**    |  ✅   |             |                                 |
+| **Threads**     |  ✅   |     ✅      |                                 |
+| **Pixiv**       |       |     ✅      |          🖼️ Illustrations        |
+| **Bilibili**    |  ✅   |             |           📝 Updates            |
+| **Douyin**      |  ✅   |     ✅      |         ☀️ Daily posts          |
+| **TikTok**      |  ✅   |     ✅      |                                 |
+| **Weibo**       |  ✅   |     ✅      |                                 |
+| **Xiaohongshu** |  ✅   |     ✅      |                                 |
+| **Tieba**       |  ✅   |     ✅      |                                 |
+| **WeChat OA**   |       |     ✅      |                                 |
+| **Kuaishou**    |  ✅   |     ✅      |                                 |
+| **Coolapk**     |       |     ✅      |                                 |
+| **Pipixia**     |  ✅   |     ✅      |                                 |
+| **Zuiyou**      |  ✅   |     ✅      |                                 |
+| **Xiaoheihe**   |  ✅   |     ✅      |                                 |
+| **Snapchat**    |  ✅   |             |                                 |
+| **Zhihu**       |  ✅   |     ✅      | 🐶 Q&A, columns, circles, Daily |
+| **Douban**      |  ✅   |     ✅      |         👥 Group topics         |
 
-> 🔧 更多平台持续接入中...
+> 🔧 More platforms are being added continuously...
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 🐳 Docker 运行 (推荐)
+### 🐳 Run with Docker (recommended)
 
-本仓库不发布预构建镜像，用仓库内的 `compose.deploy.yaml` 本地构建（解析库已内置于
-`lib/`，**只需克隆本仓库**）：
+No prebuilt image is published; build locally with the repository's `compose.deploy.yaml`
+(the parser library is vendored in `lib/`, so **a single clone is enough**):
 
 ```bash
 git clone git@github.com:BraveSail/shirobako.git
 cd shirobako
-cp .env.example .env   # 至少填 API_ID / API_HASH / BOT_TOKEN
+cp .env.example .env   # at least API_ID / API_HASH / BOT_TOKEN
 docker compose -f compose.deploy.yaml build bot
 docker compose -f compose.deploy.yaml up -d
 ```
 
-> 只想用上游的现成镜像（不含本仓库的改动）可以拉 `ghcr.io/z-mio/parse_hub_bot:latest`。
+> For the upstream image (without the local changes) you can still pull
+> `ghcr.io/z-mio/parse_hub_bot:latest`.
 
-### 💻 源码运行
+### 💻 Run from Source
 
 ```bash
-uv sync          # uv workspace 会把 lib/ 里的解析库一并装成可编辑依赖
+uv sync          # the uv workspace installs lib/ as an editable dependency
 uv run bot.py
 ```
 
-### 🧪 测试
+### 🧪 Tests
 
 ```bash
-uv run pytest test/                       # bot
-uv run --package parsehub pytest lib/test/  # 解析库
+uv run pytest test/                        # bot
+uv run --package parsehub pytest lib/test/ # parser library
 ```
 
-### 🔄 同步上游
+### 🔄 Sync upstream
 
 ```bash
-git fetch upstream && git merge upstream/main                      # bot 上游
-git subtree pull --prefix=lib https://github.com/z-mio/ParseHub.git master   # 库上游
+git fetch upstream && git merge upstream/main                                 # bot upstream
+git subtree pull --prefix=lib https://github.com/z-mio/ParseHub.git master    # library upstream
 ```
 
 ---
 
-## ⚙️ 配置说明
+## ⚙️ Configuration
 
-- **环境变量:** 基础配置
-- **平台配置 (可选):** 平台代理和 Cookie
+- **Environment variables:** Required base configuration
+- **Platform configuration (optional):** Per-platform proxies and cookies
 
-### 📝 环境变量
+### 📝 Environment Variables
 
 ```dotenv
-# ✅ 必填
-API_ID=        # Telegram API ID，登录 https://my.telegram.org 获取
-API_HASH=      # Telegram API Hash，同上获取
-BOT_TOKEN=     # 机器人 Token，向 @BotFather 申请
+# ✅ Required
+API_ID=        # Telegram API ID; obtain it at https://my.telegram.org
+API_HASH=      # Telegram API Hash; obtain it at the same place
+BOT_TOKEN=     # Bot token; create one via @BotFather
 
-# 🔲 可选
-BOT_PROXY=     # Bot 连接 TG 使用的代理，例：http://127.0.0.1:7890
+# 🔲 Optional
+BOT_PROXY=     # Proxy for the bot's Telegram connection, e.g. http://127.0.0.1:7890
 ```
 
-### 🌐 平台配置
+### 🌐 Platform Configuration
 
-用于为各解析平台单独配置 **代理**和 **Cookie**，位于 `data/config/platform_config.yaml`
+Configure **proxies** and **cookies** for each parser platform in `data/config/platform_config.yaml`.
 
 ```yaml
-# ═══════════════════════ 全局默认代理 ═══════════════════════
-# 当某平台未单独配置代理时，会使用全局默认代理
-# 支持填写单个地址(字符串)或多个地址(列表，随机选取)
-# 支持 http://、https://、socks5://、socks5h:// 协议
+# ═══════════════════════ Global default proxies ═══════════════════════
+# A platform without an individual proxy configuration uses the global default.
+# A proxy may be a single address (string) or a pool of addresses (list, selected at random).
+# Supported schemes: http://, https://, socks5://, socks5h://
 
-default_parser_proxies: http://127.0.0.1:7890        # 解析代理（单个）
-default_downloader_proxies: # 下载代理（代理池）
+default_parser_proxies: http://127.0.0.1:7890        # Parser proxy (single)
+default_downloader_proxies: # Downloader proxy (pool)
   - http://127.0.0.1:7890
   - http://127.0.0.1:7891
 
-# ═══════════════════════ 平台独立配置 ═══════════════════════
+# ═══════════════════════ Per-platform configuration ═══════════════════════
 platforms:
-  <platform_id>: # 平台 ID，见下方支持列表
-    disable_parser_proxy: false          # 是否禁用解析代理（直连）
-    disable_downloader_proxy: false      # 是否禁用下载代理（直连）
-    parser_proxies: # 该平台专用解析代理池
+  <platform_id>: # Platform ID; see the supported-platform list below
+    disable_parser_proxy: false          # Disable parser proxy (use direct connection)
+    disable_downloader_proxy: false      # Disable downloader proxy (use direct connection)
+    parser_proxies: # Dedicated parser proxy pool for this platform
       - http://proxy1:port
-    downloader_proxies: # 该平台专用下载代理池
+    downloader_proxies: # Dedicated downloader proxy pool for this platform
       - http://proxy2:port
-    cookies: # 该平台 Cookie 列表（随机选取）
+    cookies: # Cookie list for this platform (selected at random)
       - "cookie_string_1"
       - "cookie_string_2"
 ```
 
-### 🔀 代理优先级
+### 🔀 Proxy Priority
 
-解析代理和下载代理各自遵循相同的优先级逻辑：
+Parser and downloader proxies each use the same priority order:
 
 ```
-禁用代理 (disable_*_proxy: true)
-  ↓ 未禁用
-平台专用代理 (parser_proxies / downloader_proxies)
-  ↓ 未配置
-全局默认代理 (default_parser_proxies / default_downloader_proxies)
-  ↓ 未配置
-直连（不使用代理）
+Disable proxy (disable_*_proxy: true)
+  ↓ if not disabled
+Platform-specific proxy (parser_proxies / downloader_proxies)
+  ↓ if not configured
+Global default proxy (default_parser_proxies / default_downloader_proxies)
+  ↓ if not configured
+Direct connection (no proxy)
 ```
 
-> 💡 当代理池中有多个地址时，每次请求会 **随机选取**一个
+> 💡 When a proxy pool contains multiple addresses, one is **selected at random** for every request.
 
-### 🔑 支持的平台 ID
+### 🔑 Supported Platform IDs
 
-`<platform_id>` 必须是以下合法的平台 ID：
+`<platform_id>` must be one of the following valid platform IDs:
 
-| 平台 ID     | 对应平台    |
+| Platform ID | Platform    |
 |:------------|:------------|
 | `twitter`   | Twitter / X |
 | `instagram` | Instagram   |
 | `youtube`   | YouTube     |
 | `facebook`  | Facebook    |
 | `threads`   | Threads     |
-| `bilibili`  | 哔哩哔哩    |
-| `douyin`    | 抖音        |
+| `pixiv`     | Pixiv       |
+| `bilibili`  | Bilibili    |
+| `douyin`    | Douyin      |
 | `tiktok`    | TikTok      |
-| `weibo`     | 微博        |
-| `xhs`       | 小红书      |
-| `tieba`     | 百度贴吧    |
-| `wechat`    | 微信公众号  |
-| `kuaishou`  | 快手        |
-| `coolapk`   | 酷安        |
-| `pipixia`   | 皮皮虾      |
-| `zuiyou`    | 最右        |
-| `xiaoheihe` | 小黑盒      |
+| `weibo`     | Weibo       |
+| `xhs`       | Xiaohongshu |
+| `tieba`     | Baidu Tieba |
+| `weixin`    | WeChat OA   |
+| `kuaishou`  | Kuaishou    |
+| `coolapk`   | Coolapk     |
+| `pipix`     | 皮皮虾      |
+| `zuiyou`    | Zuiyou      |
+| `xiaoheihe` | Xiaoheihe   |
 | `snapchat`  | Snapchat    |
-| `zhihu`     | 知乎        |
-| `douban`    | 豆瓣        |
+| `zhihu`     | Zhihu       |
+| `douban`    | Douban      |
 
-### 🍪 支持 Cookie 的平台
+### 🍪 Platforms Supporting Cookies
 
 - `Twitter / X`
 - `Instagram`
 - `Threads`
 - `YouTube`
+- `Pixiv`
 - `Bilibili`
-- `抖音`
+- `Douyin`
 - `TikTok`
-- `快手`
-- `小红书`
-- `知乎`
-- `豆瓣`
+- `Kuaishou`
+- `Xiaohongshu`
+- `Zhihu`
+- `Douban`
 
-### 📌 配置示例
+### 📌 Configuration Examples
 
-##### 示例 1：国内平台直连，海外平台走代理
+##### Example 1: Use direct connections for mainland Chinese platforms and a proxy for overseas platforms
 
 ```yaml
 default_parser_proxies: http://127.0.0.1:7890
@@ -236,7 +242,7 @@ platforms:
     disable_downloader_proxy: true
 ```
 
-#### 示例 2：Twitter 配置 Cookie + 使用全局代理
+#### Example 2: Configure a Twitter cookie and use the global proxy
 
 ```yaml
 default_parser_proxies: http://127.0.0.1:7890
@@ -248,7 +254,7 @@ platforms:
       - "auth_token=your_token_here; ct0=your_ct0_here"
 ```
 
-#### 示例 3：YouTube 使用独立代理池
+#### Example 3: Use a dedicated proxy pool for YouTube
 
 ```yaml
 platforms:
@@ -262,7 +268,7 @@ platforms:
       - http://proxy-eu-1:8080
 ```
 
-#### 示例 4：B站指定 Cookie 轮换 + 解析直连 + 下载走代理
+#### Example 4: Rotate Bilibili cookies, parse directly, and use a proxy for downloads
 
 ```yaml
 platforms:
@@ -275,36 +281,35 @@ platforms:
       - "SESSDATA=yyy; bili_jct=yyy; buvid3=yyy"
 ```
 
-## 🤝 参与贡献
+## 🤝 Contributing
 
-欢迎提交 Pull Request 或 Issue!
+Pull requests and issues are welcome!
 
-- 核心解析相关请前往 [ParseHub](https://github.com/z-mio/ParseHub)
-- Bug 反馈请附上相关 URL 和日志信息
+- For core parsing features, please visit [ParseHub](https://github.com/z-mio/ParseHub).
+- When reporting a bug, please include the relevant URL and log information.
 
-### 开发规范
+### Development Guidelines
 
-提交代码前请至少执行:
+Before submitting code, run at least:
 
 ```bash
 ruff format && ruff check --fix && uv run mypy
 uv run pytest
 ```
 
-## 🙏 致谢
+## 🙏 Credits
 
-- [ParseHubBot (z-mio/parse_hub_bot)](https://github.com/z-mio/parse_hub_bot) — bot 部分的基础
-- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — 解析库（现位于 `lib/`）
+- [ParseHubBot (z-mio/parse_hub_bot)](https://github.com/z-mio/parse_hub_bot) — the base of the bot
+- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — the parser library (now in `lib/`)
 
-## 📄 开源协议
+## 📄 License
 
-本项目基于 [MIT License](LICENSE) 协议开源（沿用上游协议）
+This project is released under the [MIT License](LICENSE) (inherited from upstream).
 
 ---
 
 <div align="center">
 
-**如果这个项目对你有帮助，欢迎点个 ⭐ Star!**
+**If this project helps you, please consider giving it a ⭐ Star!**
 
 </div>
-
