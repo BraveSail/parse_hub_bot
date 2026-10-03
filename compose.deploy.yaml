@@ -6,8 +6,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.deploy
-      additional_contexts:
-        parsehub: ../ParseHub
     restart: unless-stopped
     env_file:
       - .env

@@ -14,9 +14,8 @@ dependencies = [
     "loguru>=0.6.0",
     "lxml-html-clean>=0.4.1",
     "markdown>=3.7",
-    # 镜像构建时从 PyPI 装一个占位版本, Dockerfile 随后用 additional_context 的
-    # /opt/parsehub (本仓库 checkout) 覆盖安装 —— builder 阶段没有 git, 不能写 git 源
-    "parsehub>=2.2.4",
+    # 解析库已并入本仓库 lib/ (uv workspace 成员), 见 [tool.uv.sources]
+    "parsehub",
     "pillow>=12.1.1",
     "pillow-heif>=1.1.1",
     "pydantic>=2.12.5",
@@ -47,6 +46,14 @@ ignore = [
     "B008", # 不在参数默认值中执行函数调用
     "C901", # 函数复杂度过高
 ]
+
+# 解析库并入本仓库 (lib/), 用 workspace 共享一份 lock 与虚拟环境,
+# 不再需要 PyPI 占位版本 + 构建期覆盖安装那一套
+[tool.uv.workspace]
+members = ["lib"]
+
+[tool.uv.sources]
+parsehub = { workspace = true }
 
 [dependency-groups]
 dev = [

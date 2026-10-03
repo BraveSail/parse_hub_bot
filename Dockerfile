@@ -8,6 +8,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
 COPY pyproject.toml uv.lock ./
+COPY lib/ ./lib/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc python3-dev \

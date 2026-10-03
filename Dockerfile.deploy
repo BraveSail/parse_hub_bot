@@ -11,15 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         gcc python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# 解析库是本仓库的 workspace 成员 (lib/), 随源码一起进镜像, 无需外部 build context
 COPY pyproject.toml uv.lock ./
+COPY lib/ ./lib/
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
-
-# Keep locked dependencies while replacing the released parser with this checkout.
-COPY --from=parsehub / /opt/parsehub/
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /app/.venv/bin/python --no-deps --reinstall /opt/parsehub \
-    && uv pip check --python /app/.venv/bin/python
 
 COPY . .
 
