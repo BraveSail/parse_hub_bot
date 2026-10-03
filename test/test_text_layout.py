@@ -136,8 +136,8 @@ def test_linuxdo_tags_link_to_the_tag_page():
     assert ">\\#女装</a>" in line
 
 
-def test_tags_sit_under_the_title_not_after_the_body():
-    """标签是标题的元信息: 要排在标题/作者下面、正文之前"""
+def test_tags_sit_directly_under_the_title():
+    """标签要排在标题正下方 (在作者行**之前**, 不是作者下面)"""
     from plugins.helpers import build_rich_markdown
 
     result = ImageParseResult(content="我的回复", photo=[])
@@ -154,7 +154,7 @@ def test_tags_sit_under_the_title_not_after_the_body():
     pos_tags = md.index("linux.do/tag/")
     pos_body = md.index("我的回复")
 
-    assert pos_title < pos_author < pos_tags < pos_body
+    assert pos_title < pos_tags < pos_author < pos_body
 
 
 def test_setext_underlines_are_escaped():

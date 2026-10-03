@@ -213,11 +213,11 @@ def build_rich_markdown(
     parts: list[str] = []
     if title and not config.hide_title:
         parts.append(f"### {title}")
-    if author := format_author_line(parse_result):
-        parts.append(author)
-    # 标签紧跟在标题/作者下面 (它们是标题的元信息, 不该跑到正文后面去)
+    # 标签紧跟在标题正下方 (在作者行之前, 不在作者下方)
     if tag_line := format_tags(parse_result):
         parts.append(tag_line)
+    if author := format_author_line(parse_result):
+        parts.append(author)
     body_text, quote = split_trailing_quote(content) if content else ("", "")
     if body_text and not config.hide_desc:
         parts.append(body_text)
