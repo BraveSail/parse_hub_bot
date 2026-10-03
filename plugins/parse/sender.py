@@ -21,9 +21,7 @@ from pyrogram.types import (
     InputMediaDocument,
     InputMediaPhoto,
     InputMediaVideo,
-    InputRichBlockAnimation,
     InputRichMessage,
-    InputRichMessageMedia,
     LinkPreviewOptions,
     Message,
 )
@@ -37,8 +35,8 @@ from plugins.helpers import (
     get_parse_author_name,
 )
 from plugins.parse.cache import cache_media_from_message
-from plugins.parse.inline_rich import build_cached_rich_content, extract_cache_media
-from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock, markdown_to_blocks
+from plugins.parse.inline_rich import build_cached_rich_content, build_rich_media, extract_cache_media
+from plugins.parse.rich_blocks import markdown_to_blocks
 from repo.settings import SettingsConfig
 from services import (
     CacheEntry,
@@ -481,90 +479,6 @@ async def send_cached(
 
 def media_input(media: PathType | BinaryIO | None) -> PathType | BinaryIO:
     return cast(PathType | BinaryIO, media)
-
-
-#: rich message 里媒体占位链接的类型 (tg://<kind>?id=<id>)
-RICH_MEDIA_KIND: dict[type, str] = {
-    ImageFile: "photo",
-    VideoFile: "video",
-    LivePhotoFile: "video",
-    AniFile: "video",
-}
-
-
-def build_rich_media(
-    media_refs: Sequence[AnyMediaRef],
-    processed_list: list[ProcessedMedia],
-    *,
-    video_cover: bool,
-    is_sensitive: bool = False,
-) -> tuple[list[InputRichMessageMedia], list[str], dict[str, Any]]:
-    """构建富文本的媒体块与正文里的占位符.
-
-    媒体用下载好的本地文件上传 (send_rich_message 内部走 messages.UploadMedia),
-    不把原始 URL 交给 Telegram 抓取 —— 那条路有 20 MB 上限。
-
-    返回三样:
-    - media: markdown 路径用的 InputRichMessageMedia 列表
-    - placeholders: 正文里的 markdown 占位符
-    - media_blocks: blocks 路径用的 id -> 块映射 (敏感内容打码只能走这条)
-    """
-    media: list[InputRichMessageMedia] = []
-    placeholders: list[str] = []
-    media_blocks: dict[str, Any] = {}
-    index = 0
-
-    for media_ref, processed in zip(media_refs, processed_list, strict=False):
-        file_paths = processed.output_paths or [processed.source.path]
-        for file_path in file_paths:
-            file_path_str = str(file_path)
-            width, height, duration = resolve_media_info(processed, file_path_str)
-            kind = RICH_MEDIA_KIND.get(type(processed.source))
-            if kind is None:
-                continue
-
-            match processed.source:
-                case ImageFile():
-                    item = InputMediaPhoto(media=file_path_str, has_spoiler=is_sensitive)
-                case AniFile():
-                    item = InputMediaAnimation(media=file_path_str, has_spoiler=is_sensitive)
-                case VideoFile():
-                    item = InputMediaVideo(
-                        media=file_path_str,
-                        has_spoiler=is_sensitive,
-                        video_cover=media_ref.thumb_url if video_cover else None,
-                        duration=duration,
-                        width=width,
-                        height=height,
-                        supports_streaming=True,
-                    )
-                case LivePhotoFile():
-                    item = InputMediaVideo(
-                        media=processed.source.video_path,
-                        has_spoiler=is_sensitive,
-                        video_cover=file_path_str if video_cover else None,
-                        duration=duration,
-                        width=width,
-                        height=height,
-                        supports_streaming=True,
-                    )
-                case _:
-                    continue
-
-            media_id = f"m{index}"
-            index += 1
-            media.append(InputRichMessageMedia(media_id, item))
-            placeholders.append(f"![](tg://{kind}?id={media_id})")
-            # blocks 路径: 官方 API 的 InputRichBlockPhoto/Video 没有 spoiler, 自定义块才有
-            match processed.source:
-                case ImageFile():
-                    media_blocks[media_id] = SpoilerPhotoBlock(item, spoiler=is_sensitive)
-                case VideoFile() | LivePhotoFile():
-                    media_blocks[media_id] = SpoilerVideoBlock(item, spoiler=is_sensitive)
-                case AniFile():
-                    media_blocks[media_id] = InputRichBlockAnimation(item)
-
-    return media, placeholders, media_blocks
 
 
 def _rich_cache_entry(parse_result: AnyParseResult, media: list[CacheMedia]) -> CacheEntry:

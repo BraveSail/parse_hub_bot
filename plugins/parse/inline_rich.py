@@ -9,13 +9,17 @@ inline **回答查询时**不能带外部媒体 (Telegram 直接回 `EXTERNAL_ME
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
+from parsehub.types import AniFile, AnyMediaRef, ImageFile, LivePhotoFile, VideoFile
 from pyrogram import raw, utils
 from pyrogram.types import (
     InputMediaAnimation,
     InputMediaPhoto,
     InputMediaVideo,
+    InputRichBlockAnimation,
     InputRichMessage,
     InputRichMessageMedia,
 )
@@ -29,62 +33,98 @@ if TYPE_CHECKING:
 
 logger = logger.bind(name="InlineRichEdit")
 
+#: 媒体类型 -> tg:// 占位符的 kind
+RICH_MEDIA_KIND: dict[type, str] = {
+    ImageFile: "photo",
+    VideoFile: "video",
+    LivePhotoFile: "video",
+    AniFile: "video",
+}
+
 #: 富文本结果项的 result_id (选中回调靠它区分)
 RICH_RESULT_ID = "rich"
 
-#: 媒体类型 -> tg:// 占位符的 kind
-_KIND_BY_CLASS = {
-    "ImageFile": "photo",
-    "VideoFile": "video",
-    "LivePhotoFile": "video",
-    "AniFile": "video",
-}
-
-
-def build_media_items(
+def build_rich_media(
+    media_refs: Sequence[AnyMediaRef],
     processed_list: list[ProcessedMedia],
-    media_refs: list,
     *,
+    video_cover: bool = True,
     is_sensitive: bool = False,
-) -> tuple[list[InputRichMessageMedia], list[str], dict]:
-    """把已下载的媒体构造成富文本 media 块 + 正文占位符 + (打码用的) blocks 映射。"""
-    from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
+    video_thumbs: Mapping[str, Path] | None = None,
+) -> tuple[list[InputRichMessageMedia], list[str], dict[str, Any]]:
+    """把已下载的媒体构造成富文本 media 块 + 正文占位符 + (打码用的) blocks 映射。
 
+    媒体用下载好的本地文件上传 (``send_rich_message`` 内部走 ``messages.UploadMedia``),
+    不把原始 URL 交给 Telegram 抓取 —— 那条路有 20 MB 上限。
+
+    直发与 inline 编辑**共用这一份**, 免得两边各写一遍。
+
+    :param video_thumbs: 视频封面 URL -> 已下载好的本地图片 (见 ``covers.prepare_video_thumbs``)。
+        必须是本地文件: 富文本路径只上传 document 本身, 远端 cover 参数会被丢弃。
+    """
+    from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
+    from services.media import resolve_media_info
+
+    thumbs = video_thumbs or {}
     media: list[InputRichMessageMedia] = []
     placeholders: list[str] = []
-    media_blocks: dict = {}
+    media_blocks: dict[str, Any] = {}
     index = 0
 
     for media_ref, processed in zip(media_refs, processed_list, strict=False):
         file_paths = processed.output_paths or [processed.source.path]
-        kind = _KIND_BY_CLASS.get(type(processed.source).__name__)
-        if kind is None:
-            continue
         for file_path in file_paths:
             file_path_str = str(file_path)
-            match type(processed.source).__name__:
-                case "ImageFile":
-                    item = InputMediaPhoto(file_path_str, has_spoiler=is_sensitive)
-                case "AniFile":
-                    item = InputMediaAnimation(file_path_str, has_spoiler=is_sensitive)
-                case "VideoFile" | "LivePhotoFile":
+            width, height, duration = resolve_media_info(processed, file_path_str)
+            kind = RICH_MEDIA_KIND.get(type(processed.source))
+            if kind is None:
+                continue
+
+            match processed.source:
+                case ImageFile():
+                    item = InputMediaPhoto(media=file_path_str, has_spoiler=is_sensitive)
+                case AniFile():
+                    item = InputMediaAnimation(media=file_path_str, has_spoiler=is_sensitive)
+                case VideoFile():
+                    thumb_url = str(getattr(media_ref, "thumb_url", "") or "")
                     item = InputMediaVideo(
-                        file_path_str,
+                        media=file_path_str,
                         has_spoiler=is_sensitive,
-                        video_cover=getattr(media_ref, "thumb_url", None),
+                        thumb=thumbs.get(thumb_url),
+                        video_cover=thumb_url if video_cover else None,
+                        duration=duration,
+                        width=width,
+                        height=height,
+                        supports_streaming=True,
+                    )
+                case LivePhotoFile():
+                    # 实况照片本身就是一张图 + 一段视频, 用图片那半当封面最贴切
+                    item = InputMediaVideo(
+                        media=processed.source.video_path,
+                        has_spoiler=is_sensitive,
+                        thumb=thumbs.get(str(getattr(media_ref, "thumb_url", "") or "")),
+                        video_cover=file_path_str if video_cover else None,
+                        duration=duration,
+                        width=width,
+                        height=height,
                         supports_streaming=True,
                     )
                 case _:
                     continue
+
             media_id = f"m{index}"
             index += 1
             media.append(InputRichMessageMedia(media_id, item))
             placeholders.append(f"![](tg://{kind}?id={media_id})")
-            match kind:
-                case "photo":
+            # blocks 路径: 官方 API 的 InputRichBlockPhoto/Video 没有 spoiler, 自定义块才有
+            match processed.source:
+                case ImageFile():
                     media_blocks[media_id] = SpoilerPhotoBlock(item, spoiler=is_sensitive)
-                case _:
+                case VideoFile() | LivePhotoFile():
                     media_blocks[media_id] = SpoilerVideoBlock(item, spoiler=is_sensitive)
+                case AniFile():
+                    media_blocks[media_id] = InputRichBlockAnimation(item)
+
     return media, placeholders, media_blocks
 
 
@@ -228,9 +268,10 @@ def extract_cache_media(rich_message) -> list:
 
 
 __all__ = [
+    "RICH_MEDIA_KIND",
     "RICH_RESULT_ID",
     "build_cached_rich_content",
-    "build_media_items",
+    "build_rich_media",
     "cache_media_blocks",
     "edit_inline_rich_message",
     "extract_cache_media",

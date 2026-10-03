@@ -37,7 +37,7 @@ from plugins.helpers import (
 from plugins.parse.inline_rich import (
     RICH_RESULT_ID,
     build_cached_rich_content,
-    build_media_items,
+    build_rich_media,
     edit_inline_rich_message,
 )
 from plugins.parse.reporters import InlineStatusReporter
@@ -328,9 +328,9 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         await reporter.report(_t("上 传 中..."))
         try:
             media_refs = to_list(parse_result.media)
-            media, placeholders, media_blocks = build_media_items(
-                result.processed_list,
+            media, placeholders, media_blocks = build_rich_media(
                 media_refs,
+                result.processed_list,
                 is_sensitive=parse_result.is_sensitive,
             )
             markdown = build_rich_markdown(
