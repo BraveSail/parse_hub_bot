@@ -40,6 +40,7 @@ class ParseResult(ABC):  # noqa: B024
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        author_url: str = "",
         tags: Sequence[str] | None = None,
     ):
         """
@@ -51,6 +52,7 @@ class ParseResult(ABC):  # noqa: B024
         :param published_at: 发布时间 (带时区), 平台没提供时为 None
         :param view_count: 浏览量/播放量, 平台没提供时为 None
         :param author_handle: 作者的用户名/账号 (不带 @), 平台没提供时为空
+        :param author_url: 作者主页地址, 平台没提供或拿不到时为空
         :param tags: 作品标签 (平台提供时才有, 去重且保持原顺序)
         """
         self.raw_url: str = ""
@@ -60,6 +62,7 @@ class ParseResult(ABC):  # noqa: B024
         self.platform = platform
         self.author_name = author_name.strip()
         self.author_handle = author_handle.strip().lstrip("@")
+        self.author_url = author_url.strip()
         self.is_sensitive = is_sensitive
         self.published_at = to_datetime(published_at)
         self.view_count = to_int(view_count)
@@ -106,6 +109,7 @@ class ParseResult(ABC):  # noqa: B024
             "content": self.content,
             "author_name": self.author_name,
             "author_handle": self.author_handle,
+            "author_url": self.author_url,
             "raw_url": self.raw_url,
             "is_sensitive": self.is_sensitive,
             "published_at": self.published_at.isoformat() if self.published_at else None,
@@ -338,6 +342,7 @@ class VideoParseResult(ParseResult):
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        author_url: str = "",
         tags: Sequence[str] | None = None,
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
@@ -350,6 +355,7 @@ class VideoParseResult(ParseResult):
             published_at=published_at,
             view_count=view_count,
             author_handle=author_handle,
+            author_url=author_url,
             tags=tags,
         )
 
@@ -369,6 +375,7 @@ class ImageParseResult(ParseResult):
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        author_url: str = "",
         tags: Sequence[str] | None = None,
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
@@ -381,6 +388,7 @@ class ImageParseResult(ParseResult):
             published_at=published_at,
             view_count=view_count,
             author_handle=author_handle,
+            author_url=author_url,
             tags=tags,
         )
 
@@ -400,6 +408,7 @@ class MultimediaParseResult(ParseResult):
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        author_url: str = "",
         tags: Sequence[str] | None = None,
     ):
         super().__init__(
@@ -411,6 +420,7 @@ class MultimediaParseResult(ParseResult):
             published_at=published_at,
             view_count=view_count,
             author_handle=author_handle,
+            author_url=author_url,
             tags=tags,
         )
 
@@ -430,6 +440,7 @@ class RichTextParseResult(ParseResult):
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        author_url: str = "",
         tags: Sequence[str] | None = None,
     ):
         """
@@ -447,6 +458,7 @@ class RichTextParseResult(ParseResult):
             published_at=published_at,
             view_count=view_count,
             author_handle=author_handle,
+            author_url=author_url,
             tags=tags,
         )
 

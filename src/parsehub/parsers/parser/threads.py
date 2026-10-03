@@ -30,6 +30,7 @@ class ThreadsParser(BaseParser):
             media=media,
             author_name=post.author_name,
             author_handle=post.author_handle,
+            author_url=f"https://www.threads.com/@{post.author_handle}" if post.author_handle else "",
             published_at=post.published_at,
             view_count=post.view_count,
         )

@@ -183,6 +183,7 @@ class TestParseResultToDict(unittest.TestCase):
                 "content": "Video body",
                 "author_name": "",
                 "author_handle": "",
+                "author_url": "",
                 "raw_url": "https://www.bilibili.com/video/BV123",
                 "is_sensitive": False,
                 "published_at": None,
@@ -204,6 +205,18 @@ class TestParseResultToDict(unittest.TestCase):
         result = VideoParseResult(title="T", video=VideoRef(url="https://cdn.example/v.mp4"), author_handle="  @abc ")
         assert result.to_dict()["author_handle"] == "abc"
         assert result.author_handle == "abc"
+
+    def test_author_url_is_kept_and_stripped(self):
+        """作者主页地址原样保留 (只去首尾空白); 没传时为空串"""
+        result = VideoParseResult(
+            title="T",
+            video=VideoRef(url="https://cdn.example/v.mp4"),
+            author_handle="user_ydyj5227",
+            author_url="  https://www.pixiv.net/users/123568955  ",
+        )
+        assert result.author_url == "https://www.pixiv.net/users/123568955"
+        assert result.to_dict()["author_url"] == "https://www.pixiv.net/users/123568955"
+        assert VideoParseResult(title="T", video=VideoRef(url="https://cdn.example/v.mp4")).author_url == ""
 
     def test_tags_are_cleaned_and_deduplicated(self):
         """标签去空去重 (忽略大小写), 保持原顺序"""
