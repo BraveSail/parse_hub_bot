@@ -112,6 +112,7 @@ class TwitterParser(BaseParser):
                 is_sensitive=tweet.is_sensitive,
                 published_at=tweet.published_at,
                 view_count=tweet.view_count,
+                like_count=tweet.like_count,
             )
         return MultimediaParseResult(
             content=TwitterParser._compose(tweet.full_text, tweet),
@@ -122,6 +123,7 @@ class TwitterParser(BaseParser):
             is_sensitive=tweet.is_sensitive,
             published_at=tweet.published_at,
             view_count=tweet.view_count,
+            like_count=tweet.like_count,
         )
 
 

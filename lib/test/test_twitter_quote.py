@@ -7,13 +7,16 @@ from parsehub.parsers.parser.twitter import TwitterParser
 from parsehub.provider_api.twitter import Twitter, TwitterTweet
 
 
-def make_result(text, rest_id="1", handle="me", name="Me", **legacy_extra):
+def make_result(text, rest_id="1", handle="me", name="Me", views=None, **legacy_extra):
     legacy = {"full_text": text, "entities": {"urls": [], "media": []}, **legacy_extra}
-    return {
+    result = {
         "rest_id": rest_id,
         "legacy": legacy,
         "core": {"user_results": {"result": {"legacy": {"name": name, "screen_name": handle}}}},
     }
+    if views is not None:
+        result["views"] = {"count": str(views)}
+    return result
 
 
 def make_payload(result=None, quoted=None):
@@ -98,6 +101,38 @@ def test_parse_reads_quoted_is_sensitive():
     quoted = make_result("orig", rest_id="999", possibly_sensitive=True)
     tweet = Twitter().parse(make_payload(quoted=quoted))
     assert tweet.quoted_status.is_sensitive is True
+
+
+# ── provider: 统计字段 ───────────────────────────────────────
+
+
+def test_parse_reads_like_and_view_counts():
+    """点赞数取 legacy.favorite_count, 浏览量取顶层 views.count"""
+    payload = make_payload(make_result("hi", favorite_count=208, views=25009))
+    tweet = Twitter().parse(payload)
+    assert tweet.like_count == 208
+    assert tweet.view_count == 25009
+
+
+def test_parse_without_counts_leaves_none():
+    """平台没给这两项时留 None (展示层整段跳过)"""
+    payload = make_payload(make_result("hi"))
+    tweet = Twitter().parse(payload)
+    assert tweet.like_count is None
+
+
+def test_media_parse_forwards_like_count():
+    tweet = TwitterTweet(tweet_id="1", full_text="x", like_count=1351)
+    assert asyncio.run(TwitterParser.media_parse(tweet)).like_count == 1351
+
+
+def test_quoted_like_count_is_independent_of_the_main_tweet():
+    """引用块里的被引用推文有自己的点赞数, 不能串到主推"""
+    quoted = make_result("orig", rest_id="999", favorite_count=5)
+    payload = make_payload(make_result("mine", favorite_count=100), quoted=quoted)
+    tweet = Twitter().parse(payload)
+    assert tweet.like_count == 100
+    assert tweet.quoted_status.like_count == 5
 
 
 # ── parser: 引用块渲染 ────────────────────────────────────────

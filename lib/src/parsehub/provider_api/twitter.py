@@ -121,6 +121,8 @@ class Twitter:
         # 发布时间在 legacy.created_at, 浏览量在顶层的 views.count (字符串)
         published_at = legacy.get("created_at")
         view_count = (result.get("views") or {}).get("count")
+        # 点赞数在 legacy.favorite_count (匿名请求同样返回)
+        like_count = legacy.get("favorite_count")
 
         if article := result.get("article", {}):
             ta = ArticleRenderer(article["article_results"]["result"]).render()
@@ -134,6 +136,7 @@ class Twitter:
                 quoted_status=quoted_status,
                 published_at=published_at,
                 view_count=view_count,
+                like_count=like_count,
                 is_sensitive=bool(legacy.get("possibly_sensitive")),
             )
 
@@ -200,6 +203,7 @@ class Twitter:
             quoted_status=quoted_status,
             published_at=published_at,
             view_count=view_count,
+            like_count=like_count,
             is_sensitive=bool(legacy.get("possibly_sensitive")),
         )
 
@@ -281,6 +285,7 @@ class TwitterTweet:
         is_sensitive: bool = False,
         published_at: datetime | None = None,
         view_count: int | None = None,
+        like_count: int | None = None,
     ):
         self.tweet_id = tweet_id
         self.full_text = re.sub(r"\s*https://t\.co/[^\s,]+$", "", full_text or "") if media else full_text
@@ -302,6 +307,8 @@ class TwitterTweet:
         """发布时间 (legacy.created_at)"""
         self.view_count = to_int(view_count)
         """浏览量 (views.count)"""
+        self.like_count = to_int(like_count)
+        """点赞数 (legacy.favorite_count)"""
 
 
 @dataclass
