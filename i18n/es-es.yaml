@@ -45,7 +45,6 @@
 5a9f36a77173: Empaquetar
 5b943dc87178: Enlace de descarga del GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
-5d6ac8f8e4f3: El artículo se envía usando texto enriquecido
 5e788d9e0992: No es un canal
 5f411223ca5a: Volver
 607e7a4f377f: visualizaciones
@@ -57,6 +56,7 @@
   la configuración del canal
 769d88e425e0: Completado
 77274b54a324: 'Error en {stage}:'
+77db686f0262: Enviar como mensaje enriquecido
 7eafd0a497bd: '
 
 

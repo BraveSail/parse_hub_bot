@@ -37,7 +37,6 @@
 5a9f36a77173: Empacotar
 5b943dc87178: Link para download do GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
-5d6ac8f8e4f3: Artigo enviado com texto formatado
 5e788d9e0992: Não é um canal
 5f411223ca5a: Voltar
 607e7a4f377f: visualizações
@@ -49,6 +48,7 @@
   a configuração do canal
 769d88e425e0: Concluído
 77274b54a324: 'Erro em {stage}:'
+77db686f0262: Enviar como mensagem rica
 7eafd0a497bd: '
 
 

@@ -2,6 +2,7 @@
 
 import html
 import re
+from collections.abc import Sequence
 from datetime import datetime
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -188,6 +189,70 @@ def build_caption_by_str(
     # href 里的 URL 必须中和: 否则 pyrogram 会把 URL 中的 '__' 解析成 <i> 塞进 href
     safe_url = neutralize_markdown(raw_url)
     return f"{body}\n\n{format_label(f"<a href='{safe_url}'>{source}</a>")}"
+
+
+def build_rich_markdown(
+    parse_result: AnyParseResult,
+    *,
+    config: SettingsConfig,
+    lang: str = "",
+    view_label: str = "",
+    custom_content: str = "",
+    media_placeholders: Sequence[str] = (),
+) -> str:
+    """构建富文本 (rich message) 正文: 标题 + 作者 + 原文格式正文 + 媒体 + 页尾。
+
+    富文本由 Telegram 服务端解析 markdown, 所以正文直接沿用解析器给出的原文格式
+    (标题/列表/引用/表格/加粗等都会被还原), 不像旧路径那样先转成 HTML 再拼 caption。
+    统计数据与来源放在页尾的 <footer> 里。
+    """
+    title = (parse_result.title or "").strip()
+    content = rich_content(parse_result).strip()
+    parts: list[str] = []
+    if title and not config.hide_title:
+        parts.append(f"### {title}")
+    author = get_parse_author_name(parse_result)
+    if author:
+        parts.append(f"**{author}：**")
+    if content and not config.hide_desc:
+        parts.append(content)
+    if custom_content:
+        parts.append(custom_content)
+    parts.extend(media_placeholders)
+
+    body = "\n\n".join(part for part in parts if part)
+
+    footer_parts: list[str] = []
+    metadata = build_metadata_line(
+        published_at=getattr(parse_result, "published_at", None),
+        view_count=getattr(parse_result, "view_count", None),
+        lang=lang,
+        view_label=view_label,
+    )
+    if metadata:
+        footer_parts.append(metadata)
+    if not config.hide_source:
+        platform = parse_result.platform or ParseHub().get_platform(parse_result.raw_url)
+        display = platform.display_name if platform else ""
+        label = f"Source（{display}）" if display else "Source"
+        footer_parts.append(f"[{label}]({parse_result.raw_url})")
+
+    if not footer_parts:
+        return body
+    footer = f"<footer>{_METADATA_SEPARATOR.join(footer_parts)}</footer>"
+    return f"{body}\n\n---\n\n{footer}" if body else footer
+
+
+def rich_content(parse_result: AnyParseResult) -> str:
+    """富文本里要用的正文: 长文用 markdown 正文, 其它用纯文本正文。
+
+    长文的 markdown_content 已经带原文结构, 直接用就能还原排版;
+    其它类型 (视频/图文/多图) 的 content 同样是解析器产出的 markdown 片段。
+    """
+    markdown_content = getattr(parse_result, "markdown_content", "")
+    if isinstance(parse_result, RichTextParseResult) and markdown_content:
+        return markdown_content
+    return parse_result.content or ""
 
 
 def get_parse_author_name(parse_result: AnyParseResult) -> str:

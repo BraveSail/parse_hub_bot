@@ -169,7 +169,7 @@ BOOL_SWITCHES = (
     BoolSwitchDTO(
         field="rich_mode",
         code="ri",
-        label=t_("文章使用富文本发送"),
+        label=t_("使用富文本发送"),
         get_value=lambda config: config.rich_mode,
         patch=lambda settings, target, value: settings.patch_config(target, rich_mode=value),
     ),

@@ -42,7 +42,6 @@
 5a9f36a77173: Đóng gói
 5b943dc87178: Liên kết tải xuống GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
-5d6ac8f8e4f3: Bài viết sử dụng văn bản định dạng phong phú để gửi
 5e788d9e0992: Không phải kênh
 5f411223ca5a: Quay lại
 607e7a4f377f: lượt xem
@@ -54,6 +53,7 @@
   cấu hình kênh
 769d88e425e0: Hoàn thành
 77274b54a324: 'Lỗi {stage}:'
+77db686f0262: Gửi dưới dạng tin nhắn phong phú
 7eafd0a497bd: '
 
 

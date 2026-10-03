@@ -1,4 +1,5 @@
 import asyncio
+import types
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -6,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pyrogram.parser import Parser
 
-from plugins.helpers import build_caption_by_str, build_metadata_line
+from plugins.helpers import build_caption_by_str, build_metadata_line, build_rich_markdown
 from services.cache import CacheEntry, CacheParseResult, PersistentCache
 
 
@@ -117,6 +118,82 @@ def test_caption_places_metadata_before_source():
     assert "Body" in caption
     assert caption.index("2026年10月3日") < caption.index("Source")
     assert caption.index("Author") < caption.index("2026年10月3日")
+
+
+# ── 富文本正文 ────────────────────────────────────────────────
+
+
+def test_rich_markdown_puts_metadata_and_source_in_footer():
+    """统计与来源都在页尾 footer 里, 正文保持原文排版"""
+    from datetime import UTC, datetime
+
+    from parsehub.types import MultimediaParseResult, Platform
+
+    result = MultimediaParseResult(content="# 标题\n\n正文**粗体**\n\n- 列表项")
+    result.platform = Platform.TWITTER
+    result.raw_url = "https://x.com/u/status/1"
+    result.author_name = "Author"
+    result.published_at = datetime(2026, 10, 3, 11, 0, tzinfo=UTC)
+    result.view_count = 1455
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False),
+        lang="zh-hans", view_label="查看",
+    )
+
+    assert markdown.startswith("**Author：**")
+    assert "正文**粗体**" in markdown
+    assert "- 列表项" in markdown
+    assert "---" in markdown
+    # 统计与来源在 footer, 且位于正文之后
+    footer = markdown.split("<footer>")[1]
+    assert "下午7:00 · 2026年10月3日 · 1,455 查看" in footer
+    assert "[Source（Twitter）](https://x.com/u/status/1)" in footer
+    assert markdown.index("- 列表项") < markdown.index("<footer>")
+
+
+def test_rich_markdown_places_media_between_body_and_footer():
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="图集", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False),
+        media_placeholders=["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"],
+    )
+    assert markdown.index("图集") < markdown.index("tg://photo?id=m0") < markdown.index("tg://photo?id=m1")
+    assert markdown.index("tg://photo?id=m1") < markdown.index("<footer>")
+
+
+def test_rich_markdown_omits_missing_metadata():
+    from parsehub.types import MultimediaParseResult, Platform
+
+    result = MultimediaParseResult(content="无统计数据")
+    result.platform = Platform.THREADS
+    result.raw_url = "https://www.threads.com/@u/post/x"
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False),
+        lang="zh-hans", view_label="查看",
+    )
+    assert "<footer>" in markdown
+    assert "查看" not in markdown
+    assert " ·  · " not in markdown
+
+
+def test_rich_markdown_respects_hide_source():
+    from parsehub.types import MultimediaParseResult, Platform
+
+    result = MultimediaParseResult(content="正文")
+    result.platform = Platform.TWITTER
+    result.raw_url = "https://x.com/u/status/1"
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
+    )
+    assert "Source" not in markdown
 
 
 def test_caption_without_metadata_is_unchanged():

@@ -45,7 +45,6 @@
 5a9f36a77173: Pakuj
 5b943dc87178: Link do pobrania GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
-5d6ac8f8e4f3: Artykuł wysłany z użyciem formatowania tekstu
 5e788d9e0992: Nie kanał
 5f411223ca5a: Powrót
 607e7a4f377f: wyświetleń
@@ -57,6 +56,7 @@
   konfiguracji kanału
 769d88e425e0: Zakończono
 77274b54a324: 'Błąd {stage}:'
+77db686f0262: Wysyłaj jako wiadomość rozszerzoną
 7eafd0a497bd: '
 
 

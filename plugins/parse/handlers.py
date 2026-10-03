@@ -20,7 +20,15 @@ from plugins.filters import (
 from plugins.helpers import build_caption, create_richtext_telegraph, format_label, get_parse_author_name
 from plugins.parse.context import GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD, ParseOptions, ParseRequest
 from plugins.parse.reporters import MessageStatusReporter, disable_progress_on_report_forbidden
-from plugins.parse.sender import MessageSender, build_gif_button, send_cached, send_media, send_raw, send_zip
+from plugins.parse.sender import (
+    MessageSender,
+    build_gif_button,
+    send_cached,
+    send_media,
+    send_raw,
+    send_rich_media,
+    send_zip,
+)
 from repo.settings import ParseMode
 from services import CacheEntry, CacheParseResult, ParsePipeline, ParseService, SettingsService, UserService
 from services.cache import parse_cache, persistent_cache
@@ -311,6 +319,14 @@ async def handle_parse(req: ParseRequest) -> bool:
         if not result.processed_list:
             logger.debug("无媒体文件, 仅发送文本")
             await sender.typing()
+            if req.config.rich_mode:
+                # 富文本的正文是 Telegram 服务端解析的 markdown, 与缓存里的 caption 格式不同,
+                # 所以这条路径不写缓存 (下次重新解析)
+                await send_rich_media(
+                    sender, parse_result, [], _t=req.t_, custom_content=req.custom_content
+                )
+                await reporter.dismiss()
+                return True
             await sender.text_no_preview(caption)
             cache_entry = CacheEntry(
                 parse_result=CacheParseResult(
@@ -336,6 +352,16 @@ async def handle_parse(req: ParseRequest) -> bool:
         logger.debug(f"开始上传媒体: media_count={len(result.processed_list)}")
         await reporter.report(req.t_("上 传 中..."))
         try:
+            if req.config.rich_mode:
+                await send_rich_media(
+                    sender,
+                    parse_result,
+                    result.processed_list,
+                    _t=req.t_,
+                    custom_content=req.custom_content,
+                )
+                await reporter.dismiss()
+                return True
             media_cache_entry = await send_media(sender, parse_result, result.processed_list, caption, _t=req.t_)
             if media_cache_entry:
                 await persistent_cache.set(raw_url, media_cache_entry)

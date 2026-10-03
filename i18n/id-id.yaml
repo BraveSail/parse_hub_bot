@@ -45,7 +45,6 @@
 5a9f36a77173: Mengemas
 5b943dc87178: Tautan unduhan GIF
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
-5d6ac8f8e4f3: Artikel dikirim menggunakan teks kaya
 5e788d9e0992: Bukan saluran
 5f411223ca5a: Kembali
 607e7a4f377f: tayangan
@@ -56,6 +55,7 @@
   saluran
 769d88e425e0: Selesai
 77274b54a324: 'Kesalahan {stage}:'
+77db686f0262: Kirim sebagai pesan kaya
 7eafd0a497bd: '
 
 

@@ -46,7 +46,6 @@
 5a9f36a77173: Inpakken
 5b943dc87178: GIF downloadlink
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
-5d6ac8f8e4f3: Artikel verzonden met rich text
 5e788d9e0992: Geen kanaal
 5f411223ca5a: Terug
 607e7a4f377f: weergaven
@@ -58,6 +57,7 @@
   de kanaalconfiguratie te wijzigen
 769d88e425e0: Voltooid
 77274b54a324: '{stage} fout:'
+77db686f0262: Verzenden als uitgebreid bericht
 7eafd0a497bd: '
 
 

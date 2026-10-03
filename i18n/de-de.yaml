@@ -46,7 +46,6 @@
 5a9f36a77173: Verpacken
 5b943dc87178: GIF-Download-Link
 5bc4920f7c82: "{format_label(f'{stage}错误:')} \n```\n{error}```"
-5d6ac8f8e4f3: Artikel wird mit Rich-Text gesendet
 5e788d9e0992: Kein Kanal
 5f411223ca5a: Zurück
 607e7a4f377f: Aufrufe
@@ -58,6 +57,7 @@
   nicht ändern.
 769d88e425e0: Fertig
 77274b54a324: '{stage} Fehler:'
+77db686f0262: Als Rich-Message senden
 7eafd0a497bd: '
 
 

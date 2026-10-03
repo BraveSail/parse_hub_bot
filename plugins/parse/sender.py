@@ -22,6 +22,7 @@ from pyrogram.types import (
     InputMediaPhoto,
     InputMediaVideo,
     InputRichMessage,
+    InputRichMessageMedia,
     LinkPreviewOptions,
     Message,
 )
@@ -32,6 +33,7 @@ from plugins.helpers import (
     build_caption,
     build_caption_by_str,
     build_metadata_line,
+    build_rich_markdown,
     format_label,
     get_parse_author_name,
 )
@@ -549,6 +551,106 @@ async def send_cached(
 
 def media_input(media: PathType | BinaryIO | None) -> PathType | BinaryIO:
     return cast(PathType | BinaryIO, media)
+
+
+#: rich message 里媒体占位链接的类型 (tg://<kind>?id=<id>)
+RICH_MEDIA_KIND: dict[type, str] = {
+    ImageFile: "photo",
+    VideoFile: "video",
+    LivePhotoFile: "video",
+    AniFile: "video",
+}
+
+
+def build_rich_media(
+    media_refs: Sequence[AnyMediaRef],
+    processed_list: list[ProcessedMedia],
+    *,
+    video_cover: bool,
+    is_sensitive: bool = False,
+) -> tuple[list[InputRichMessageMedia], list[str]]:
+    """构建富文本的媒体块与正文里的占位符.
+
+    媒体用下载好的本地文件上传 (send_rich_message 内部走 messages.UploadMedia),
+    不把原始 URL 交给 Telegram 抓取 —— 那条路有 20 MB 上限。
+    返回 (media 列表, markdown 占位符列表)。
+    """
+    media: list[InputRichMessageMedia] = []
+    placeholders: list[str] = []
+    index = 0
+
+    for media_ref, processed in zip(media_refs, processed_list, strict=False):
+        file_paths = processed.output_paths or [processed.source.path]
+        for file_path in file_paths:
+            file_path_str = str(file_path)
+            width, height, duration = resolve_media_info(processed, file_path_str)
+            kind = RICH_MEDIA_KIND.get(type(processed.source))
+            if kind is None:
+                continue
+
+            match processed.source:
+                case ImageFile():
+                    item = InputMediaPhoto(media=file_path_str, has_spoiler=is_sensitive)
+                case AniFile():
+                    item = InputMediaAnimation(media=file_path_str, has_spoiler=is_sensitive)
+                case VideoFile():
+                    item = InputMediaVideo(
+                        media=file_path_str,
+                        has_spoiler=is_sensitive,
+                        video_cover=media_ref.thumb_url if video_cover else None,
+                        duration=duration,
+                        width=width,
+                        height=height,
+                        supports_streaming=True,
+                    )
+                case LivePhotoFile():
+                    item = InputMediaVideo(
+                        media=processed.source.video_path,
+                        has_spoiler=is_sensitive,
+                        video_cover=file_path_str if video_cover else None,
+                        duration=duration,
+                        width=width,
+                        height=height,
+                        supports_streaming=True,
+                    )
+                case _:
+                    continue
+
+            media_id = f"m{index}"
+            index += 1
+            media.append(InputRichMessageMedia(media_id, item))
+            placeholders.append(f"![](tg://{kind}?id={media_id})")
+
+    return media, placeholders
+
+
+async def send_rich_media(
+    sender: MessageSender,
+    parse_result: AnyParseResult,
+    processed_list: list[ProcessedMedia],
+    *,
+    _t: PreLocaleSelector,
+    custom_content: str = "",
+) -> bool:
+    """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。"""
+    media_refs = to_list(parse_result.media)
+    media, placeholders = build_rich_media(
+        media_refs,
+        processed_list,
+        video_cover=sender.config.video_cover,
+        is_sensitive=parse_result.is_sensitive,
+    )
+    markdown = build_rich_markdown(
+        parse_result,
+        config=sender.config,
+        lang=_t.locale,
+        view_label=_t("查看"),
+        custom_content=custom_content,
+        media_placeholders=placeholders,
+    )
+    logger.debug(f"富文本发送: media={len(media)}, markdown_len={len(markdown)}")
+    await sender.rich_message(rich_message=InputRichMessage(markdown=markdown, media=media or None))
+    return True
 
 
 def build_input_media(
