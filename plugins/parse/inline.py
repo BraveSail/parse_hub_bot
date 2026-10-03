@@ -1,5 +1,4 @@
 import re
-from collections.abc import Sequence
 
 from parsehub import AnyParseResult
 from parsehub.types import (
@@ -48,11 +47,11 @@ from plugins.helpers import (
     build_start_text,
     create_richtext_telegraph,
 )
+from plugins.parse.inline_rich import RICH_RESULT_ID, build_media_items, edit_inline_rich_message
 from plugins.parse.reporters import InlineStatusReporter
 from repo.settings import SettingsConfig
 from services import ParseService, SettingsService, UserService, inline_start_link
 from services.cache import CacheEntry, CacheMediaType, parse_cache, persistent_cache
-from services.media import resolve_media_info
 from services.pipeline import ParsePipeline
 from utils.helpers import to_list, with_request_id
 
@@ -185,6 +184,18 @@ async def answer_inline(
     )
 
 
+def inline_reply_markup(parse_result: AnyParseResult) -> Ikm | None:
+    """富文本结果项的键盘。
+
+    只有**有媒体**时才挂: 它的唯一作用是让 Telegram 回传 inline_message_id,
+    以便选中后把消息编辑成带媒体的版本。纯文字结果不需要二次编辑, 也就不要键盘。
+    """
+    # 用 count_inline_media 判空: to_list(None) 会给出 [None], 不能直接当"有媒体"
+    if not count_inline_media(parse_result.media):
+        return None
+    return Ikm([[Ikb("原链接", url=parse_result.raw_url)]])
+
+
 def _is_rich_result(result: InlineQueryResult) -> bool:
     """结果项里是不是富文本 (带 InputRichMessageContent 的那种)。"""
     return isinstance(getattr(result, "input_message_content", None), InputRichMessageContent)
@@ -213,14 +224,10 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         lang = await UserService(session).get_lang(inline_query.from_user.id)
         config = await SettingsService(session).get_config_by_user(inline_query.from_user.id)
     if cached := await persistent_cache.get(raw_url):
-        logger.debug("inline: 缓存命中, 构建 cached 结果")
-        # 有 file_id 时可以给「一项同时带媒体和页脚」的富文本结果; 媒体项留作兜底,
-        # 万一把富文本项剔掉也还有图可发
-        fallback = build_cached_inline_results(cached, raw_url, lang, config)
-        if config.rich_mode and cached.media:
-            results = [build_cached_rich_result(cached, raw_url, lang, config)]
-        else:
-            results = fallback
+        logger.debug("inline: 缓存命中, 构建富文本结果")
+        # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
+        # 没有 file_id 的旧缓存则给纯文字占位, 选中后由 inline_result_download 补齐媒体。
+        results = [build_cached_rich_result(cached, raw_url, lang, config)]
         switch_pm_text, switch_pm_parameter = await build_switch_pm(
             count_inline_media(cached.media), raw_url, lang
         )
@@ -231,7 +238,6 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
             cache_time=60,
             switch_pm_text=switch_pm_text,
             switch_pm_parameter=switch_pm_parameter,
-            fallback_results=fallback,
         )
         return
 
@@ -274,87 +280,64 @@ async def _drop_inline_keyboard(cli: Client, inline_message_id: str) -> None:
 @Client.on_chosen_inline_result()
 @with_request_id
 async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult) -> None:
+    """选中富文本结果后, 下载 → 上传 → 把消息编辑成带媒体的富文本。"""
     logger.info(
         f"收到 inline 选中回调: result_id={chosen_result.result_id!r}, "
         f"inline_message_id={chosen_result.inline_message_id!r}, query={chosen_result.query!r}"
     )
-    if not chosen_result.result_id.startswith("download_"):
-        logger.info(f"跳过: result_id={chosen_result.result_id!r} 非下载结果")
+    if chosen_result.result_id != RICH_RESULT_ID:
+        logger.info(f"跳过: result_id={chosen_result.result_id!r} 非富文本结果")
+        return
+
+    inline_message_id = chosen_result.inline_message_id
+    if inline_message_id is None:
+        # 没有键盘就不会有句柄: 说明这条结果本来没媒体, 无需二次编辑
+        logger.info("inline 选中回调缺少 inline_message_id, 无需编辑")
         return
 
     async with get_session() as session:
         lang = await UserService(session).get_lang(chosen_result.from_user.id)
         config = await SettingsService(session).get_config_by_user(chosen_result.from_user.id)
         _t = t_[lang]
-    media_index = int(chosen_result.result_id.split("_")[1])
-    inline_message_id = chosen_result.inline_message_id
-    if inline_message_id is None:
-        logger.warning("inline 选中回调缺少 inline_message_id, 无法更新消息")
-        return
-    # 键盘只为换取 inline_message_id 而存在, 到手后立刻摘掉
-    await _drop_inline_keyboard(cli, inline_message_id)
+
     query = chosen_result.query
-    logger.debug(f"inline 下载触发: media_index={media_index}, query={query}")
     raw_url = await ParseService().get_raw_url(query)
-
     cached_result = await parse_cache.get(raw_url)
-    logger.debug(f"缓存命中: {cached_result is not None}")
-
     caption = (
         build_caption(cached_result, config=config, allow_expandable=True, lang=lang, view_label=_t("查看"))
         if cached_result
         else ""
     )
     reporter = InlineStatusReporter(cli, inline_message_id, caption, t=_t, user_config=config)
+
     with ParsePipeline(query, raw_url, reporter, parse_result=cached_result, singleflight=False, t=_t) as pipeline:
         if (result := await pipeline.run()) is None:
             return
 
         parse_result = result.parse_result
-        caption = build_caption(
-            parse_result, config=config, allow_expandable=True, lang=lang, view_label=_t("查看")
-        )
-
-        # ── 上传 ──
         await reporter.report(_t("上 传 中..."))
-
-        processed = result.processed_list[media_index]
-        video_ref = parse_result.media[media_index] if isinstance(parse_result.media, Sequence) else parse_result.media
-
         try:
-            file_paths = processed.output_paths or [processed.source.path]
-            file_path_str = str(file_paths[0])
-            logger.debug(f"inline 上传文件: {file_path_str}")
-            width, height, duration = resolve_media_info(processed, file_path_str)
-
-            video_cover = str(video_ref.thumb_url) if video_ref and video_ref.thumb_url else None
-            media = (
-                InputMediaVideo(
-                    file_path_str,
-                    caption=caption,
-                    video_cover=video_cover,
-                    duration=duration or 0,
-                    width=width or 0,
-                    height=height or 0,
-                    supports_streaming=True,
-                )
-                if video_cover
-                else InputMediaVideo(
-                    file_path_str,
-                    caption=caption,
-                    duration=duration or 0,
-                    width=width or 0,
-                    height=height or 0,
-                    supports_streaming=True,
-                )
+            media_refs = to_list(parse_result.media)
+            media, placeholders = build_media_items(
+                result.processed_list,
+                media_refs,
+                is_sensitive=parse_result.is_sensitive,
             )
-            await cli.edit_inline_media(inline_message_id, media=media)
+            markdown = build_rich_markdown(
+                parse_result,
+                config=config,
+                lang=lang,
+                view_label=_t("查看"),
+                media_placeholders=placeholders,
+            )
+            logger.debug(f"inline 编辑为富文本: media={len(media)}, markdown={len(markdown)}")
+            await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, media=media)
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
-            logger.error(f"inline 上传失败: {e}")
+            logger.error(f"inline 富文本编辑失败: {e}")
             await reporter.report_error(_t("上传"), e)
         finally:
-            logger.debug("inline 下载任务完成")
+            logger.debug("inline 富文本任务完成")
 
 
 def _build_cached_rich_media(entry: CacheEntry):
@@ -367,7 +350,6 @@ def _build_cached_rich_media(entry: CacheEntry):
         InputMediaAnimation,
         InputMediaDocument,
         InputMediaPhoto,
-        InputMediaVideo,
         InputRichMessageMedia,
     )
 
@@ -410,10 +392,14 @@ def build_cached_rich_result(
         view_count=entry.parse_result.view_count,
         media_placeholders=placeholders,
     )
+    # 没有 file_id 时挂键盘: 提示客户端保留句柄, 选中后可补上媒体
+    reply_markup = None if media else Ikm([[Ikb("原链接", url=raw_url)]])
     return InlineQueryResultArticle(
+        id=RICH_RESULT_ID,
         title=clip_inline_text(entry.parse_result.title, INLINE_TITLE_LIMIT) or "-",
         description=clip_inline_text(entry.parse_result.content, INLINE_DESC_LIMIT),
         input_message_content=InputRichMessageContent(InputRichMessage(markdown=markdown, media=media or None)),
+        reply_markup=reply_markup,
     )
 
 
@@ -581,25 +567,17 @@ async def build_inline_results(
         )
 
     # ── 富文本 (rich message): 还原原文排版, 统计与来源进页尾 ──
-    # 有媒体时不出这一项: inline 的富文本结果不支持外部媒体 (Telegram 直接拒), 而媒体项
-    # 的 caption 已经带了同一份统计与来源 —— 同一内容给两个结果只会让用户困惑。
-    if config.rich_mode and not media_list:
+    # 所有类型都用这一项。回答查询时不能带媒体 (Telegram 会拒 EXTERNAL_MEDIA_NOT_SUPPORTED),
+    # 所以这里只发文字占位; 用户选中后由 inline_result_download 下载+上传, 再编辑成带媒体的
+    # 富文本。键盘是为了换取 inline_message_id (编辑的前提), 选中后立刻摘掉。
+    if config.rich_mode:
         results.append(
             InlineQueryResultArticle(
+                id=RICH_RESULT_ID,
                 title=title,
                 description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
                 input_message_content=build_inline_rich_content(parse_result, lang=lang, config=config),
-            )
-        )
-        return results
-
-    if config.rich_mode and isinstance(parse_result, RichTextParseResult):
-        # 长文有媒体时也走富文本 (正文是排版的主体, 图由下面的结果项/链接承担)
-        results.append(
-            InlineQueryResultArticle(
-                title=title,
-                description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
-                input_message_content=build_inline_rich_content(parse_result, lang=lang, config=config),
+                reply_markup=inline_reply_markup(parse_result),
             )
         )
         return results
