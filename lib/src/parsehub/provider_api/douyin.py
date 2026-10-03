@@ -15,11 +15,11 @@ from random import choice, randint
 from typing import Any, ClassVar, cast
 from urllib.parse import quote, urlencode
 
-import httpx
 from gmssl import func, sm3
 from SignerPy import get, sign, trace_id
 
 from ..errors import ParseError
+from ..utils import http
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -768,7 +768,7 @@ class DouyinWebCrawler:
         raise ValueError("未在响应的地址中找到 aweme_id")
 
     async def fetch_one_video(self, aweme_id: str) -> dict:
-        async with httpx.AsyncClient(
+        async with http.AsyncClient(
             headers=self._get_headers(), proxy=self.proxy, timeout=10, cookies=self.cookie
         ) as client:
             params = {
@@ -1016,7 +1016,7 @@ class DouyinMobileCrawler:
             "_gen_time": int(time.time()),
         }
 
-    async def _request_registered_device(self, client: httpx.AsyncClient) -> DouyinMobileDevice:
+    async def _request_registered_device(self, client: http.AsyncClient) -> DouyinMobileDevice:
         last_error = "unknown"
         for host in MOBILE_REGISTER_HOSTS:
             params = self._device_register_query()
@@ -1046,9 +1046,9 @@ class DouyinMobileCrawler:
             last_error = f"{host} returned invalid device ids: {payload}"
         raise ParseError(f"注册抖音移动端设备失败: {last_error}")
 
-    async def register_device(self, client: httpx.AsyncClient | None = None) -> DouyinMobileDevice:
+    async def register_device(self, client: http.AsyncClient | None = None) -> DouyinMobileDevice:
         close_client = client is None
-        client = client or httpx.AsyncClient(proxy=self.proxy, timeout=20, follow_redirects=True)
+        client = client or http.AsyncClient(proxy=self.proxy, timeout=20, follow_redirects=True)
         try:
             device = await self._request_registered_device(client)
             self.device = device
@@ -1060,12 +1060,12 @@ class DouyinMobileCrawler:
 
     async def register_device_pool(
         self,
-        client: httpx.AsyncClient | None = None,
+        client: http.AsyncClient | None = None,
         *,
         count: int = MOBILE_DEVICE_POOL_SIZE,
     ) -> list[DouyinMobileDevice]:
         close_client = client is None
-        client = client or httpx.AsyncClient(proxy=self.proxy, timeout=20, follow_redirects=True)
+        client = client or http.AsyncClient(proxy=self.proxy, timeout=20, follow_redirects=True)
         devices: list[DouyinMobileDevice] = []
         seen: set[tuple[str, str]] = set()
         last_error = "unknown"
@@ -1101,13 +1101,13 @@ class DouyinMobileCrawler:
         cls._device_pool_index = (cls._device_pool_index + 1) % len(cls._device_pool)
         return device
 
-    async def _ensure_device_pool(self, client: httpx.AsyncClient) -> None:
+    async def _ensure_device_pool(self, client: http.AsyncClient) -> None:
         if self.__class__._device_pool:
             return
         self.__class__._device_pool = await self.register_device_pool(client)
         self.__class__._device_pool_index = 0
 
-    async def _select_device(self, client: httpx.AsyncClient) -> DouyinMobileDevice:
+    async def _select_device(self, client: http.AsyncClient) -> DouyinMobileDevice:
         if self._fixed_device:
             if self.device is None:
                 raise ParseError("抖音移动端设备未配置")
@@ -1119,7 +1119,7 @@ class DouyinMobileCrawler:
 
     async def fetch_one_video(self, aweme_id: str) -> dict:
         last_error = "unknown"
-        async with httpx.AsyncClient(proxy=self.proxy, timeout=20, follow_redirects=True) as client:
+        async with http.AsyncClient(proxy=self.proxy, timeout=20, follow_redirects=True) as client:
             for _ in range(8):
                 await self._select_device(client)
                 params = self._mobile_query(aweme_id)
@@ -1195,7 +1195,7 @@ class DouyinMobileCrawler:
     async def _resolve_best_play_url(self, video_uri: str) -> dict | None:
         headers = {"User-Agent": PLAY_USER_AGENT, "Referer": "https://www.douyin.com/"}
         best: dict | None = None
-        async with httpx.AsyncClient(proxy=self.proxy, timeout=20, follow_redirects=True) as client:
+        async with http.AsyncClient(proxy=self.proxy, timeout=20, follow_redirects=True) as client:
             for ratio in MOBILE_PLAY_RATIOS:
                 api = f"https://aweme.snssdk.com/aweme/v1/play/?video_id={video_uri}&ratio={ratio}&line=0"
                 try:

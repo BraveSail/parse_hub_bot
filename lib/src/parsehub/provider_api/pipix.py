@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from enum import Enum
 from urllib.parse import unquote
 
-import httpx
 from bs4 import BeautifulSoup
 
+from ..utils import http
 from ..utils.helpers import UA, get_author_name
 
 
@@ -15,7 +15,7 @@ class Pipix:
         self.proxy = proxy
 
     async def parse(self, t_url: str) -> "PipixPost":
-        async with httpx.AsyncClient(proxy=self.proxy) as client:
+        async with http.AsyncClient(proxy=self.proxy) as client:
             resp = await client.get(t_url, headers={"User-Agent": UA})
             resp.raise_for_status()
             return self._parse_data(resp.text)

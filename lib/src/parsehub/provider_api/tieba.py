@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, cast
 
-import httpx
-
+from ..utils import http
 from ..utils.helpers import get_author_name
 
 
@@ -25,7 +24,7 @@ class TieBa:
         return hashlib.md5((base_str + salt).encode("utf-8")).hexdigest()
 
     async def fetch_tbs(self) -> str:
-        async with httpx.AsyncClient(proxy=self.proxy) as cli:
+        async with http.AsyncClient(proxy=self.proxy) as cli:
             result = await cli.get("http://tieba.baidu.com/dc/common/tbs")
             result.raise_for_status()
         result = result.json()
@@ -56,7 +55,7 @@ class TieBa:
             "_client_type": "20",
         }
         data["sign"] = self.gen_sign(data)
-        async with httpx.AsyncClient(proxy=self.proxy, timeout=30) as cli:
+        async with http.AsyncClient(proxy=self.proxy, timeout=30) as cli:
             result = await cli.post("https://tieba.baidu.com/c/f/pb/page_pc", data=data)
             result.raise_for_status()
             result = result.json()

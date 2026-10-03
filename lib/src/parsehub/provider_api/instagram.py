@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, cast
 
-import httpx
-
+from ..utils import http
 from ..utils.helpers import get_author_name
 
 
@@ -201,7 +200,7 @@ class InstagramAPI:
 
             try:
                 response = await client.post(self.GRAPHQL_URL, data=data, follow_redirects=False)
-            except httpx.HTTPError as exc:
+            except http.HTTPError as exc:
                 raise InstagramAPIError(f"请求 Instagram GraphQL 失败: {exc}") from exc
 
         if response.status_code != 200:
@@ -339,12 +338,12 @@ class InstagramAPI:
             "height": int(candidate.get("height") or 0),
         }
 
-    async def _ensure_csrf_token(self, client: httpx.AsyncClient) -> None:
+    async def _ensure_csrf_token(self, client: http.AsyncClient) -> None:
         csrf_token = self._get_cookie_value(client, "csrftoken")
         if not csrf_token:
             try:
                 await client.get(self.INSTAGRAM_URL, follow_redirects=True)
-            except httpx.HTTPError as exc:
+            except http.HTTPError as exc:
                 raise InstagramAPIError(f"获取 Instagram csrftoken 失败: {exc}") from exc
             csrf_token = self._get_cookie_value(client, "csrftoken")
 
@@ -353,11 +352,11 @@ class InstagramAPI:
         client.headers["x-csrftoken"] = csrf_token
 
     @staticmethod
-    def _get_cookie_value(client: httpx.AsyncClient, name: str) -> str:
+    def _get_cookie_value(client: http.AsyncClient, name: str) -> str:
         values = [cookie.value for cookie in client.cookies.jar if cookie.name == name and cookie.value]
         return values[-1] if values else ""
 
-    def _new_client(self) -> httpx.AsyncClient:
+    def _new_client(self) -> http.AsyncClient:
         cookies = self.DEFAULT_COOKIES | self.cookie
         headers = {
             "Accept": "*/*",
@@ -369,7 +368,7 @@ class InstagramAPI:
             "authority": "www.instagram.com",
             "scheme": "https",
         }
-        return httpx.AsyncClient(
+        return http.AsyncClient(
             cookies=cookies,
             headers=headers,
             proxy=self.proxy,

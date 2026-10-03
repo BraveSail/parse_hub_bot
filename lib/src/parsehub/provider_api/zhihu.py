@@ -31,7 +31,7 @@ from enum import Enum
 from typing import Any, Self, cast
 from urllib.parse import urlparse
 
-import httpx
+from ..utils import http
 
 __all__ = ["get_x_zse_96", "ZhihuAPI", "ZhihuQA", "ZhihuZhuanLan", "ZhihuPin", "ZhihuPinType", "ZhihuMedia"]
 
@@ -278,7 +278,7 @@ class ZhihuAPI:
         x_zse_96 = get_x_zse_96(url, query, self.d_c0)
         headers = self.get_headers(x_zse_96)
 
-        async with httpx.AsyncClient() as client:
+        async with http.AsyncClient() as client:
             r = await client.get(url, headers=headers, params=query, cookies=self.cookie)
             return dict(r.json())
 
@@ -294,7 +294,7 @@ class ZhihuAPI:
         x_zse_96 = get_x_zse_96(url, query, self.d_c0)
         headers = self.get_headers(x_zse_96)
 
-        async with httpx.AsyncClient() as client:
+        async with http.AsyncClient() as client:
             r = await client.get(url, headers=headers, params=query, cookies=self.cookie)
             return dict(r.json())
 
@@ -307,7 +307,7 @@ class ZhihuAPI:
         x_zse_96 = get_x_zse_96(url, query, self.d_c0)
         headers = self.get_headers(x_zse_96)
 
-        async with httpx.AsyncClient() as client:
+        async with http.AsyncClient() as client:
             r = await client.get(url, headers=headers, params=query, cookies=self.cookie)
             return dict(r.json())
 
@@ -317,7 +317,7 @@ class ZhihuAPI:
         x_zse_96 = get_x_zse_96(url, query, self.d_c0)
         headers = self.get_headers(x_zse_96)
 
-        async with httpx.AsyncClient() as client:
+        async with http.AsyncClient() as client:
             r = await client.get(url, headers=headers, params=query, cookies=self.cookie)
             return dict(r.json())
 
@@ -327,13 +327,13 @@ class ZhihuAPI:
         x_zse_96 = get_x_zse_96(url, query, self.d_c0)
         headers = self.get_headers(x_zse_96)
 
-        async with httpx.AsyncClient() as client:
+        async with http.AsyncClient() as client:
             r = await client.get(url, headers=headers, params=query, cookies=self.cookie)
             return dict(r.json())
 
     async def _daily(self, story_id: int | str) -> dict:
         url = f"https://daily.zhihu.com/api/7/story/{story_id}"
-        async with httpx.AsyncClient(proxy=self.proxy) as client:
+        async with http.AsyncClient(proxy=self.proxy) as client:
             r = await client.get(url)
             return dict(r.json())
 

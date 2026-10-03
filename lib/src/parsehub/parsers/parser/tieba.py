@@ -1,9 +1,8 @@
 from typing import Union
 
-import httpx
-
 from ...provider_api.tieba import TieBa, TieBaError, TieBaPostType, TieBaVideo
 from ...types import AniRef, ImageParseResult, ImageRef, ParseError, Platform, VideoParseResult, VideoRef
+from ...utils import http
 from ..base.base import BaseParser
 
 
@@ -41,7 +40,7 @@ class TieBaParser(BaseParser):
                 images: list[ImageRef | AniRef] = []
                 if isinstance(tb.media, list):
                     for i in tb.media:
-                        async with httpx.AsyncClient(proxy=self.proxy) as cli:
+                        async with http.AsyncClient(proxy=self.proxy) as cli:
                             try:
                                 r = await cli.head(i.url)
                                 r.raise_for_status()

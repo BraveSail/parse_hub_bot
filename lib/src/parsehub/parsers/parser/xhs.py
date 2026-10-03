@@ -1,8 +1,6 @@
 import re
 from typing import Union
 
-import httpx
-
 from ...provider_api.xhs import XHSAPI, XHSMedia, XHSMediaType, XHSPostType
 from ...types import (
     ImageParseResult,
@@ -14,6 +12,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...utils import http
 from ...utils.helpers import UA
 from ..base import BaseParser
 
@@ -83,7 +82,7 @@ class XHSParser(BaseParser):
                 raise ParseError("不支持的类型")
 
     async def get_ext_by_url(self, url: str) -> str:
-        async with httpx.AsyncClient(proxy=self.proxy) as client:
+        async with http.AsyncClient(proxy=self.proxy) as client:
             try:
                 response = await client.head(url, follow_redirects=True)
             except Exception:

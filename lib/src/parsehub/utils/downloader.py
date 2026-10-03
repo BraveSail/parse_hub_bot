@@ -11,9 +11,9 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 import aiofiles
-import httpx
 
 from ..errors import DownloadError
+from . import http
 
 ProgressCallback = Callable[..., Awaitable[None]]
 
@@ -50,7 +50,7 @@ class SegmentDownloader:
         save_path: str | Path | None = None,
         *,
         headers: Mapping[str, str] | None = None,
-        proxy: str | httpx.Proxy | None = None,
+        proxy: str | http.Proxy | None = None,
         progress: ProgressCallback | None = None,
         progress_args: tuple = (),
         progress_kwargs: dict[str, Any] | None = None,
@@ -58,7 +58,7 @@ class SegmentDownloader:
         chunk_size: int = 64 * 1024,
         connections: int = 4,
         min_split_size: int = 10 * 1024 * 1024,
-        timeout: float | httpx.Timeout | None = None,
+        timeout: float | http.Timeout | None = None,
     ):
         self.url = url
         self.save_path = save_path
@@ -93,11 +93,11 @@ class SegmentDownloader:
                 last_error = e
                 if attempt == self.max_retries:
                     raise
-            except httpx.HTTPStatusError as e:
+            except http.HTTPStatusError as e:
                 last_error = e
                 if attempt == self.max_retries or not _is_retryable_status(e.response.status_code):
                     raise DownloadError(f"HTTP错误: {e.response.status_code}") from e
-            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, httpx.ReadError) as e:
+            except (http.TimeoutException, http.NetworkError, http.RemoteProtocolError, http.ReadError) as e:
                 last_error = e
                 if attempt == self.max_retries:
                     raise DownloadError(f"网络连接错误: {e}") from e
@@ -110,8 +110,8 @@ class SegmentDownloader:
 
         raise DownloadError(f"达到最大重试次数，下载失败: {last_error}")
 
-    def _client(self) -> httpx.AsyncClient:
-        limits = httpx.Limits(
+    def _client(self) -> http.AsyncClient:
+        limits = http.Limits(
             max_connections=max(self.connections + 2, 10),
             max_keepalive_connections=max(self.connections, 1),
         )
@@ -122,9 +122,9 @@ class SegmentDownloader:
         }
         if self.timeout is not None:
             kwargs["timeout"] = self.timeout
-        return httpx.AsyncClient(**kwargs)
+        return http.AsyncClient(**kwargs)
 
-    async def _resolve_path(self, client: httpx.AsyncClient) -> Path:
+    async def _resolve_path(self, client: http.AsyncClient) -> Path:
         save_dir, filename = _parse_save_path(self.save_path)
         if not filename:
             filename = await get_filename_by_url(self.url, client)
@@ -135,7 +135,7 @@ class SegmentDownloader:
         resolved_path.parent.mkdir(parents=True, exist_ok=True)
         return resolved_path
 
-    async def _download_once(self, client: httpx.AsyncClient) -> None:
+    async def _download_once(self, client: http.AsyncClient) -> None:
         resolved_path = self._require_resolved_path()
         self._prepare_temp_dir(resolved_path)
         try:
@@ -158,7 +158,7 @@ class SegmentDownloader:
         finally:
             self._cleanup_temp_dir()
 
-    async def _probe(self, client: httpx.AsyncClient) -> RangeProbe:
+    async def _probe(self, client: http.AsyncClient) -> RangeProbe:
         total_size: int | None = None
         etag: str | None = None
         last_modified: str | None = None
@@ -175,7 +175,7 @@ class SegmentDownloader:
                 etag = response.headers.get("ETag")
                 last_modified = response.headers.get("Last-Modified")
                 content_encoding = response.headers.get("Content-Encoding")
-        except httpx.HTTPError:
+        except http.HTTPError:
             pass
 
         if self.connections <= 1 or (total_size is not None and total_size < self.min_split_size):
@@ -189,7 +189,7 @@ class SegmentDownloader:
                 headers=self._headers({"Accept-Encoding": "identity", "Range": "bytes=0-0"}),
                 follow_redirects=True,
             )
-        except httpx.HTTPError:
+        except http.HTTPError:
             return RangeProbe(False, total_size, etag, last_modified, content_encoding)
 
         response_encoding = response.headers.get("Content-Encoding")
@@ -212,14 +212,16 @@ class SegmentDownloader:
 
         return RangeProbe(False, total_size, etag, last_modified, response_encoding or content_encoding)
 
-    async def _download_single(self, client: httpx.AsyncClient, total_size: int | None) -> None:
+    async def _download_single(self, client: http.AsyncClient, total_size: int | None) -> None:
         complete_path = self._require_complete_path()
-        async with client.stream(
-            "GET",
+        # curl_cffi 用 stream=True + aiter_content, 没有上下文管理器形态
+        response = await client.get(
             self.url,
             headers=self._headers({"Accept-Encoding": "identity"}),
-            follow_redirects=True,
-        ) as response:
+            allow_redirects=True,
+            stream=True,
+        )
+        try:
             response.raise_for_status()
             content_encoding = response.headers.get("Content-Encoding")
             response_total = _parse_int(response.headers.get("Content-Length"))
@@ -228,18 +230,20 @@ class SegmentDownloader:
             current = 0
 
             async with aiofiles.open(complete_path, "wb") as f:
-                async for chunk in response.aiter_bytes(chunk_size=self.chunk_size):
+                async for chunk in response.aiter_content(chunk_size=self.chunk_size):
                     if not chunk:
                         continue
                     await f.write(chunk)
                     current += len(chunk)
                     await self._report_single(current, total)
+        finally:
+            await response.aclose()
 
         if expected_size is not None and current != expected_size:
             raise DownloadError(f"下载不完整: 期望 {expected_size} 字节, 实际 {current} 字节")
         await self._report_finish(total)
 
-    async def _download_multipart(self, client: httpx.AsyncClient, total_size: int) -> None:
+    async def _download_multipart(self, client: http.AsyncClient, total_size: int) -> None:
         temp_dir = self._require_temp_dir()
         parts_dir = temp_dir.joinpath("parts")
         parts_dir.mkdir(parents=True, exist_ok=True)
@@ -257,18 +261,19 @@ class SegmentDownloader:
         await self._merge_parts(parts, total_size)
         await self._report_finish(total_size)
 
-    async def _download_part(self, client: httpx.AsyncClient, part: RangePart, total_size: int) -> None:
+    async def _download_part(self, client: http.AsyncClient, part: RangePart, total_size: int) -> None:
         for attempt in range(self.max_retries + 1):
             received = 0
             try:
                 if part.path.exists():
                     part.path.unlink()
-                async with client.stream(
-                    "GET",
+                response = await client.get(
                     self.url,
                     headers=self._headers({"Accept-Encoding": "identity", "Range": f"bytes={part.start}-{part.end}"}),
-                    follow_redirects=True,
-                ) as response:
+                    allow_redirects=True,
+                    stream=True,
+                )
+                try:
                     if response.status_code == 200:
                         raise FallbackToSingle
                     response.raise_for_status()
@@ -279,22 +284,24 @@ class SegmentDownloader:
                     self._validate_part_response(part, response.headers, total_size)
 
                     async with aiofiles.open(part.path, "wb") as f:
-                        async for chunk in response.aiter_bytes(chunk_size=self.chunk_size):
+                        async for chunk in response.aiter_content(chunk_size=self.chunk_size):
                             if not chunk:
                                 continue
                             await f.write(chunk)
                             received += len(chunk)
                             await self._report_part(part.index, received, total_size)
+                finally:
+                    await response.aclose()
 
                 if received != part.size:
                     raise DownloadError(f"分片大小不匹配: 期望 {part.size} 字节, 实际 {received} 字节")
                 return
             except FallbackToSingle:
                 raise
-            except httpx.HTTPStatusError as e:
+            except http.HTTPStatusError as e:
                 if attempt == self.max_retries or not _is_retryable_status(e.response.status_code):
                     raise DownloadError(f"分片下载失败: HTTP {e.response.status_code}") from e
-            except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError, httpx.ReadError) as e:
+            except (http.TimeoutException, http.NetworkError, http.RemoteProtocolError, http.ReadError) as e:
                 if attempt == self.max_retries:
                     raise DownloadError(f"分片网络错误: {e}") from e
             except DownloadError:
@@ -328,7 +335,7 @@ class SegmentDownloader:
             parts.append(RangePart(index=index, start=start, end=end, path=parts_dir.joinpath(f"{index:06d}.part")))
         return parts
 
-    def _validate_part_response(self, part: RangePart, headers: httpx.Headers, total_size: int) -> None:
+    def _validate_part_response(self, part: RangePart, headers: http.Headers, total_size: int) -> None:
         parsed_range = _parse_content_range(headers.get("Content-Range", ""))
         if not parsed_range:
             raise DownloadError("分片响应缺少 Content-Range")
@@ -418,7 +425,7 @@ async def download(
     save_path: str | Path | None = None,
     *,
     headers: dict[str, str] | None = None,
-    proxy: str | httpx.Proxy | None = None,
+    proxy: str | http.Proxy | None = None,
     progress: ProgressCallback | None = None,
     progress_args: tuple = (),
     progress_kwargs: dict[str, Any] | None = None,
@@ -426,7 +433,7 @@ async def download(
     chunk_size: int = 64 * 1024,
     connections: int = 4,
     min_split_size: int = 10 * 1024 * 1024,
-    timeout: float | httpx.Timeout | None = None,
+    timeout: float | http.Timeout | None = None,
 ) -> str:
     """
     下载单个文件。服务端支持 Range 时使用多连接分片下载；不支持时回退普通单连接下载。
@@ -442,7 +449,7 @@ async def download(
     :param chunk_size: 分块大小
     :param connections: 单文件最大并发连接数，1 表示禁用分片
     :param min_split_size: 文件小于该值时不分片
-    :param timeout: httpx 超时配置
+    :param timeout: 超时配置
     :return: 文件路径
 
     .. note::
@@ -465,12 +472,12 @@ async def download(
     return await downloader.run()
 
 
-async def get_filename_by_url(url: str, client: httpx.AsyncClient) -> str | None:
+async def get_filename_by_url(url: str, client: http.AsyncClient) -> str | None:
     """从 URL 或 HTTP 响应头中获取文件名"""
     try:
         response = await client.head(url, follow_redirects=True)
         response.raise_for_status()
-    except httpx.HTTPError:
+    except http.HTTPError:
         pass
     else:
         if content_disposition := response.headers.get("content-disposition"):

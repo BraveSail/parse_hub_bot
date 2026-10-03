@@ -4,12 +4,12 @@ from enum import IntEnum
 from html import unescape
 from typing import Any, cast
 
-import httpx
 import json5
 from bs4 import BeautifulSoup
 from markdownify import MarkdownConverter
 
 from ..errors import ParseError
+from ..utils import http
 from ..utils.helpers import UA, get_author_name
 
 
@@ -109,7 +109,7 @@ class WX:
 
     @staticmethod
     async def parse(url: str, proxy: str | None = None) -> "WX":
-        async with httpx.AsyncClient(proxy=proxy) as client:
+        async with http.AsyncClient(proxy=proxy) as client:
             response = await client.get(url, headers={"User-Agent": UA})
         return WX._parse_data(response.text)
 

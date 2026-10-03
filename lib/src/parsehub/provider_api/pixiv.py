@@ -3,8 +3,9 @@ import re
 from dataclasses import dataclass
 from typing import Any, cast
 
-import httpx
 from bs4 import BeautifulSoup
+
+from ..utils import http
 
 ILLUST_API = "https://www.pixiv.net/ajax/illust/{}"
 PAGES_API = "https://www.pixiv.net/ajax/illust/{}/pages"
@@ -173,14 +174,14 @@ class Pixiv:
     async def parse(self, url: str) -> PixivIllust:
         illust_id = self.get_illust_id(url)
         headers = {"User-Agent": UA, "Referer": REFERER}
-        async with httpx.AsyncClient(proxy=self.proxy, cookies=self.cookie, timeout=30) as cli:
+        async with http.AsyncClient(proxy=self.proxy, cookies=self.cookie, timeout=30) as cli:
             illust = await self._fetch(cli, ILLUST_API.format(illust_id), illust_id, headers)
             pages = await self._fetch_pages(cli, illust_id, headers)
         return PixivIllust.parse(illust, pages, illust_id=illust_id)
 
     async def _fetch(
         self,
-        cli: httpx.AsyncClient,
+        cli: http.AsyncClient,
         url: str,
         illust_id: str,
         headers: dict[str, str],
@@ -195,7 +196,7 @@ class Pixiv:
 
     async def _fetch_pages(
         self,
-        cli: httpx.AsyncClient,
+        cli: http.AsyncClient,
         illust_id: str,
         headers: dict[str, str],
     ) -> list[dict[str, Any]]:

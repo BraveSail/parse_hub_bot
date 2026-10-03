@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, cast
 
-import httpx
 from bs4 import BeautifulSoup
 
 from ..errors import ParseError
+from ..utils import http
 from ..utils.helpers import UA, get_author_name
 
 
@@ -20,7 +20,7 @@ class XHSAPI:
         self.cookie = cookie
 
     async def __fetch_html(self, url: str) -> str:
-        async with httpx.AsyncClient(proxy=self.proxy, cookies=self.cookie, follow_redirects=True) as client:
+        async with http.AsyncClient(proxy=self.proxy, cookies=self.cookie, follow_redirects=True) as client:
             result = await client.get(
                 url,
                 headers={

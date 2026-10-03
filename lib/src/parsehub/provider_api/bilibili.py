@@ -10,8 +10,7 @@ from functools import reduce
 from hashlib import md5
 from typing import Any, Self, cast
 
-import httpx
-
+from ..utils import http
 from ..utils.helpers import get_author_name
 
 USER_AGENT = (
@@ -34,7 +33,7 @@ class BiliAPI:
     def __init__(self, proxy: str | None = None):
         self.headers = {"User-Agent": USER_AGENT}
         self.proxy = proxy
-        self._client: httpx.AsyncClient | None = None
+        self._client: http.AsyncClient | None = None
 
     async def __aenter__(self):
         return self
@@ -157,9 +156,9 @@ class BiliAPI:
         )
         return AISummaryResult.parse(result.json())
 
-    def _get_client(self) -> httpx.AsyncClient:
+    def _get_client(self) -> http.AsyncClient:
         if self._client is None or getattr(self._client, "is_closed", False):
-            self._client = httpx.AsyncClient(proxy=self.proxy, headers=self.headers)
+            self._client = http.AsyncClient(proxy=self.proxy, headers=self.headers)
         return self._client
 
     async def aclose(self):
@@ -542,7 +541,7 @@ class BiliWbiSigner:
     @staticmethod
     async def fetch_wbi_keys() -> tuple[str, str]:
         """获取最新的 img_key 和 sub_key"""
-        async with httpx.AsyncClient() as client:
+        async with http.AsyncClient() as client:
             try:
                 resp = await client.get(
                     "https://api.bilibili.com/x/web-interface/nav",
@@ -552,7 +551,7 @@ class BiliWbiSigner:
                 json_data = resp.json()
                 img_url: str = json_data["data"]["wbi_img"]["img_url"]
                 sub_url: str = json_data["data"]["wbi_img"]["sub_url"]
-            except httpx.HTTPError as e:
+            except http.HTTPError as e:
                 raise Exception(f"请求 wbi_img 失败: {e}") from e
             except (KeyError, TypeError, ValueError) as e:
                 raise Exception(f"解析 wbi_img 失败: {e}") from e

@@ -5,8 +5,7 @@ import re
 from typing import Any, NamedTuple, cast
 from urllib.parse import urlencode, urlparse
 
-import httpx
-
+from ..utils import http
 from ..utils.helpers import UA
 
 TIKTOK_APP_FEED = "https://api22-normal-c-alisg.tiktokv.com/aweme/v1/feed/"
@@ -51,7 +50,7 @@ class TikTokWebCrawler:
         self.headers = dict(TIKTOK_HEADERS)
         if user_agent:
             self.headers["User-Agent"] = user_agent
-        self.cookies = httpx.Cookies()
+        self.cookies = http.Cookies()
         for key, value in (cookie or {}).items():
             self.cookies.set(str(key), "" if value is None else str(value))
         self.proxy = proxy
@@ -79,8 +78,8 @@ class TikTokWebCrawler:
         except Exception as web_error:
             raise RuntimeError(f"获取 TikTok 作品失败: feed={primary_error}; web={web_error}") from web_error
 
-    def _client(self, *, headers: dict[str, str] | None = None) -> httpx.AsyncClient:
-        return httpx.AsyncClient(
+    def _client(self, *, headers: dict[str, str] | None = None) -> http.AsyncClient:
+        return http.AsyncClient(
             headers=headers or self.headers,
             timeout=self.timeout,
             follow_redirects=True,

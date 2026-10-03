@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 
-import httpx
 from bs4 import BeautifulSoup
 from markdown import markdown
 from markdownify import MarkdownConverter
 
+from ..utils import http
 from ..utils.helpers import UA, get_author_name
 
 
@@ -18,7 +18,7 @@ class Coolapk:
 
     @classmethod
     async def parse(cls, url: str, proxy: str | None = None) -> "Coolapk":
-        async with httpx.AsyncClient(headers={"User-Agent": UA}, proxy=proxy) as client:
+        async with http.AsyncClient(headers={"User-Agent": UA}, proxy=proxy) as client:
             result = await client.get(url)
         soup = BeautifulSoup(result.text, "lxml")
         author = soup.select_one(".feed-user-name, .feed-username, .user-name, .username")

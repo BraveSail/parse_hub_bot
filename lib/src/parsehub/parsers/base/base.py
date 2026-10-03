@@ -5,11 +5,10 @@ from abc import ABC, abstractmethod
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
-import httpx
-
 from ... import parsers
 from ...types import AnyParseResult, ParseError
 from ...types.platform import Platform
+from ...utils import http
 from ...utils.helpers import UA, SecretCookie, match_url
 
 
@@ -112,14 +111,14 @@ class BaseParser(ABC):
             url = f"https://{url}"
 
         if any(x in url for x in self.__redirect_keywords__):
-            async with httpx.AsyncClient(proxy=self.proxy, timeout=30) as client:
+            async with http.AsyncClient(proxy=self.proxy, timeout=30) as client:
                 try:
                     r = await client.get(
                         url,
                         follow_redirects=True,
                         headers={"User-Agent": UA} if headers is None else headers,
                     )
-                except (httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+                except (http.ReadTimeout, http.ConnectTimeout) as e:
                     raise ParseError("获取原始链接超时") from e
                 except Exception as e:
                     raise ParseError("获取原始链接失败") from e

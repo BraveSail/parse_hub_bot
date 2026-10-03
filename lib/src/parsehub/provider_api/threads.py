@@ -7,8 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-import httpx
-
+from ..utils import http
 from ..utils.helpers import UA, get_author_name, to_datetime, to_int
 
 
@@ -119,7 +118,7 @@ class ThreadsAPI:
             }
             try:
                 response = await client.post(self.GRAPHQL_URL, data=data, follow_redirects=False)
-            except httpx.HTTPError as exc:
+            except http.HTTPError as exc:
                 raise ThreadsAPIError(f"请求 Threads GraphQL 失败: {exc}") from exc
 
         if response.status_code != 200:
@@ -162,7 +161,7 @@ class ThreadsAPI:
         # 找不到精确匹配时退回第一条 (通常即目标帖子本身)
         return fallback, None
 
-    def _new_client(self) -> httpx.AsyncClient:
+    def _new_client(self) -> http.AsyncClient:
         cookies = self.DEFAULT_COOKIES | self.cookie
         headers = {
             "Accept": "*/*",
@@ -171,26 +170,26 @@ class ThreadsAPI:
             "User-Agent": UA,
             "X-IG-App-ID": self.X_IG_APP_ID,
         }
-        return httpx.AsyncClient(
+        return http.AsyncClient(
             cookies=cookies,
             headers=headers,
             proxy=self.proxy,
             timeout=self.timeout,
         )
 
-    async def _ensure_csrf_token(self, client: httpx.AsyncClient) -> None:
+    async def _ensure_csrf_token(self, client: http.AsyncClient) -> None:
         csrf_token = self._get_cookie_value(client, "csrftoken")
         if not csrf_token:
             try:
                 await client.get(self.THREADS_URL, follow_redirects=True)
-            except httpx.HTTPError as exc:
+            except http.HTTPError as exc:
                 raise ThreadsAPIError(f"获取 Threads csrftoken 失败: {exc}") from exc
             csrf_token = self._get_cookie_value(client, "csrftoken")
         if csrf_token:
             client.headers["x-csrftoken"] = csrf_token
 
     @staticmethod
-    def _get_cookie_value(client: httpx.AsyncClient, name: str) -> str:
+    def _get_cookie_value(client: http.AsyncClient, name: str) -> str:
         values = [cookie.value for cookie in client.cookies.jar if cookie.name == name and cookie.value]
         return values[-1] if values else ""
 

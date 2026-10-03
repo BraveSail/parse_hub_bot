@@ -8,8 +8,7 @@ from inspect import signature
 from typing import Any, Self, Union
 from urllib.parse import urlparse
 
-import httpx
-
+from ..utils import http
 from ..utils.helpers import get_author_name
 
 
@@ -30,7 +29,7 @@ class WeiboAPI:
         parsed = urlparse(url)
 
         async def fn() -> str:
-            async with httpx.AsyncClient(proxy=self.proxy, follow_redirects=False, timeout=30) as client:
+            async with http.AsyncClient(proxy=self.proxy, follow_redirects=False, timeout=30) as client:
                 response = await client.get(url)
                 if response.is_error:
                     response.raise_for_status()
@@ -61,7 +60,7 @@ class WeiboAPI:
             "referer": "https://weibo.com",
         }
         api = f"https://weibo.com/ajax/statuses/show?id={bid}&isGetLongText=true"
-        async with httpx.AsyncClient(proxy=self.proxy) as client:
+        async with http.AsyncClient(proxy=self.proxy) as client:
             response = await client.get(api, cookies=self._cookies, headers=headers)
             response.raise_for_status()
             result: dict = response.json()
@@ -76,7 +75,7 @@ class WeiboAPI:
             "page": f"/tv/show/{oid}",
         }
         data = {"data": f'{{"Component_Play_Playinfo":{{"oid":"{oid}"}}}}'}
-        async with httpx.AsyncClient(proxy=self.proxy) as client:
+        async with http.AsyncClient(proxy=self.proxy) as client:
             response = await client.post(
                 "https://weibo.com/tv/api/component", cookies=self._cookies, headers=headers, data=data, params=params
             )

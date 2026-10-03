@@ -3,7 +3,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlparse
 
-import httpx
+from _fakes import FakeResponse, patch_async_get
 
 from parsehub import ParseHub
 from parsehub.errors import ParseError, UnknownPlatform
@@ -383,8 +383,8 @@ class TestDoubanTopicParsing(unittest.TestCase):
         ]
         for payload, expected in cases:
             with self.subTest(payload=payload):
-                response = httpx.Response(403, json=payload)
-                with patch.object(httpx.AsyncClient, "get", new=AsyncMock(return_value=response)):
+                response = FakeResponse(403, json_data=payload)
+                with patch_async_get(response):
                     with self.assertRaises(DoubanError) as ctx:
                         run_sync(Douban().fetch_topic_data("https://www.douban.com/group/topic/1/"))
                 self.assertEqual(ctx.exception.msg, expected)

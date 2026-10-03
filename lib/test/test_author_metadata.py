@@ -4,8 +4,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from urllib.parse import quote
 
-import httpx
 import pytest
+from _fakes import FakeResponse, patch_async_get
 
 from parsehub import ParseHub, Platform
 from parsehub.parsers.base.ytdlp import YtParser
@@ -231,8 +231,8 @@ def test_weixin_publisher_name(field, expected):
     ],
 )
 def test_coolapk_author(body):
-    response = httpx.Response(200, text='<a class="user-name">Author</a>' + body)
-    with patch.object(httpx.AsyncClient, "get", new=AsyncMock(return_value=response)):
+    response = FakeResponse(200, text='<a class="user-name">Author</a>' + body)
+    with patch_async_get(response):
         post = asyncio.run(Coolapk.parse("https://coolapk.com/feed/1"))
     assert post.author_name == "Author"
 

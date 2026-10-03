@@ -2,11 +2,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
-import httpx
 from bs4 import BeautifulSoup
 from markdown import markdown
 from markdownify import MarkdownConverter
 
+from ..utils import http
 from ..utils.helpers import get_author_name
 
 TOPIC_API = "https://m.douban.com/rexxar/api/v2/group/topic/{}"
@@ -39,7 +39,7 @@ class Douban:
 
     async def fetch_topic_data(self, url: str) -> dict[str, Any]:
         headers = {"User-Agent": MOBILE_UA, "Referer": "https://m.douban.com/"}
-        async with httpx.AsyncClient(proxy=self.proxy, cookies=self.cookie, timeout=30) as cli:
+        async with http.AsyncClient(proxy=self.proxy, cookies=self.cookie, timeout=30) as cli:
             result = await cli.get(TOPIC_API.format(self.get_topic_id(url)), headers=headers)
 
         if result.status_code != 200:

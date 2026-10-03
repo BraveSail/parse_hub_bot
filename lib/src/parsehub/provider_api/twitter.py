@@ -7,10 +7,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, NamedTuple
 
-import httpx
 from loguru import logger
 
 from ..types import ParseError
+from ..utils import http
 from ..utils.helpers import UA, to_datetime, to_int
 
 
@@ -79,7 +79,7 @@ class Twitter:
             "fieldToggles": '{"withArticleRichContentState":true,"withArticlePlainText":false}',
         }
 
-        async with httpx.AsyncClient(proxy=self.proxy) as client:
+        async with http.AsyncClient(proxy=self.proxy) as client:
             response = await client.get(
                 "https://api.twitter.com/graphql/kPLTRmMnzbPTv70___D06w/TweetResultByRestId",
                 params=params,

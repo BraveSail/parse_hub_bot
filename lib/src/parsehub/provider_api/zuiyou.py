@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 from urllib.parse import urlparse
 
-import httpx
-
+from ..utils import http
 from ..utils.helpers import get_author_name
 
 
@@ -53,7 +52,7 @@ class ZuiYou:
 
     async def parse(self, url: str) -> ZuiYouPost:
         pid = self.get_id_by_url(url)
-        async with httpx.AsyncClient(proxy=self.proxy) as cli:
+        async with http.AsyncClient(proxy=self.proxy) as cli:
             result = await cli.post(self.api_url, json={"pid": pid})
         return ZuiYouPost.parse(result.json())
 

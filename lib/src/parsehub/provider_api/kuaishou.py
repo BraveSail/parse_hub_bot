@@ -4,10 +4,10 @@ from dataclasses import dataclass
 from typing import Any, Self, cast
 from urllib.parse import parse_qs, urlparse
 
-import httpx
 from loguru import logger
 
 from .. import ParseError
+from ..utils import http
 from ..utils.helpers import UA, get_author_name
 
 
@@ -111,7 +111,7 @@ class KuaiShouAPI:
         }
         """,
         }
-        async with httpx.AsyncClient(proxy=self.proxy, headers=self.headers, cookies=self.cookie) as client:
+        async with http.AsyncClient(proxy=self.proxy, headers=self.headers, cookies=self.cookie) as client:
             response = await client.post(self.api_url, json=body)
             response.raise_for_status()
             raw_data = response.json()
@@ -282,14 +282,14 @@ class KuaishouParser:
 
     async def _fetch_html_with_headers(self, url, headers):
         try:
-            async with httpx.AsyncClient(timeout=15, cookies=self.cookie, proxy=self.proxy) as client:
+            async with http.AsyncClient(timeout=15, cookies=self.cookie, proxy=self.proxy) as client:
                 resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             return resp.text
-        except httpx.RequestError as e:
+        except http.RequestError as e:
             logger.error(f"Failed to get the page: {url}, Error: {e}")
             return None
-        except httpx.HTTPStatusError as e:
+        except http.HTTPStatusError as e:
             logger.error(f"Failed to get the page: {url}, Error: {e}")
             return None
         except Exception as e:

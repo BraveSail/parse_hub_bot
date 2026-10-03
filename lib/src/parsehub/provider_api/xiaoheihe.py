@@ -12,7 +12,6 @@ from enum import Enum
 from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
-import httpx
 from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -22,6 +21,7 @@ from cryptography.hazmat.primitives.ciphers.base import Cipher
 from cryptography.hazmat.primitives.ciphers.modes import CBC, ECB
 from markdownify import MarkdownConverter
 
+from ..utils import http
 from ..utils.helpers import get_author_name
 
 
@@ -140,7 +140,7 @@ class XiaoHeiHeAPI:
             **sig_params,
         }
         cookies = {"x_xhh_tokenid": await SecuritySm.get_d_id()}
-        async with httpx.AsyncClient(proxy=self.proxy) as cli:
+        async with http.AsyncClient(proxy=self.proxy) as cli:
             result = await cli.get(self.api_url + "/bbs/app/link/tree", params=params, cookies=cookies)
             result.raise_for_status()
             data = result.json()
@@ -536,7 +536,7 @@ class SecuritySm:
         des_target["tn"] = hashlib.md5(cls.get_tn(des_target).encode()).hexdigest()
 
         des_result = cls._AES(cls.GZIP(cls._DES(des_target)), priId.encode("utf-8"))
-        async with httpx.AsyncClient() as client:
+        async with http.AsyncClient() as client:
             response = await client.post(
                 cls.DEVICES_INFO_URL,
                 json={
