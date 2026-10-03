@@ -1,12 +1,16 @@
 <div align="center">
 
-# 🔗 ParseHubBot
+# 🎬 shirobako
 
 **Telegram Multi-Platform Content Parsing Bot**
 
+Built on [z-mio/parse_hub_bot](https://github.com/z-mio/parse_hub_bot) and maintained
+independently — this repository is no longer a GitHub fork. See
+[LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md) for the list of local changes.
+
 <p align="center">
-  <a href="https://github.com/z-mio/Parse_Hub_Bot/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/z-mio/Parse_Hub_Bot?style=flat-square&color=5D6D7E" alt="License">
+  <a href="https://github.com/BraveSail/shirobako/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/BraveSail/shirobako?style=flat-square&color=5D6D7E" alt="License">
   </a>
   <a href="https://www.python.org/">
     <img src="https://img.shields.io/badge/Python-3.12+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
@@ -21,15 +25,15 @@
 
 [简体中文](README.md) | English
 
-[**🤖 Live Demo**](https://t.me/ParseHubot) ·
-[**📚 Related Project**](https://github.com/z-mio/ParseHub) ·
-[**🐛 Report an Issue**](https://github.com/z-mio/Parse_Hub_Bot/issues)
+[**🤖 Upstream Demo**](https://t.me/ParseHubot) ·
+[**📚 Parser Library**](https://github.com/BraveSail/ParseHub) ·
+[**🐛 Report an Issue**](https://github.com/BraveSail/shirobako/issues)
 
 </div>
 
 ---
 
-> Official bot: [@ParseHubot](https://t.me/ParseHubot)
+> Upstream official bot: [@ParseHubot](https://t.me/ParseHubot) (this repository is an independent, self-hosted build)
 
 ## ✨ Features
 
@@ -37,6 +41,8 @@
   Xiaohongshu, and Twitter
 - ⚡ **Inline mode** — Parse a link from any chat by typing `@BotUsername <link>`
 - 🖼️ **Telegram-ready media** — Automatic transcoding, long-image splitting, and large-video segmentation
+- 📰 **Rich formatting** — The body is sent as a Telegram rich message that keeps the original
+  layout, with publish time, view count and source in the footer
 - 📦 **Multiple delivery modes** — Online preview, original file, or packaged download
 - 🐳 **Docker deployment** — Ready to use out of the box
 
@@ -82,7 +88,7 @@ docker run -d \
   -v ./logs:/app/logs \
   -v ./data:/app/data \
   --name parse-hub-bot \
-  ghcr.io/z-mio/parse_hub_bot:latest
+  ghcr.io/z-mio/parse_hub_bot:latest  # upstream image, without the local changes
 ```
 
 ### 💻 Run from Source
@@ -272,9 +278,14 @@ ruff format && ruff check --fix && uv run mypy
 uv run pytest
 ```
 
+## 🙏 Credits
+
+- [ParseHubBot (z-mio/parse_hub_bot)](https://github.com/z-mio/parse_hub_bot) — the base of this project
+- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — the parser library
+
 ## 📄 License
 
-This project is released under the [MIT License](LICENSE).
+This project is released under the [MIT License](LICENSE) (inherited from upstream).
 
 ---
 

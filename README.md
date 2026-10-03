@@ -1,12 +1,15 @@
 <div align="center">
 
-# 🔗 ParseHubBot
+# 🎬 shirobako
 
 **Telegram 多平台聚合解析机器人**
 
+本项目基于 [z-mio/parse_hub_bot](https://github.com/z-mio/parse_hub_bot) 改造，已脱离 fork
+关系独立维护。本地改动清单见 [LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md)。
+
 <p align="center">
-  <a href="https://github.com/z-mio/Parse_Hub_Bot/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/z-mio/Parse_Hub_Bot?style=flat-square&color=5D6D7E" alt="License">
+  <a href="https://github.com/BraveSail/shirobako/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/BraveSail/shirobako?style=flat-square&color=5D6D7E" alt="License">
   </a>
   <a href="https://www.python.org/">
     <img src="https://img.shields.io/badge/Python-3.12+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
@@ -22,19 +25,20 @@
 简体中文 |
 [English](README.en.md)
 
-[**🤖 实例演示**](https://t.me/ParseHubot) ·
-[**📚 相关项目**](https://github.com/z-mio/ParseHub) ·
-[**🐛 问题反馈**](https://github.com/z-mio/Parse_Hub_Bot/issues)
+[**🤖 上游实例**](https://t.me/ParseHubot) ·
+[**📚 解析库**](https://github.com/BraveSail/ParseHub) ·
+[**🐛 问题反馈**](https://github.com/BraveSail/shirobako/issues)
 
 </div>
 
 ---
 
-> 官方实例：[@ParseHubot](https://t.me/ParseHubot)
+> 上游官方实例：[@ParseHubot](https://t.me/ParseHubot)（本项目是独立的自托管版本）
 
 ## ✨ 功能特性
 
 - 🎬 **多平台解析** — 抖音、B站、YouTube、小红书、Twitter 等 16+ 主流平台一站搞定
+- 📰 **富文本排版** — 正文按 Telegram 富文本消息还原原文格式, 发布时间/浏览量/来源收在页尾
 - ⚡ **内联模式** — 在任意聊天窗口输入 `@BotUsername <链接>` 即可解析
 - 🖼️ **Tg 兼容** — 自动转码、长图切割、大视频分段
 - 📦 **多种模式** — 在线预览, 原始文件, 打包下载
@@ -71,19 +75,21 @@
 
 ### 🐳 Docker 运行 (推荐)
 
-```bash
-mkdir parse_hub_bot && cd parse_hub_bot
+本仓库不发布预构建镜像，用仓库内的 `compose.deploy.yaml` 本地构建（镜像里会用
+`additional_contexts` 覆盖安装本仓库配套的 [ParseHub](https://github.com/BraveSail/ParseHub)
+checkout，所以两个仓库要放成同级目录）：
 
-docker run -d \
-  --restart=always \
-  -e API_ID=你的API_ID \
-  -e API_HASH=你的API_HASH \
-  -e BOT_TOKEN=你的BOT_TOKEN \
-  -v ./logs:/app/logs \
-  -v ./data:/app/data \
-  --name parse-hub-bot \
-  ghcr.io/z-mio/parse_hub_bot:latest
+```bash
+git clone git@github.com:BraveSail/shirobako.git
+git clone git@github.com:BraveSail/ParseHub.git
+
+cd shirobako
+cp .env.example .env   # 至少填 API_ID / API_HASH / BOT_TOKEN
+docker compose -f compose.deploy.yaml build bot
+docker compose -f compose.deploy.yaml up -d
 ```
+
+> 只想用上游的现成镜像（不含本仓库的改动）可以拉 `ghcr.io/z-mio/parse_hub_bot:latest`。
 
 ### 💻 源码运行
 
@@ -272,9 +278,14 @@ ruff format && ruff check --fix && uv run mypy
 uv run pytest
 ```
 
+## 🙏 致谢
+
+- [ParseHubBot (z-mio/parse_hub_bot)](https://github.com/z-mio/parse_hub_bot) — 本项目的基础
+- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — 解析库
+
 ## 📄 开源协议
 
-本项目基于 [MIT License](LICENSE) 协议开源
+本项目基于 [MIT License](LICENSE) 协议开源（沿用上游协议）
 
 ---
 
