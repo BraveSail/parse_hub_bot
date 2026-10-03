@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from parsehub.types import AniRef, RichTextParseResult
 from pyrogram import Client, filters
-from pyrogram.types import InputRichMessage, Message
+from pyrogram.types import Message
 
 from core import bs
 from db import get_session
@@ -235,38 +235,19 @@ async def handle_parse(req: ParseRequest) -> bool:
         await parse_cache.set(raw_url, parse_result)
 
         if isinstance(parse_result, RichTextParseResult):
-            # 富文本发送
-            if req.config.rich_mode:
+            # 富文本发送: 与普通结果同一条路径 (媒体上传 + 页脚), 只是正文取 markdown_content
+            # 敏感内容有媒体时不给富文本 —— 它的媒体打不了码 (见下方注释)
+            if req.config.rich_mode and not (parse_result.is_sensitive and result.processed_list):
                 await sender.typing()
-                caption = build_caption(
+                await send_rich_media(
+                    sender,
                     parse_result,
-                    config=req.config,
+                    result.processed_list,
+                    _t=req.t_,
                     custom_content=req.custom_content,
-                    rich=True,
-                    lang=req.t_.locale,
-                    view_label=req.t_("查看"),
                 )
-                if req.chat_id:
-                    await sender.rich_message(
-                        rich_message=InputRichMessage(markdown=caption),
-                    )
-                    await persistent_cache.set(
-                        raw_url,
-                        CacheEntry(
-                            parse_result=CacheParseResult(
-                                title=parse_result.title,
-                                content=parse_result.markdown_content,
-                                author_name=get_parse_author_name(parse_result),
-                                author_handle=getattr(parse_result, "author_handle", ""),
-                                is_sensitive=parse_result.is_sensitive,
-                                published_at=parse_result.published_at,
-                                view_count=parse_result.view_count,
-                            ),
-                            rich=True,
-                        ),
-                    )
-                    await reporter.dismiss()
-                    return True
+                await reporter.dismiss()
+                return True
 
             # Telegraph 发送
             logger.debug(f"富文本类型, 创建 Telegraph 页面: title={parse_result.title}")
@@ -355,7 +336,9 @@ async def handle_parse(req: ParseRequest) -> bool:
         logger.debug(f"开始上传媒体: media_count={len(result.processed_list)}")
         await reporter.report(req.t_("上 传 中..."))
         try:
-            if req.config.rich_mode:
+            # 敏感内容走老路径: 富文本的媒体打不了码 (官方 API 的 InputRichBlockPhoto
+            # 没有 spoiler 字段), 老路径才有 has_spoiler, 不能为了排版牺牲遮罩
+            if req.config.rich_mode and not parse_result.is_sensitive:
                 await send_rich_media(
                     sender,
                     parse_result,
