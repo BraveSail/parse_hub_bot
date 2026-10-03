@@ -184,7 +184,7 @@ async def handle_parse(req: ParseRequest) -> bool:
     if options.use_caching and not req.bypass_cache and (cached := await persistent_cache.get(raw_url)):
         logger.debug("file_id 缓存命中, 直接发送")
         try:
-            await send_cached(sender, cached, raw_url, custom_content=req.custom_content)
+            await send_cached(sender, cached, raw_url, custom_content=req.custom_content, _t=req.t_)
         except Exception as e:
             logger.exception(e)
             logger.error("从缓存发送失败, 以上为错误信息")
@@ -209,7 +209,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 logger.debug("Singleflight 等待完成, 重新检查缓存")
                 if not req.bypass_cache and (cached := await persistent_cache.get(raw_url)):
                     try:
-                        await send_cached(sender, cached, raw_url, custom_content=req.custom_content)
+                        await send_cached(sender, cached, raw_url, custom_content=req.custom_content, _t=req.t_)
                     except Exception as e:
                         logger.exception(e)
                         logger.error("从缓存发送失败, 以上为错误信息")
@@ -235,6 +235,8 @@ async def handle_parse(req: ParseRequest) -> bool:
                     config=req.config,
                     custom_content=req.custom_content,
                     rich=True,
+                    lang=req.t_.locale,
+                    view_label=req.t_("查看"),
                 )
                 if req.chat_id:
                     await sender.rich_message(
@@ -248,6 +250,8 @@ async def handle_parse(req: ParseRequest) -> bool:
                                 content=parse_result.markdown_content,
                                 author_name=get_parse_author_name(parse_result),
                                 is_sensitive=parse_result.is_sensitive,
+                                published_at=parse_result.published_at,
+                                view_count=parse_result.view_count,
                             ),
                             rich=True,
                         ),
@@ -265,6 +269,8 @@ async def handle_parse(req: ParseRequest) -> bool:
                 ph_url,
                 config=req.config,
                 custom_content=req.custom_content,
+                lang=req.t_.locale,
+                view_label=req.t_("查看"),
             )
             await sender.text_with_preview_above(caption)
             await persistent_cache.set(
@@ -275,6 +281,8 @@ async def handle_parse(req: ParseRequest) -> bool:
                         content=parse_result.content,
                         author_name=get_parse_author_name(parse_result),
                         is_sensitive=parse_result.is_sensitive,
+                        published_at=parse_result.published_at,
+                        view_count=parse_result.view_count,
                     ),
                     telegraph_url=ph_url,
                 ),
@@ -286,6 +294,8 @@ async def handle_parse(req: ParseRequest) -> bool:
             parse_result,
             config=req.config,
             custom_content=req.custom_content,
+            lang=req.t_.locale,
+            view_label=req.t_("查看"),
         )
         gif_only = all(isinstance(i, AniRef) for i in to_list(parse_result.media))
         if (
@@ -308,6 +318,8 @@ async def handle_parse(req: ParseRequest) -> bool:
                     content=parse_result.content,
                     author_name=get_parse_author_name(parse_result),
                     is_sensitive=parse_result.is_sensitive,
+                    published_at=parse_result.published_at,
+                    view_count=parse_result.view_count,
                 )
             )
             await persistent_cache.set(raw_url, cache_entry)

@@ -2,7 +2,9 @@
 
 import html
 import re
+from datetime import datetime
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 from easy_ai18n import LocaleContent
 from markdown import markdown
@@ -58,6 +60,8 @@ def build_caption(
     rich: bool = False,
     allow_blockquote: bool = True,
     allow_expandable: bool = True,
+    lang: str = "",
+    view_label: str = "",
 ) -> str:
     return build_caption_by_str(
         parse_result.title,
@@ -75,7 +79,58 @@ def build_caption(
         rich=rich,
         allow_blockquote=allow_blockquote,
         allow_expandable=allow_expandable,
+        metadata_line=build_metadata_line(
+            published_at=getattr(parse_result, "published_at", None),
+            view_count=getattr(parse_result, "view_count", None),
+            lang=lang,
+            view_label=view_label,
+        ),
     )
+
+
+#: 统计行里各段的分隔符
+_METADATA_SEPARATOR = " · "
+
+#: 元数据时间按该时区渲染 (容器是 UTC, 必须显式指定, 否则会差 8 小时)
+_METADATA_TIMEZONE = "Asia/Shanghai"
+
+
+def build_metadata_line(
+    *,
+    published_at: datetime | None = None,
+    view_count: int | None = None,
+    lang: str = "",
+    view_label: str = "",
+) -> str:
+    """把发布时间/浏览量渲染成一行, 例如「下午7:00 · 2026年10月3日 · 1,455 查看」。
+
+    两项都没有 (或平台不提供) 时返回空串, 不会留下空占位符。
+    view_label 由调用方用 ``t_("查看")`` 提供以获得正确语言。
+    """
+    parts: list[str] = []
+    if published_at:
+        parts.extend(_format_published(published_at, lang))
+    if view_count is not None:
+        label = view_label or str(t_("查看"))
+        parts.append(f"{view_count:,} {label}".strip())
+    return _METADATA_SEPARATOR.join(part for part in parts if part)
+
+
+def _format_published(value: datetime, lang: str) -> list[str]:
+    """返回 [时间, 日期] 两段 (中文按 12 小时制 + 中文日期, 其他语言用数字格式)。"""
+    local = value
+    try:
+        local = value.astimezone(ZoneInfo(_METADATA_TIMEZONE))
+    except Exception:  # noqa: BLE001 - 时区数据缺失时退回原时区, 不该让整条消息失败
+        pass
+
+    if lang.startswith("zh"):
+        hour = local.hour
+        ampm = "上午" if hour < 12 else "下午"
+        clock = f"{ampm}{hour % 12 or 12}:{local.minute:02d}"
+        date = f"{local.year}年{local.month}月{local.day}日"
+        return [clock, date]
+    return [local.strftime("%H:%M"), local.strftime("%Y-%m-%d")]
 
 
 def build_caption_by_str(
@@ -93,8 +148,9 @@ def build_caption_by_str(
     rich: bool = False,
     allow_blockquote: bool = True,
     allow_expandable: bool = True,
+    metadata_line: str = "",
 ) -> str:
-    """构建消息正文：标题 + 内容 + 来源链接"""
+    """构建消息正文：标题 + 内容 + 统计行 + 来源链接"""
     title, content = title or "", content or ""
     if rich:
         body = f"### {title}\n\n <details><summary>📃</summary>\n\n{content}\n\n</details>"
@@ -120,6 +176,9 @@ def build_caption_by_str(
 
     if custom_content:
         body += f"\n\n{custom_content}"
+
+    if metadata_line:
+        body = f"{body}\n\n{metadata_line}" if body else metadata_line
 
     if hide_source:
         return body

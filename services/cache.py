@@ -99,6 +99,8 @@ class CacheParseResult(BaseModel):
     content: str = ""
     author_name: str = ""
     is_sensitive: bool = False
+    published_at: datetime | None = None
+    view_count: int | None = None
 
 
 class CacheMedia(BaseModel):
@@ -158,6 +160,11 @@ class PersistentCache:
 
             if not entry.parse_result.author_name and "author_metadata_version" not in entry.model_fields_set:
                 self.logger.debug(f"旧缓存缺少作者信息, 重新解析: key={url}")
+                return None
+
+            if "published_at" not in entry.parse_result.model_fields_set:
+                # 旧缓存没有统计字段: 直接复用会让同一条链接第二次发送时缺统计行
+                self.logger.debug(f"旧缓存缺少发布时间/浏览量, 重新解析: key={url}")
                 return None
 
             await repo.touch(cache, self._now())

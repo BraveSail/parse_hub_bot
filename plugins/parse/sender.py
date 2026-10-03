@@ -28,7 +28,13 @@ from pyrogram.types import (
 
 from core import bs
 from log import logger
-from plugins.helpers import build_caption, build_caption_by_str, format_label, get_parse_author_name
+from plugins.helpers import (
+    build_caption,
+    build_caption_by_str,
+    build_metadata_line,
+    format_label,
+    get_parse_author_name,
+)
 from plugins.parse.cache import build_cached_media_group, cache_media_from_message
 from repo.settings import SettingsConfig
 from services import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult, PipelineResult, StatusReporter
@@ -343,6 +349,8 @@ async def send_raw(
             result.parse_result,
             config=sender.config,
             custom_content=custom_content,
+            lang=_t.locale,
+            view_label=_t("查看"),
         )
         docs: list[InputMediaDocument] = []
         gifs = []
@@ -415,6 +423,8 @@ async def send_zip(
             result.parse_result,
             config=sender.config,
             custom_content=custom_content,
+            lang=_t.locale,
+            view_label=_t("查看"),
         )
         if result.output_dir is None:
             raise ValueError("缺少打包目录")
@@ -478,12 +488,21 @@ async def send_media(
             content=parse_result.content,
             author_name=get_parse_author_name(parse_result),
             is_sensitive=parse_result.is_sensitive,
+            published_at=getattr(parse_result, "published_at", None),
+            view_count=getattr(parse_result, "view_count", None),
         ),
         media=media_list,
     )
 
 
-async def send_cached(sender: MessageSender, entry: CacheEntry, url: str, *, custom_content: str = "") -> None:
+async def send_cached(
+    sender: MessageSender,
+    entry: CacheEntry,
+    url: str,
+    *,
+    custom_content: str = "",
+    _t: PreLocaleSelector | None = None,
+) -> None:
     """从 file_id 缓存直接发送，跳过解析/下载/转码。"""
     logger.debug(f"缓存发送: media={entry.media}")
     caption = build_caption_by_str(
@@ -497,6 +516,12 @@ async def send_cached(sender: MessageSender, entry: CacheEntry, url: str, *, cus
         hide_title=sender.config.hide_title,
         hide_desc=sender.config.hide_desc,
         rich=entry.rich,
+        metadata_line=build_metadata_line(
+            published_at=entry.parse_result.published_at,
+            view_count=entry.parse_result.view_count,
+            lang=_t.locale if _t else "",
+            view_label=_t("查看") if _t else "",
+        ),
     )
 
     if entry.rich:

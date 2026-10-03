@@ -40,6 +40,7 @@ from plugins.filters import platform_filter
 from plugins.helpers import (
     build_caption,
     build_caption_by_str,
+    build_metadata_line,
     build_start_text,
     create_richtext_telegraph,
 )
@@ -212,14 +213,20 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
     cached_result = await parse_cache.get(raw_url)
     logger.debug(f"缓存命中: {cached_result is not None}")
 
-    caption = build_caption(cached_result, config=config, allow_expandable=True) if cached_result else ""
+    caption = (
+        build_caption(cached_result, config=config, allow_expandable=True, lang=lang, view_label=_t("查看"))
+        if cached_result
+        else ""
+    )
     reporter = InlineStatusReporter(cli, inline_message_id, caption, t=_t, user_config=config)
     with ParsePipeline(query, raw_url, reporter, parse_result=cached_result, singleflight=False, t=_t) as pipeline:
         if (result := await pipeline.run()) is None:
             return
 
         parse_result = result.parse_result
-        caption = build_caption(parse_result, config=config, allow_expandable=True)
+        caption = build_caption(
+            parse_result, config=config, allow_expandable=True, lang=lang, view_label=_t("查看")
+        )
 
         # ── 上传 ──
         await reporter.report(_t("上 传 中..."))
@@ -282,6 +289,12 @@ def build_cached_inline_results(
         # inline 也开折叠: 实测 pyrogram 会把 <blockquote expandable> 解析成
         # collapsed=True 的 blockquote 实体, Telegram 服务端存成 expandable_blockquote
         allow_expandable=True,
+        metadata_line=build_metadata_line(
+            published_at=entry.parse_result.published_at,
+            view_count=entry.parse_result.view_count,
+            lang=lang,
+            view_label=_t("查看"),
+        ),
     )
     title = clip_inline_text(entry.parse_result.title, INLINE_TITLE_LIMIT) or "-"
 
@@ -400,7 +413,9 @@ async def build_inline_results(
     # ── 富文本直接 telegraph 发送 ──
     if isinstance(parse_result, RichTextParseResult):
         if config.rich_mode:
-            caption = build_caption(parse_result, config=config, rich=True, allow_expandable=True)
+            caption = build_caption(
+                parse_result, config=config, rich=True, allow_expandable=True, lang=lang, view_label=_t("查看")
+            )
             results.append(
                 InlineQueryResultArticle(
                     title=title,
@@ -413,7 +428,9 @@ async def build_inline_results(
             return results
 
         url = await create_richtext_telegraph(cli, parse_result)
-        caption = build_caption(parse_result, url, config=config, allow_expandable=True)
+        caption = build_caption(
+            parse_result, url, config=config, allow_expandable=True, lang=lang, view_label=_t("查看")
+        )
         results.append(
             InlineQueryResultArticle(
                 title=title,
@@ -427,7 +444,9 @@ async def build_inline_results(
         return results
 
     # inline 结果同样折叠长正文 (同 build_cached_inline_results 的理由)
-    caption = build_caption(parse_result, config=config, allow_expandable=True)
+    caption = build_caption(
+        parse_result, config=config, allow_expandable=True, lang=lang, view_label=_t("查看")
+    )
 
     if not media_list:
         results.append(
