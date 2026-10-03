@@ -247,6 +247,47 @@ def build_rich_markdown(
     return f"{body}\n\n---\n\n{footer}" if body else footer
 
 
+def build_rich_markdown_by_str(
+    title: str,
+    content: str,
+    raw_url: str,
+    *,
+    config: SettingsConfig,
+    lang: str = "",
+    view_label: str = "",
+    author_name: str = "",
+    author_handle: str = "",
+    published_at: datetime | None = None,
+    view_count: int | None = None,
+    custom_content: str = "",
+    media_placeholders: Sequence[str] = (),
+) -> str:
+    """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。"""
+    return build_rich_markdown(
+        _RichFields(title, content, raw_url, author_name, author_handle, published_at, view_count),  # type: ignore[arg-type]
+        config=config,
+        lang=lang,
+        view_label=view_label,
+        custom_content=custom_content,
+        media_placeholders=media_placeholders,
+    )
+
+
+class _RichFields:
+    """最小 duck-type: 让 build_rich_markdown 能吃缓存里的字段。"""
+
+    def __init__(self, title, content, raw_url, author_name, author_handle, published_at, view_count):
+        self.title = title or ""
+        self.content = content or ""
+        self.raw_url = raw_url
+        self.author_name = author_name or ""
+        self.author_handle = author_handle or ""
+        self.published_at = published_at
+        self.view_count = view_count
+        self.platform = None
+        self.markdown_content = ""
+
+
 def rich_content(parse_result: AnyParseResult) -> str:
     """富文本里要用的正文: 长文用 markdown 正文, 其它用纯文本正文。
 

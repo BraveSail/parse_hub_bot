@@ -44,6 +44,7 @@ from plugins.helpers import (
     build_caption_by_str,
     build_metadata_line,
     build_rich_markdown,
+    build_rich_markdown_by_str,
     build_start_text,
     create_richtext_telegraph,
 )
@@ -133,6 +134,7 @@ async def answer_inline(
     cache_time: int = 0,
     switch_pm_text: str = "",
     switch_pm_parameter: str = "",
+    fallback_results: list[InlineQueryResult] | None = None,
 ) -> None:
     """回答内联查询, 失败时退化成一条可读的错误结果。
 
@@ -155,7 +157,9 @@ async def answer_inline(
 
     # 富文本项最可能是元凶 (它依赖的设置最多), 去掉后再试一次
     plain = [r for r in results if not _is_rich_result(r)]
-    if plain and len(plain) != len(results):
+    if not plain and fallback_results:
+        plain = fallback_results  # 结果全是富文本时换用调用方给的备选 (通常是媒体项)
+    if plain and plain != results:
         try:
             await inline_query.answer(
                 plain[:50],
@@ -210,7 +214,13 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         config = await SettingsService(session).get_config_by_user(inline_query.from_user.id)
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建 cached 结果")
-        results = build_cached_inline_results(cached, raw_url, lang, config)
+        # 有 file_id 时可以给「一项同时带媒体和页脚」的富文本结果; 媒体项留作兜底,
+        # 万一把富文本项剔掉也还有图可发
+        fallback = build_cached_inline_results(cached, raw_url, lang, config)
+        if config.rich_mode and cached.media:
+            results = [build_cached_rich_result(cached, raw_url, lang, config)]
+        else:
+            results = fallback
         switch_pm_text, switch_pm_parameter = await build_switch_pm(
             count_inline_media(cached.media), raw_url, lang
         )
@@ -221,6 +231,7 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
             cache_time=60,
             switch_pm_text=switch_pm_text,
             switch_pm_parameter=switch_pm_parameter,
+            fallback_results=fallback,
         )
         return
 
@@ -344,6 +355,66 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
             await reporter.report_error(_t("上传"), e)
         finally:
             logger.debug("inline 下载任务完成")
+
+
+def _build_cached_rich_media(entry: CacheEntry):
+    """把缓存里的 file_id 变成富文本的 media 块 + markdown 占位符。
+
+    用已存在的 file_id 走 ``InputMediaPhoto/Document``: pyrogram 的 ``_get_input_photo``
+    遇到 ``InputMediaPhoto`` 直接返回它的 id, **不触发任何上传**, 所以 inline 里也是即时可用。
+    """
+    from pyrogram.types import (
+        InputMediaAnimation,
+        InputMediaDocument,
+        InputMediaPhoto,
+        InputMediaVideo,
+        InputRichMessageMedia,
+    )
+
+    media: list[InputRichMessageMedia] = []
+    placeholders: list[str] = []
+    for index, m in enumerate(entry.media or []):
+        match m.type:
+            case CacheMediaType.PHOTO:
+                kind, item = "photo", InputMediaPhoto(m.file_id)
+            case CacheMediaType.VIDEO:
+                kind, item = "video", InputMediaVideo(m.file_id)
+            case CacheMediaType.ANIMATION:
+                kind, item = "video", InputMediaAnimation(m.file_id)
+            case CacheMediaType.DOCUMENT:
+                kind, item = "document", InputMediaDocument(m.file_id)
+            case _:
+                continue
+        media_id = f"m{index}"
+        media.append(InputRichMessageMedia(media_id, item))
+        placeholders.append(f"![](tg://{kind}?id={media_id})")
+    return media, placeholders
+
+
+def build_cached_rich_result(
+    entry: CacheEntry, raw_url: str, lang: str, config: SettingsConfig
+) -> InlineQueryResult:
+    """缓存路径的富文本结果项 (带 file_id 媒体, 一项同时给图和页脚)。"""
+    _t = t_[lang]
+    media, placeholders = _build_cached_rich_media(entry)
+    markdown = build_rich_markdown_by_str(
+        entry.parse_result.title,
+        entry.parse_result.content,
+        raw_url,
+        config=config,
+        lang=lang,
+        view_label=_t("查看"),
+        author_name=entry.parse_result.author_name,
+        author_handle=entry.parse_result.author_handle,
+        published_at=entry.parse_result.published_at,
+        view_count=entry.parse_result.view_count,
+        media_placeholders=placeholders,
+    )
+    return InlineQueryResultArticle(
+        title=clip_inline_text(entry.parse_result.title, INLINE_TITLE_LIMIT) or "-",
+        description=clip_inline_text(entry.parse_result.content, INLINE_DESC_LIMIT),
+        input_message_content=InputRichMessageContent(InputRichMessage(markdown=markdown, media=media or None)),
+    )
 
 
 def build_cached_inline_results(
@@ -509,8 +580,10 @@ async def build_inline_results(
             )
         )
 
-    # ── 富文本 (rich message): 整篇还原原文排版, 统计与来源进页尾 ──
-    if config.rich_mode:
+    # ── 富文本 (rich message): 还原原文排版, 统计与来源进页尾 ──
+    # 有媒体时不出这一项: inline 的富文本结果不支持外部媒体 (Telegram 直接拒), 而媒体项
+    # 的 caption 已经带了同一份统计与来源 —— 同一内容给两个结果只会让用户困惑。
+    if config.rich_mode and not media_list:
         results.append(
             InlineQueryResultArticle(
                 title=title,
@@ -518,8 +591,18 @@ async def build_inline_results(
                 input_message_content=build_inline_rich_content(parse_result, lang=lang, config=config),
             )
         )
-        if isinstance(parse_result, RichTextParseResult):
-            return results
+        return results
+
+    if config.rich_mode and isinstance(parse_result, RichTextParseResult):
+        # 长文有媒体时也走富文本 (正文是排版的主体, 图由下面的结果项/链接承担)
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
+                input_message_content=build_inline_rich_content(parse_result, lang=lang, config=config),
+            )
+        )
+        return results
 
     # ── 富文本直接 telegraph 发送 ──
     if isinstance(parse_result, RichTextParseResult):
