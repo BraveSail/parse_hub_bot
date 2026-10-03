@@ -124,4 +124,113 @@ async def edit_inline_rich_message(
     return True
 
 
-__all__ = ["RICH_RESULT_ID", "build_media_items", "edit_inline_rich_message"]
+def cache_media_blocks(entry) -> tuple[list, list[str]]:
+    """把缓存里的 file_id 变成富文本的 media 块 + markdown 占位符。
+
+    用已存在的 file_id 走 ``InputMediaPhoto/Document``: pyrogram 的 ``_get_input_photo``
+    遇到 ``InputMediaPhoto`` 直接返回它的 id, **不触发任何上传**, 所以是即时可用的。
+    """
+    from pyrogram.types import (
+        InputMediaAnimation,
+        InputMediaDocument,
+        InputMediaPhoto,
+        InputMediaVideo,
+    )
+
+    from services.cache import CacheMediaType
+
+    media: list[InputRichMessageMedia] = []
+    placeholders: list[str] = []
+    for index, m in enumerate(entry.media or []):
+        match m.type:
+            case CacheMediaType.PHOTO:
+                kind, item = "photo", InputMediaPhoto(m.file_id)
+            case CacheMediaType.VIDEO:
+                kind, item = "video", InputMediaVideo(m.file_id)
+            case CacheMediaType.ANIMATION:
+                kind, item = "video", InputMediaAnimation(m.file_id)
+            case CacheMediaType.DOCUMENT:
+                kind, item = "document", InputMediaDocument(m.file_id)
+            case _:
+                continue
+        media_id = f"m{index}"
+        media.append(InputRichMessageMedia(media_id, item))
+        placeholders.append(f"![](tg://{kind}?id={media_id})")
+    return media, placeholders
+
+
+def build_cached_rich_content(
+    entry, raw_url: str, *, lang: str, config, view_label: str = "", custom_content: str = ""
+) -> tuple[str, list[InputRichMessageMedia]]:
+    """从缓存条目重建富文本正文与媒体块 (file_id 复用, 零上传)。
+
+    **直发与 inline 共用这一条**, 免得两边各写一份排版:
+    缓存里存的只有解析字段, 排版一律交给 ``build_rich_markdown_by_str``。
+    """
+    from plugins.helpers import build_rich_markdown_by_str, wrap_collage
+
+    media, placeholders = cache_media_blocks(entry)
+    markdown = build_rich_markdown_by_str(
+        entry.parse_result.title,
+        entry.parse_result.content,
+        raw_url,
+        config=config,
+        lang=lang,
+        view_label=view_label,
+        author_name=entry.parse_result.author_name,
+        author_handle=entry.parse_result.author_handle,
+        author_url=entry.parse_result.author_url,
+        published_at=entry.parse_result.published_at,
+        view_count=entry.parse_result.view_count,
+        tags=entry.parse_result.tags,
+        custom_content=custom_content,
+        media_placeholders=wrap_collage(placeholders),
+    )
+    return markdown, media
+
+
+def extract_cache_media(rich_message) -> list:
+    """从发送后返回的富文本消息里取出媒体 file_id (写回缓存用, 下次零上传)。
+
+    blocks 路径与 markdown 路径返回的结构不同, 这里统一递归找 Photo/Video/Document。
+    """
+    from services.cache import CacheMedia, CacheMediaType
+
+    found: list = []
+
+    def walk(node) -> None:
+        if node is None or isinstance(node, (str, int)):
+            return
+        name = type(node).__name__
+        if name == "RichBlockPhoto":
+            file_id = getattr(getattr(node, "photo", None), "file_id", None)
+            if file_id:
+                found.append(CacheMedia(type=CacheMediaType.PHOTO, file_id=file_id))
+                return
+        if name == "RichBlockVideo":
+            video = getattr(node, "video", None)
+            file_id = getattr(video, "file_id", None) or getattr(getattr(video, "document", None), "file_id", None)
+            cover = getattr(getattr(node, "cover", None), "file_id", None)
+            if file_id:
+                found.append(CacheMedia(type=CacheMediaType.VIDEO, file_id=file_id, cover_file_id=cover))
+                return
+        for attr in ("blocks", "items"):
+            value = getattr(node, attr, None)
+            if value is None or isinstance(value, (str, int)):
+                continue
+            for child in value if isinstance(value, list) else [value]:
+                walk(child)
+
+    for block in getattr(rich_message, "blocks", None) or []:
+        walk(block)
+    return found
+
+
+__all__ = [
+    "RICH_RESULT_ID",
+    "build_cached_rich_content",
+    "build_media_items",
+    "cache_media_blocks",
+    "edit_inline_rich_message",
+    "extract_cache_media",
+]

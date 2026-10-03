@@ -2,23 +2,20 @@
 
 import html
 import re
+import unicodedata
 from collections.abc import Sequence
 from datetime import datetime
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
 from easy_ai18n import LocaleContent
-from markdown import markdown
 from parsehub import ParseHub, Platform
 from parsehub.types import AnyParseResult, RichTextParseResult
-from pyrogram import Client
 from pyrogram.types import Message
 
 from i18n import t_
 from log import logger
 from repo.settings import SettingsConfig
-from utils.converter import clean_article_html
-from utils.ph import Telegraph
 
 logger = logger.bind(name="Helpers")
 
@@ -54,7 +51,6 @@ def build_start_text() -> LocaleContent:
 
 def build_caption(
     parse_result: AnyParseResult,
-    telegraph_url: str | None = None,
     *,
     custom_content: str = "",
     config: SettingsConfig,
@@ -70,7 +66,6 @@ def build_caption(
         if rich and isinstance(parse_result, RichTextParseResult)
         else parse_result.content,
         parse_result.raw_url,
-        telegraph_url,
         platform=parse_result.platform,
         hide_source=config.hide_source,
         custom_content=custom_content,
@@ -92,6 +87,9 @@ def build_caption(
 
 
 #: 统计行里各段的分隔符
+# 标签行的显示宽度预算 (全角记 2), 超出就截断: 一行大约三四十个全角字符
+TAG_LINE_DISPLAY_BUDGET = 60
+
 _METADATA_SEPARATOR = " · "
 
 #: 元数据时间按该时区渲染 (容器是 UTC, 必须显式指定, 否则会差 8 小时)
@@ -137,7 +135,6 @@ def build_caption_by_str(
     title: str | None,
     content: str | None,
     raw_url: str,
-    telegraph_url: str | None = None,
     *,
     platform: Platform | None = None,
     hide_source: bool = False,
@@ -154,9 +151,6 @@ def build_caption_by_str(
     title, content = title or "", content or ""
     if rich:
         body = f"### {title}\n\n <details><summary>📃</summary>\n\n{content}\n\n</details>"
-    elif telegraph_url:
-        label = neutralize_markdown((title or content[:15]).replace("\n", " ") or "-")
-        body = f"**[{label}]({telegraph_url})**"
     else:
         parts = []
         if not hide_title and title:
@@ -426,6 +420,9 @@ def format_tags(parse_result: AnyParseResult) -> str:
     2. Telegram 解析 hashtag 时遇到 ``・`` 之类的非字母字符就停, 长标签
        (如 ``アリサ・ミハイロヴナ・九条``) 只会染蓝到 ``・`` 之前, 看着像被截断。
     链接形式两者都没有, 还多了点击进标签页的能力。
+
+    标签多时一行会很长 (pixiv 一条作品常有 8+ 个): 按显示宽度预算截断,
+    超出部分省略成 ``…``, 保证整行落在一行到两行之间。
     """
     tags = getattr(parse_result, "tags", None) or []
     if not tags:
@@ -433,7 +430,23 @@ def format_tags(parse_result: AnyParseResult) -> str:
     platform = getattr(parse_result, "platform", None) or ParseHub().get_platform(
         getattr(parse_result, "raw_url", "") or ""
     )
-    return " ".join(_render_tag(platform, tag) for tag in tags)
+
+    rendered: list[str] = []
+    width = 0
+    for tag in tags:
+        # +1 是标签之间的空格
+        piece = _display_width(f"#{tag}") + 1
+        if rendered and width + piece > TAG_LINE_DISPLAY_BUDGET:
+            rendered.append("…")
+            break
+        rendered.append(_render_tag(platform, tag))
+        width += piece
+    return " ".join(rendered)
+
+
+def _display_width(text: str) -> int:
+    """按观感算显示宽度: 全角 (CJK 等) 记 2, 其余记 1。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
 
 
 def get_parse_author_name(parse_result: AnyParseResult) -> str:
@@ -626,20 +639,6 @@ def format_text(text: str, *, allow_blockquote: bool = True, allow_expandable: b
     return "".join(out)
 
 
-async def create_telegraph_page(html_content: str, cli: Client, parse_result: AnyParseResult) -> str:
-    """创建 Telegraph 页面，返回页面 URL"""
-    logger.debug(f"创建 Telegraph 页面: title={parse_result.title}")
-    me = await cli.get_me()
-    page = await Telegraph().create_page(
-        parse_result.title or "-",
-        html_content=html_content,
-        author_name=f"{me.full_name} | @{me.username}",
-        author_url=parse_result.raw_url,
-    )
-    logger.debug(f"Telegraph 页面已创建: {page.url}")
-    return page.url
-
-
 def replace_url(platform: Platform | None, v: str) -> str:
     match platform:
         case Platform.WEIXIN:
@@ -650,14 +649,6 @@ def replace_url(platform: Platform | None, v: str) -> str:
             # 豆瓣图片分片域名 img1~imgN.doubanio.com
             v = re.sub(r"img\d+\.doubanio\.com", r"qpic.cn.in/\g<0>", v)
     return v
-
-
-async def create_richtext_telegraph(cli: Client, parse_result: RichTextParseResult) -> str:
-    """将富文本解析结果转换为 Telegraph 页面，返回页面 URL"""
-    logger.debug(f"富文本转 Telegraph: platform={parse_result.platform}, md_len={len(parse_result.markdown_content)}")
-    md = replace_url(parse_result.platform, parse_result.markdown_content)
-    html = clean_article_html(markdown(md))
-    return await create_telegraph_page(html, cli, parse_result)
 
 
 def get_supported_platforms() -> str:

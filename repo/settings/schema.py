@@ -117,12 +117,6 @@ class SettingsConfig(BaseModel):
         ConfigMetadata(ALL_SCOPES, MergeStrategy.PREFERENCE),
     ] = False
 
-    rich_mode: Annotated[
-        bool,
-        Field(description="使用富文本发送, 保留原文排版并把统计信息放在页尾"),
-        ConfigMetadata(ALL_SCOPES, MergeStrategy.PREFERENCE),
-    ] = True
-
     hide_error: Annotated[
         bool,
         Field(description="解析错误时不发送错误日志消息"),

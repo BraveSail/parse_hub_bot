@@ -57,6 +57,69 @@ def test_threads_body_keeps_its_line_layout():
     assert '<a href="https://www.threads.com/search?q=%23' in markdown
 
 
+def test_long_tag_line_is_truncated():
+    """标签多时截断, 不占满整行 (pixiv 常常 8+ 个标签)"""
+    from parsehub.types import ImageParseResult
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+    result.tags = [
+        "AI画像",
+        "足フェチ",
+        "足裏",
+        "足の裏",
+        "時々ボソッとロシア語でデレる隣のアーリャさん",
+        "アリサ・ミハイロヴナ・九条",
+        "マリヤ・ミハイロヴナ・九条",
+        "周防有希",
+    ]
+
+    from plugins.helpers import TAG_LINE_DISPLAY_BUDGET, _display_width, format_tags
+
+    line = format_tags(result)
+    assert line.endswith("…")
+    # 宽度按可见文本算 (line 里还有 <a href> 标签)
+    import re as _re
+
+    visible = _re.sub(r"<[^>]+>", "", line).replace("\\#", "#")
+    assert _display_width(visible) <= TAG_LINE_DISPLAY_BUDGET + 3  # 省略号与空格余量
+    assert "AI画像" in line
+    assert "周防有希" not in line  # 末尾的被省略
+
+
+def test_short_tag_line_is_kept_whole():
+    """标签少时全列, 不加省略号"""
+    from parsehub.types import ImageParseResult
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+    result.tags = ["AI画像", "足裏"]
+
+    from plugins.helpers import format_tags
+
+    line = format_tags(result)
+    assert "…" not in line
+    assert "AI画像" in line and "足裏" in line
+
+
+def test_single_overlong_tag_is_still_rendered():
+    """只有一个标签且超预算时也要出 (别把整行吞成空)"""
+    from parsehub.types import ImageParseResult
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+    result.tags = ["非常非常非常非常非常非常非常非常非常非常长的标签名称在这里"]
+
+    from plugins.helpers import format_tags
+
+    line = format_tags(result)
+    assert "非常非常" in line
+    assert "<a href=" in line
+
+
 def test_tag_page_url_platforms():
     assert tag_page_url(Platform.PIXIV, "足裏").startswith("https://www.pixiv.net/tags/")
     assert tag_page_url(Platform.COOLAPK, "x") == ""

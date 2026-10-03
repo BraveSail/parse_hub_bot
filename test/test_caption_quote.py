@@ -149,25 +149,19 @@ def test_dm_caption_keeps_blockquote_and_source_link():
     assert "MessageEntityItalic" not in types
 
 
-def test_inline_cached_caption_keeps_blockquote_and_link():
-    from plugins.parse.inline import build_cached_inline_results
+def test_inline_cached_rich_result_keeps_blockquote_and_link():
+    """缓存路径同样走富文本: 引用块与 Source 链接都不能丢"""
+    from plugins.parse.inline import build_cached_rich_result
     from repo.settings import SettingsConfig
     from services.cache import CacheEntry, CacheParseResult
 
     entry = CacheEntry(parse_result=CacheParseResult(content=UNDERSCORE_QUOTE))
-    results = build_cached_inline_results(entry, UNDERSCORE_URL, "zh-hans", SettingsConfig())
+    item = build_cached_rich_result(entry, UNDERSCORE_URL, "zh-hans", SettingsConfig())
+    markdown = item.input_message_content.rich_message.markdown
 
-    texts = [
-        r.input_message_content.message_text
-        for r in results
-        if getattr(r, "input_message_content", None) is not None
-        and getattr(r.input_message_content, "message_text", None)
-    ]
-    assert texts
-    for text in texts:
-        parsed = _pyrogram_markdown_parse(text)
-        assert "MessageEntityBlockquote" in _entity_types(parsed)
-        assert _text_urls(parsed) == [UNDERSCORE_URL]
+    assert "> " in markdown  # 引用块语法
+    assert UNDERSCORE_URL in markdown
+    assert "Source" in markdown
 
 
 # ── markdown 定界符中和 ─────────────────────────────────────────────────────

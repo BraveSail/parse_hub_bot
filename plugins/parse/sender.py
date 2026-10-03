@@ -32,17 +32,23 @@ from core import bs
 from log import logger
 from plugins.helpers import (
     build_caption,
-    build_caption_by_str,
-    build_metadata_line,
     build_rich_markdown,
-    format_author_label,
     format_label,
     get_parse_author_name,
 )
-from plugins.parse.cache import build_cached_media_group, cache_media_from_message
+from plugins.parse.cache import cache_media_from_message
+from plugins.parse.inline_rich import build_cached_rich_content, extract_cache_media
 from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock, markdown_to_blocks
 from repo.settings import SettingsConfig
-from services import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult, PipelineResult, StatusReporter
+from services import (
+    CacheEntry,
+    CacheMedia,
+    CacheMediaType,
+    CacheParseResult,
+    PipelineResult,
+    StatusReporter,
+    persistent_cache,
+)
 from services.media import ProcessedMedia, resolve_media_info
 from utils.helpers import pack_dir_to_tar_gz, to_list
 
@@ -153,12 +159,6 @@ class MessageSender:
             reply_markup=reply_markup,
         )
 
-    async def text_with_preview_above(self, text: str, *, reply_markup: Ikm | None = None) -> Message:
-        return await self.text(
-            text,
-            link_preview_options=LinkPreviewOptions(show_above_text=True),
-            reply_markup=reply_markup,
-        )
 
     async def document(
         self,
@@ -459,50 +459,6 @@ async def send_zip(
             os.remove(pack_path)
 
 
-async def send_media(
-    sender: MessageSender,
-    parse_result: AnyParseResult,
-    processed_list: list[ProcessedMedia],
-    caption: str,
-    *,
-    _t: PreLocaleSelector,
-) -> CacheEntry | None:
-    """构建、发送媒体，并返回缓存条目。"""
-    media_refs = to_list(parse_result.media)
-    photos_videos, animations = build_input_media(
-        media_refs,
-        processed_list,
-        video_cover=sender.config.video_cover,
-        is_sensitive=parse_result.is_sensitive,
-    )
-    all_count = len(photos_videos) + len(animations)
-    logger.debug(f"媒体分类完成: animations={len(animations)}, photos_videos={len(photos_videos)}")
-
-    if all_count == 1:
-        logger.debug("单媒体模式发送")
-        media_list = await send_single(sender, photos_videos, animations, caption)
-    else:
-        logger.debug(f"多媒体模式发送: total={all_count}")
-        media_list = await send_multi(sender, photos_videos, animations, caption, media_refs, _t=_t)
-
-    if media_list is None:
-        return None
-    return CacheEntry(
-        parse_result=CacheParseResult(
-            title=parse_result.title,
-            content=parse_result.content,
-            author_name=get_parse_author_name(parse_result),
-            author_handle=getattr(parse_result, "author_handle", ""),
-            author_url=getattr(parse_result, "author_url", ""),
-            is_sensitive=parse_result.is_sensitive,
-            published_at=getattr(parse_result, "published_at", None),
-            view_count=getattr(parse_result, "view_count", None),
-            tags=list(getattr(parse_result, "tags", None) or []),
-        ),
-        media=media_list,
-    )
-
-
 async def send_cached(
     sender: MessageSender,
     entry: CacheEntry,
@@ -511,48 +467,16 @@ async def send_cached(
     custom_content: str = "",
     _t: PreLocaleSelector | None = None,
 ) -> None:
-    """从 file_id 缓存直接发送，跳过解析/下载/转码。"""
+    """从 file_id 缓存直接发送（富文本）: file_id 复用, 跳过解析/下载/转码/上传。"""
     logger.debug(f"缓存发送: media={entry.media}")
-    caption = build_caption_by_str(
-        entry.parse_result.title,
-        entry.parse_result.content,
-        url,
-        entry.telegraph_url,
-        hide_source=sender.config.hide_source,
-        custom_content=custom_content,
-        author_name=format_author_label(entry.parse_result.author_name, entry.parse_result.author_handle),
-        hide_title=sender.config.hide_title,
-        hide_desc=sender.config.hide_desc,
-        rich=entry.rich,
-        metadata_line=build_metadata_line(
-            published_at=entry.parse_result.published_at,
-            view_count=entry.parse_result.view_count,
-            lang=_t.locale if _t else "",
-            view_label=_t("查看") if _t else "",
-        ),
+    lang = _t.locale if _t else ""
+    view_label = _t("查看") if _t else ""
+    # 缓存路径同样走富文本排版 (与直发共用 build_cached_rich_content):
+    # 不再拼老 caption —— 否则同一链接第二次发送会变成另一种格式
+    markdown, media = build_cached_rich_content(
+        entry, url, lang=lang, config=sender.config, view_label=view_label, custom_content=custom_content
     )
-
-    if entry.rich:
-        await sender.rich_message(rich_message=InputRichMessage(markdown=caption))
-        return
-
-    if entry.telegraph_url:
-        await sender.text_with_preview_above(caption)
-        return
-
-    if not entry.media:
-        await sender.text_no_preview(caption)
-        return
-
-    is_sensitive = entry.parse_result.is_sensitive
-    if len(entry.media) == 1:
-        await send_cached_single(
-            sender, entry.media[0], caption, video_cover=sender.config.video_cover, is_sensitive=is_sensitive
-        )
-    else:
-        await send_cached_multi(
-            sender, entry.media, caption, video_cover=sender.config.video_cover, is_sensitive=is_sensitive
-        )
+    await sender.rich_message(rich_message=InputRichMessage(markdown=markdown, media=media or None))
 
 
 def media_input(media: PathType | BinaryIO | None) -> PathType | BinaryIO:
@@ -643,6 +567,25 @@ def build_rich_media(
     return media, placeholders, media_blocks
 
 
+def _rich_cache_entry(parse_result: AnyParseResult, media: list[CacheMedia]) -> CacheEntry:
+    """把一次富文本发送的字段与媒体 file_id 收成缓存条目。"""
+    return CacheEntry(
+        parse_result=CacheParseResult(
+            title=parse_result.title,
+            content=parse_result.content,
+            author_name=get_parse_author_name(parse_result),
+            author_handle=getattr(parse_result, "author_handle", ""),
+            author_url=getattr(parse_result, "author_url", ""),
+            is_sensitive=parse_result.is_sensitive,
+            published_at=getattr(parse_result, "published_at", None),
+            view_count=getattr(parse_result, "view_count", None),
+            tags=list(getattr(parse_result, "tags", None) or []),
+        ),
+        media=media or None,
+        rich=True,
+    )
+
+
 async def send_rich_media(
     sender: MessageSender,
     parse_result: AnyParseResult,
@@ -650,8 +593,13 @@ async def send_rich_media(
     *,
     _t: PreLocaleSelector,
     custom_content: str = "",
+    raw_url: str = "",
 ) -> bool:
-    """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。"""
+    """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。
+
+    发送后把服务端返回的媒体 file_id 写回缓存 —— 下次同一链接零上传直发,
+    inline 也能直接带媒体 (不用二次编辑)。
+    """
     media_refs = to_list(parse_result.media)
     media, placeholders, media_blocks = build_rich_media(
         media_refs,
@@ -672,11 +620,18 @@ async def send_rich_media(
         # 只能自己构造 raw blocks (PageBlockPhoto/Video 带 spoiler)
         blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
         logger.debug(f"富文本(blocks)发送: media={len(media_blocks)}, blocks={len(blocks)}")
-        await sender.rich_message(rich_message=InputRichMessage(blocks=blocks))
-        return True
+        message = await sender.rich_message(rich_message=InputRichMessage(blocks=blocks))
+    else:
+        logger.debug(f"富文本发送: media={len(media)}, markdown_len={len(markdown)}")
+        message = await sender.rich_message(
+            rich_message=InputRichMessage(markdown=markdown, media=media or None)
+        )
 
-    logger.debug(f"富文本发送: media={len(media)}, markdown_len={len(markdown)}")
-    await sender.rich_message(rich_message=InputRichMessage(markdown=markdown, media=media or None))
+    if raw_url and media:
+        cached_media = extract_cache_media(getattr(message, "rich_message", None))
+        if cached_media:
+            await persistent_cache.set(raw_url, _rich_cache_entry(parse_result, cached_media))
+            logger.debug(f"富文本媒体已写入缓存: count={len(cached_media)}")
     return True
 
 
@@ -851,49 +806,4 @@ async def send_multi(
     return None if not_cache else media_list
 
 
-async def send_cached_single(
-    sender: MessageSender, m: CacheMedia, caption: str, *, video_cover: bool, is_sensitive: bool = False
-) -> None:
-    """从缓存发送单个媒体。"""
-    match m.type:
-        case CacheMediaType.PHOTO:
-            await sender.upload_photo()
-            await sender.photo(m.file_id, caption=caption, has_spoiler=is_sensitive)
-        case CacheMediaType.VIDEO:
-            await sender.upload_video()
-            await sender.streaming_video(
-                m.file_id,
-                caption=caption,
-                video_cover=m.cover_file_id if video_cover else None,
-                has_spoiler=is_sensitive,
-            )
-        case CacheMediaType.ANIMATION:
-            await sender.upload_photo()
-            await sender.animation(m.file_id, caption=caption, has_spoiler=is_sensitive)
-        case CacheMediaType.DOCUMENT:
-            await sender.upload_document()
-            await sender.force_document(m.file_id, caption=caption)
 
-
-async def send_cached_multi(
-    sender: MessageSender, media: list[CacheMedia], caption: str, *, video_cover: bool, is_sensitive: bool = False
-) -> None:
-    """从缓存发送多个媒体。"""
-    animations = [m for m in media if m.type == CacheMediaType.ANIMATION]
-    others = [m for m in media if m.type != CacheMediaType.ANIMATION]
-
-    for ani in animations:
-        await sender.upload_photo()
-        await sender.animation(
-            ani.file_id,
-            caption=caption if ani == animations[-1] and not others else "",
-            has_spoiler=is_sensitive,
-        )
-
-    media_group = build_cached_media_group(others, video_cover=video_cover, is_sensitive=is_sensitive)
-    for batch in batched(media_group, 10):
-        if batch[-1] == media_group[-1]:
-            batch[0].caption = caption
-
-        await sender.upload_photo()
-        await sender.media_group(list(batch))

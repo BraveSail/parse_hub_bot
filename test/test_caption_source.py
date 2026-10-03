@@ -34,13 +34,11 @@ def test_cached_caption_detects_platform_from_url(raw_url: str, platform: Platfo
 
 
 @pytest.mark.parametrize("rich", [False, True])
-@pytest.mark.parametrize("telegraph_url", [None, "https://telegra.ph/example"])
-def test_source_platform_is_preserved_in_caption_modes(rich: bool, telegraph_url: str | None) -> None:
+def test_source_platform_is_preserved_in_caption_modes(rich: bool) -> None:
     caption = build_caption_by_str(
         "Title",
         "Body",
         "https://x.com/example/status/1234567890",
-        telegraph_url,
         rich=rich,
     )
 

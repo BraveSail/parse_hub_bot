@@ -115,7 +115,6 @@ class CacheMedia(BaseModel):
 class CacheEntry(BaseModel):
     parse_result: CacheParseResult
     media: list[CacheMedia] | None = None
-    telegraph_url: str | None = None
     rich: bool = False
     author_metadata_version: int = 1
 
