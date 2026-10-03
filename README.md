@@ -7,13 +7,16 @@
 [![PyPI version](https://img.shields.io/pypi/v/parsehub?color=blue&logo=pypi&logoColor=white)](https://pypi.org/project/parsehub/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/z-mio/parsehub?style=social)](https://github.com/z-mio/parsehub)
+[![GitHub stars](https://img.shields.io/github/stars/BraveSail/ParseHub?style=social)](https://github.com/BraveSail/ParseHub)
 
 轻量, 异步, 开箱即用的社交媒体解析与媒体下载库, 支持 17+ 平台
 
+本项目基于 [z-mio/ParseHub](https://github.com/z-mio/ParseHub) 改造，已脱离 fork 关系独立维护。
+本地改动清单见 [LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md)。
+
 简体中文 | [English](README.en.md)
 
-[安装](#-安装) · [快速开始](#-快速开始) · [高级用法](#-高级用法) · [TG Bot](https://github.com/z-mio/parse_hub_bot)
+[安装](#-安装) · [快速开始](#-快速开始) · [高级用法](#-高级用法) · [TG Bot](https://github.com/BraveSail/shirobako)
 
 </div>
 
@@ -308,9 +311,13 @@ uv run pytest
 - [cv-cat/ZhihuApis](https://github.com/cv-cat/ZhihuApis)
 - [ucmao/media-parser](https://github.com/ucmao/media-parser)
 
+## 🙏 致谢
+
+- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — 本项目的基础
+
 ## 📜 开源协议
 
-本项目基于 [MIT License](LICENSE) 开源
+本项目基于 [MIT License](LICENSE) 开源（沿用上游协议）
 
 ---
 
