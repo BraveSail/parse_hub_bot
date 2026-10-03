@@ -89,9 +89,7 @@ def test_quote_media_does_not_leak_into_main_tweet():
 def test_parse_restores_short_urls_inside_quote():
     """被引用推文正文里的 t.co 也要按 entities 还原"""
     quoted = make_result("see https://t.co/abc", rest_id="999")
-    quoted["legacy"]["entities"]["urls"] = [
-        {"url": "https://t.co/abc", "expanded_url": "https://example.com/x"}
-    ]
+    quoted["legacy"]["entities"]["urls"] = [{"url": "https://t.co/abc", "expanded_url": "https://example.com/x"}]
     tweet = Twitter().parse(make_payload(quoted=quoted))
     assert tweet.quoted_status.full_text == "see https://example.com/x"
 
@@ -107,33 +105,39 @@ def test_parse_reads_quoted_is_sensitive():
 
 def test_quoted_block_renders_markdown():
     tweet = TwitterTweet(tweet_id="1", full_text="mine", quoted_status=quoted_tweet("line1\nline2"))
-    assert TwitterParser._build_quoted_block(tweet) == "> 引用 @other：\n> line1\n> line2\n\n"
+    assert TwitterParser._build_quoted_block(tweet) == (
+        '> *<a href="https://x.com/other">@other</a>：*\n> *line1*\n> *line2*\n\n'
+    )
 
 
 def test_quoted_block_marks_blank_lines():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("a\n\nb"))
-    assert TwitterParser._build_quoted_block(tweet) == "> 引用 @other：\n> a\n>\n> b\n\n"
+    assert TwitterParser._build_quoted_block(tweet) == (
+        '> *<a href="https://x.com/other">@other</a>：*\n> *a*\n>\n> *b*\n\n'
+    )
 
 
 def test_quoted_block_falls_back_to_author_name():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="", name="夏吉ゆうこ"))
-    assert TwitterParser._build_quoted_block(tweet) == "> 引用 夏吉ゆうこ：\n> x\n\n"
+    assert TwitterParser._build_quoted_block(tweet) == "> *夏吉ゆうこ：*\n> *x*\n\n"
 
 
 def test_quoted_block_uses_handle_only_when_name_matches():
     """显示名与用户名相同时只写 @用户名, 避免 "same @same" 这种重复"""
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="same", name="same"))
-    assert TwitterParser._build_quoted_block(tweet) == "> 引用 @same：\n> x\n\n"
+    assert TwitterParser._build_quoted_block(tweet) == '> *<a href="https://x.com/same">@same</a>：*\n> *x*\n\n'
 
 
 def test_quoted_block_shows_name_and_handle():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="huacnlee", name="Jason Lee"))
-    assert TwitterParser._build_quoted_block(tweet) == "> 引用 Jason Lee @huacnlee：\n> x\n\n"
+    assert TwitterParser._build_quoted_block(tweet) == (
+        '> *Jason Lee <a href="https://x.com/huacnlee">@huacnlee</a>：*\n> *x*\n\n'
+    )
 
 
 def test_quoted_block_without_author():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="", name=""))
-    assert TwitterParser._build_quoted_block(tweet) == "> 引用：\n> x\n\n"
+    assert TwitterParser._build_quoted_block(tweet) == "> *x*\n\n"
 
 
 def test_quoted_block_skipped_without_quote():
@@ -148,7 +152,7 @@ def test_quoted_block_skipped_when_text_empty():
 def test_media_parse_appends_quote_after_text():
     tweet = TwitterTweet(tweet_id="1", full_text="mine", quoted_status=quoted_tweet("original"))
     result = asyncio.run(TwitterParser.media_parse(tweet))
-    assert result.content == "mine\n\n> 引用 @other：\n> original"
+    assert result.content == 'mine\n\n> *<a href="https://x.com/other">@other</a>：*\n> *original*'
 
 
 def test_media_parse_keeps_reply_before_and_quote_after():
@@ -160,7 +164,10 @@ def test_media_parse_keeps_reply_before_and_quote_after():
     )
     result = asyncio.run(TwitterParser.media_parse(tweet))
     # "Parent"/"parent" 与 "Other"/"other" 忽略大小写视为同一名字, 只出 @用户名
-    assert result.content == "> 回复 @parent：\n> parent\n\nmine\n\n> 引用 @other：\n> original"
+    assert result.content == (
+        '> *<a href="https://x.com/parent">@parent</a>：*\n> *parent*\n\nmine\n\n'
+        '> *<a href="https://x.com/other">@other</a>：*\n> *original*'
+    )
 
 
 def test_media_parse_without_quote_is_unchanged():
@@ -177,7 +184,7 @@ def test_rich_text_parse_appends_quote():
         quoted_status=quoted_tweet("original"),
     )
     result = asyncio.run(TwitterParser.media_parse(tweet))
-    assert result.markdown_content == "# Body\n\n> 引用 @other：\n> original"
+    assert result.markdown_content == '# Body\n\n> *<a href="https://x.com/other">@other</a>：*\n> *original*'
 
 
 def test_quote_end_to_end_from_payload():
@@ -186,7 +193,8 @@ def test_quote_end_to_end_from_payload():
     payload = make_payload(make_result("往代码仓库里拉屎的就这些人"), quoted=quoted)
     result = asyncio.run(TwitterParser.media_parse(Twitter().parse(payload)))
     assert result.content == (
-        "往代码仓库里拉屎的就这些人\n\n> 引用 Jason Lee @huacnlee：\n> Vibe coding 的时候…"
+        "往代码仓库里拉屎的就这些人\n\n"
+        '> *Jason Lee <a href="https://x.com/huacnlee">@huacnlee</a>：*\n> *Vibe coding 的时候…*'
     )
 
 

@@ -61,22 +61,24 @@ def test_parse_reads_author_handle():
 
 def test_quote_renders_markdown_blockquote():
     tweet = TwitterTweet(tweet_id="1", full_text="mine", reply_to=reply_tweet("line1\nline2", handle="other"))
-    assert TwitterParser._build_quote(tweet) == "> 回复 @other：\n> line1\n> line2\n\n"
+    assert TwitterParser._build_quote(tweet) == (
+        '> *<a href="https://x.com/other">@other</a>：*\n> *line1*\n> *line2*\n\n'
+    )
 
 
 def test_quote_marks_blank_lines():
     tweet = TwitterTweet(tweet_id="1", reply_to=reply_tweet("a\n\nb"))
-    assert TwitterParser._build_quote(tweet) == "> 回复 @other：\n> a\n>\n> b\n\n"
+    assert TwitterParser._build_quote(tweet) == '> *<a href="https://x.com/other">@other</a>：*\n> *a*\n>\n> *b*\n\n'
 
 
 def test_quote_falls_back_to_author_name():
     tweet = TwitterTweet(tweet_id="1", reply_to=reply_tweet("x", handle="", name="夏吉ゆうこ"))
-    assert TwitterParser._build_quote(tweet) == "> 回复 夏吉ゆうこ：\n> x\n\n"
+    assert TwitterParser._build_quote(tweet) == "> *夏吉ゆうこ：*\n> *x*\n\n"
 
 
 def test_quote_without_author():
     tweet = TwitterTweet(tweet_id="1", reply_to=reply_tweet("x", handle="", name=""))
-    assert TwitterParser._build_quote(tweet) == "> 回复：\n> x\n\n"
+    assert TwitterParser._build_quote(tweet) == "> *x*\n\n"
 
 
 def test_quote_skipped_without_reply():
@@ -101,7 +103,7 @@ def test_quote_skipped_when_reply_text_is_only_media_short_url():
 def test_media_parse_prefixes_quote():
     tweet = TwitterTweet(tweet_id="1", full_text="mine", reply_to=reply_tweet("original", handle="other"))
     result = asyncio.run(TwitterParser.media_parse(tweet))
-    assert result.content == "> 回复 @other：\n> original\n\nmine"
+    assert result.content == '> *<a href="https://x.com/other">@other</a>：*\n> *original*\n\nmine'
 
 
 def test_media_parse_without_reply_is_unchanged():
@@ -118,7 +120,7 @@ def test_rich_text_parse_keeps_quote():
         reply_to=reply_tweet("original", handle="other"),
     )
     result = asyncio.run(TwitterParser.media_parse(tweet))
-    assert result.markdown_content == "> 回复 @other：\n> original\n\n# Body"
+    assert result.markdown_content == '> *<a href="https://x.com/other">@other</a>：*\n> *original*\n\n# Body'
 
 
 def test_fetch_tweet_attaches_reply_target():
@@ -168,4 +170,4 @@ def test_parser_restores_short_url_inside_quote():
     with patch.object(Twitter, "_fetch_result", new=AsyncMock(side_effect=[main, original])):
         tweet = asyncio.run(Twitter().fetch_tweet("https://x.com/u/status/1"))
     result = asyncio.run(TwitterParser.media_parse(tweet))
-    assert result.content == "> 回复 @other：\n> see https://example.com/x\n\nmine"
+    assert result.content == '> *<a href="https://x.com/other">@other</a>：*\n> *see https://example.com/x*\n\nmine'

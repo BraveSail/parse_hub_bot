@@ -1,3 +1,4 @@
+import html
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -54,25 +55,39 @@ class TwitterParser(BaseParser):
         return tweet
 
     @staticmethod
-    def _quote_block(source: TwitterTweet, label: str) -> str:
-        """把一条被回复/被引用的推文渲染成 Markdown 引用块, 内容为空时返回空串."""
+    def _quote_block(source: TwitterTweet) -> str:
+        """把一条被回复/被引用的推文渲染成 Markdown 引用块, 内容为空时返回空串.
+
+        不写 "回复/引用" 字样 (引用块本身已经表明关系); 整块用斜体, 作者 handle
+        指向其主页 (与主推作者行一致, 用 HTML 是因为富文本里 markdown 链接语法不生效).
+        """
         text = (source.full_text or "").strip()
         if not text:
             return ""
+        lines = "\n".join(f"> *{line}*" if line.strip() else ">" for line in text.splitlines())
+        author = TwitterParser._quote_author(source)
+        return f"> *{author}：*\n{lines}\n\n" if author else f"{lines}\n\n"
+
+    @staticmethod
+    def _quote_author(source: TwitterTweet) -> str:
+        """引用块里的作者标签, handle 渲染成指向其主页的链接"""
         author = format_author_label(source.author_name or "", source.author_handle or "")
-        head = f"> {label} {author}：" if author else f"> {label}："
-        lines = "\n".join(f"> {line}" if line.strip() else ">" for line in text.splitlines())
-        return f"{head}\n{lines}\n\n"
+        handle = (source.author_handle or "").strip().lstrip("@")
+        if author and handle and f"@{handle}" in author:
+            link = f'<a href="https://x.com/{html.escape(handle)}">@{html.escape(handle)}</a>'
+            author = author.replace(f"@{handle}", link)
+            return author
+        return author
 
     @staticmethod
     def _build_quote(tweet: TwitterTweet) -> str:
         """把被回复的推文渲染成 Markdown 引用块, 不是回复或内容为空时返回空串."""
-        return TwitterParser._quote_block(tweet.reply_to, "回复") if tweet.reply_to else ""
+        return TwitterParser._quote_block(tweet.reply_to) if tweet.reply_to else ""
 
     @staticmethod
     def _build_quoted_block(tweet: TwitterTweet) -> str:
         """把被引用的推文渲染成 Markdown 引用块, 不是引用推文或内容为空时返回空串."""
-        return TwitterParser._quote_block(tweet.quoted_status, "引用") if tweet.quoted_status else ""
+        return TwitterParser._quote_block(tweet.quoted_status) if tweet.quoted_status else ""
 
     @staticmethod
     def _compose(body: str, tweet: TwitterTweet) -> str:
