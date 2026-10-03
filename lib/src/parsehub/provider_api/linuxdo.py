@@ -26,12 +26,12 @@ from ..utils import http
 from ..utils.helpers import to_int
 
 TOPIC_API = "https://linux.do/t/topic/{topic_id}.json"
+#: 带楼层号: Discourse 返回以该楼层为中心的窗口
+FLOOR_API = "https://linux.do/t/{topic_id}/{post_number}.json"
 
-#: /t/<slug>/<id>、/t/topic/<id>、/t/<id> 三种形态
-_TOPIC_URL_RES = (
-    re.compile(r"^https?://linux\.do/t/(?:[^/]+/)?(\d+)"),
-    re.compile(r"^https?://linux\.do/t/topic/(\d+)"),
-)
+#: /t/topic/<id>[/<楼层>]、/t/<slug>/<id>[/<楼层>]、/t/<id>[/<楼层>]
+#: slug 不以数字开头, 否则 /t/2979226/11 会被误当成 slug=2979226、id=11
+_TOPIC_URL_RE = re.compile(r"^https?://linux\.do/t/(?:[^\d/][^/]*/)?(\d+)(?:/(\d+))?")
 
 
 class LinuxDoError(Exception):
@@ -66,11 +66,23 @@ class LinuxDoTopic:
     is_sensitive: bool = False
 
     @staticmethod
-    def get_topic_id(url: str) -> str:
-        for pattern in _TOPIC_URL_RES:
-            if match := pattern.search(url):
-                return match.group(1)
+    def _split_url(url: str) -> tuple[str, str]:
+        """返回 (话题 ID, 楼层号)；楼层号为空串表示没指定。"""
+        if match := _TOPIC_URL_RE.match(url):
+            return match.group(1), match.group(2) or ""
         raise LinuxDoError("暂不支持该 linux.do 链接, 目前仅支持话题页 (/t/<话题>/<id>)")
+
+    @staticmethod
+    def get_topic_id(url: str) -> str:
+        return LinuxDoTopic._split_url(url)[0]
+
+    @staticmethod
+    def get_post_number(url: str) -> str:
+        """URL 里指定的楼层号（``/t/topic/<id>/11`` → ``11``）；没指定返回空串。
+
+        带楼层号时解析那一层（用户分享的常常是某个回复），不带则解析楼主帖。
+        """
+        return LinuxDoTopic._split_url(url)[1]
 
     @classmethod
     async def parse(
@@ -79,13 +91,14 @@ class LinuxDoTopic:
         proxy: str | None = None,
         cookie: dict[str, str] | None = None,
     ) -> LinuxDoTopic:
-        topic_id = cls.get_topic_id(url)
+        topic_id, post_number = cls._split_url(url)
+        # 带楼层号时请求该楼层（Discourse 会返回以它为中心的窗口），否则请求楼主帖
+        api = FLOOR_API.format(topic_id=topic_id, post_number=post_number) if post_number else TOPIC_API.format(
+            topic_id=topic_id
+        )
         try:
             async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
-                response = await client.get(
-                    TOPIC_API.format(topic_id=topic_id),
-                    headers={"Accept": "application/json"},
-                )
+                response = await client.get(api, headers={"Accept": "application/json"})
         except http.HTTPError as e:
             raise LinuxDoError(f"请求 linux.do 失败: {e}") from e
 
@@ -100,12 +113,23 @@ class LinuxDoTopic:
         except Exception as e:  # noqa: BLE001 - 被 Cloudflare 拦时会返回 HTML
             raise LinuxDoError("linux.do 返回的不是 JSON, 多半是 Cloudflare 挑战页面 (cookie 失效或缺少指纹)") from e
 
-        return cls._from_payload(payload, topic_id)
+        return cls._from_payload(payload, topic_id, post_number=post_number)
 
     @classmethod
-    def _from_payload(cls, payload: dict[str, Any], topic_id: str) -> LinuxDoTopic:
+    def _from_payload(cls, payload: dict[str, Any], topic_id: str, post_number: str = "") -> LinuxDoTopic:
+        """组装主题。
+
+        ``post_number`` 指定楼层时取那一层（用户分享的链接常带楼层号，那一层才是他要看的内容）；
+        没指定则取楼主帖。带楼层号的 URL 返回的帖子流**不含 1 楼**，所以不能盲目回落到第一项 ——
+        那会取到窗口里的其它楼层（症状：明明楼层里有图，解析出来没媒体）。
+        """
         posts: list[dict[str, Any]] = (payload.get("post_stream") or {}).get("posts") or []
-        first = next((p for p in posts if p.get("post_number") == 1), posts[0] if posts else None)
+        wanted = int(post_number) if post_number.isdigit() else 1
+        first = next((p for p in posts if p.get("post_number") == wanted), None)
+        if first is None and post_number:
+            raise LinuxDoError(f"话题 {topic_id} 里没有第 {post_number} 楼")
+        if first is None:
+            first = posts[0] if posts else None
         if first is None:
             raise LinuxDoError("话题里没有可解析的内容")
 
@@ -144,7 +168,11 @@ class LinuxDoTopic:
         - ``div.lightbox-wrapper``：图片会作为媒体单独发送，正文里不再重复
         - ``details`` / ``summary``：富文本渲染不支持折叠，这里展开（保留内容、去掉外壳标题）
         - ``div.spoiler``：只保留内容
+        - ``img.emoji``：转回文本形式（``:name:``），否则正文里会出现外链图片语法，
+          而富文本/inline 不接受外部媒体
         """
+        for emoji in soup.find_all("img", class_="emoji"):
+            emoji.replace_with(str(emoji.get("alt") or emoji.get("title") or ""))
         for wrapper in soup.find_all("div", class_="lightbox-wrapper"):
             wrapper.decompose()
         for details in soup.find_all("details"):
@@ -172,6 +200,10 @@ class LinuxDoTopic:
         seen: set[str] = set()
 
         for img in soup.find_all("img"):
+            # Discourse 把表情也渲染成 <img class="emoji" src=".../twemoji/xxx.png">,
+            # 20x20 的小图不该当成帖子媒体发送
+            if "emoji" in (img.get("class") or []):
+                continue
             src = str(img.get("src") or "")
             link = img.find_parent("a")
             original = str((link.get("href") if link else "") or src)

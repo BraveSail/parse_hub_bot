@@ -65,6 +65,64 @@ def test_topic_id_is_extracted(url):
     assert LinuxDoTopic.get_topic_id(url) == "2979226"
 
 
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://linux.do/t/topic/2979226/11", "11"),
+        ("https://linux.do/t/2979226/4", "4"),
+        ("https://linux.do/t/某话题/2979226/5", "5"),
+        ("https://linux.do/t/topic/2979226", ""),
+        ("https://linux.do/t/2979226", ""),
+    ],
+)
+def test_floor_number_is_extracted(url, expected):
+    """带楼层号的链接要认出楼层（/t/2979226/11 不能被当成 slug=2979226、id=11）"""
+    assert LinuxDoTopic.get_topic_id(url) == "2979226"
+    assert LinuxDoTopic.get_post_number(url) == expected
+
+
+def test_floor_url_resolves_the_requested_post():
+    """指定楼层时取那一层，不能盲目取第一项（带楼层号的响应不含 1 楼）"""
+    payload = make_payload()
+    floor_11 = {
+        "post_number": 11,
+        "username": "hifumi_mizuhara",
+        "name": "Hifumi Mizuhara",
+        "cooked": '<p>好看</p><img src="https://cdn3.ldstatic.com/original/x.jpeg" width="800" height="600">',
+    }
+    payload["post_stream"]["posts"] = [
+        {"post_number": 6, "username": "a", "cooked": "<p>纯文字</p>"},
+        floor_11,
+    ]
+    topic = LinuxDoTopic._from_payload(payload, "2979226", post_number="11")
+    assert topic.author_handle == "hifumi_mizuhara"
+    assert len(topic.images) == 1
+
+
+def test_missing_floor_is_an_error():
+    payload = make_payload()
+    payload["post_stream"]["posts"] = [{"post_number": 2, "cooked": "<p>x</p>"}]
+    with pytest.raises(LinuxDoError):
+        LinuxDoTopic._from_payload(payload, "2979226", post_number="99")
+
+
+def test_emoji_is_not_treated_as_media():
+    """Discourse 的表情是 <img class="emoji">, 20x20 小图不该当媒体发送"""
+    cooked = (
+        '<p>好看<img src="https://cdn.ldstatic.com/images/emoji/twemoji/x.png?v=15" '
+        'title=":enraged_face:" class="emoji" alt=":enraged_face:" width="20" height="20"></p>'
+    )
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = cooked
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    assert topic.images == []
+    # 表情以文本形式留在正文里, 不产生外链图片语法
+    # (markdownify 会把下划线转义成 \_ , 渲染后仍是 _)
+    assert ":enraged" in topic.markdown_content
+    assert "![" not in topic.markdown_content
+    assert "twemoji" not in topic.markdown_content
+
+
 def test_unsupported_url_is_rejected():
     """用户页/其它站点不能被当成话题解析"""
     for url in ("https://linux.do/u/VerenQwQ", "https://linux.do/latest", "https://example.com/t/topic/1"):
