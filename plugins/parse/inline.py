@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from parsehub import AnyParseResult
 from parsehub.types import (
     AniRef,
+    AnyMediaRef,
     ImageRef,
     RichTextParseResult,
     VideoRef,
@@ -41,6 +42,7 @@ from plugins.helpers import (
     build_caption,
     build_caption_by_str,
     build_metadata_line,
+    build_rich_markdown,
     build_start_text,
     create_richtext_telegraph,
 )
@@ -381,6 +383,35 @@ def build_cached_inline_results(
     return results
 
 
+def _inline_media_placeholder(media_ref: AnyMediaRef) -> str:
+    """内联结果里的媒体占位: 直接把 URL 写进 markdown, 不传 media 字段。"""
+    match media_ref:
+        case ImageRef() | VideoRef() | AniRef():
+            return f"![]({media_ref.url})"
+    return ""
+
+
+def build_inline_rich_content(
+    parse_result: AnyParseResult, *, lang: str, config: SettingsConfig
+) -> InputRichMessageContent:
+    """inline 结果的富文本内容。
+
+    inline 构建结果时拿不到本地文件 (不下载), 所以媒体用 URL 直接写进 markdown 交给
+    Telegram 服务端抓取 —— **不传 media 字段**, 因此也不会在此刻触发 peer=self 的
+    UploadMedia (那条路一旦失败, 整条 inline 回答都会失败)。图抓不到只是不显示。
+    """
+    _t = t_[lang]
+    placeholders = [_inline_media_placeholder(ref) for ref in to_list(parse_result.media)]
+    markdown = build_rich_markdown(
+        parse_result,
+        config=config,
+        lang=lang,
+        view_label=_t("查看"),
+        media_placeholders=[p for p in placeholders if p],
+    )
+    return InputRichMessageContent(InputRichMessage(markdown=markdown))
+
+
 async def build_inline_results(
     parse_result: AnyParseResult, cli: Client, lang: str, config: SettingsConfig
 ) -> list[InlineQueryResult]:
@@ -410,23 +441,20 @@ async def build_inline_results(
             )
         )
 
-    # ── 富文本直接 telegraph 发送 ──
-    if isinstance(parse_result, RichTextParseResult):
-        if config.rich_mode:
-            caption = build_caption(
-                parse_result, config=config, rich=True, allow_expandable=True, lang=lang, view_label=_t("查看")
+    # ── 富文本 (rich message): 整篇还原原文排版, 统计与来源进页尾 ──
+    if config.rich_mode:
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
+                input_message_content=build_inline_rich_content(parse_result, lang=lang, config=config),
             )
-            results.append(
-                InlineQueryResultArticle(
-                    title=title,
-                    description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
-                    input_message_content=InputRichMessageContent(
-                        InputRichMessage(markdown=caption),
-                    ),
-                )
-            )
+        )
+        if isinstance(parse_result, RichTextParseResult):
             return results
 
+    # ── 富文本直接 telegraph 发送 ──
+    if isinstance(parse_result, RichTextParseResult):
         url = await create_richtext_telegraph(cli, parse_result)
         caption = build_caption(
             parse_result, url, config=config, allow_expandable=True, lang=lang, view_label=_t("查看")
