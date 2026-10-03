@@ -57,6 +57,19 @@ class Limits:
         self.keepalive_expiry = keepalive_expiry
 
 
+#: 默认超时 ``(连接, 读/低速容忍)`` 秒。
+#:
+#: **必须显式给**: curl_cffi 的 ``timeout`` 默认是 ``None``, 源码里直接翻成
+#: ``0 = indefinitely``(永不超时); 而 httpx 的默认是 5 秒。迁移后如果沿用
+#: "不传就不设"的写法, 任何一次网络抖动都会让请求**永久挂起** ——
+#: 表现就是 bot 既不报错也不回消息 (连接还在, 但协程永不返回)。
+#:
+#: 对 ``stream=True`` 的下载, curl_cffi 会把它翻成低速检测
+#: (``LOW_SPEED_LIMIT=1`` + ``LOW_SPEED_TIME``): 只要数据还在流动就不会中断,
+#: 所以下载大视频不会被总时长误杀。
+DEFAULT_TIMEOUT: tuple[float, float] = (15, 60)
+
+
 class AsyncClient(AsyncSession):
     """``curl_cffi.AsyncSession`` 的外壳，构造参数与原来的 httpx 用法一一对应。"""
 
@@ -84,8 +97,8 @@ class AsyncClient(AsyncSession):
             params["cookies"] = cookies
         if headers is not None:
             params["headers"] = headers
-        if timeout is not None:
-            params["timeout"] = timeout
+        # 无条件设置: 见 DEFAULT_TIMEOUT 的说明, 让"忘了传"不再等于"永不超时"
+        params["timeout"] = DEFAULT_TIMEOUT if timeout is None else timeout
         if follow_redirects is not None:
             # httpx 默认不跟随重定向，curl_cffi 默认跟随 —— 必须显式对齐，
             # 否则原本依赖"不跟随"的地方（如下载器的 Range 探测）会静默改变行为
@@ -104,9 +117,15 @@ class AsyncClient(AsyncSession):
         return self._closed
 
     async def aclose(self) -> None:
-        """curl_cffi 只有同步的 ``close()``，这里补齐异步写法（httpx 的调用点用的是它）。"""
+        """补齐 httpx 风格的 ``aclose()``（调用点用的是它）。
+
+        注意 curl_cffi 的 ``close()`` **本身是协程** —— 不 await 的话连接不会被关闭，
+        只会留下 ``coroutine 'AsyncSession.close' was never awaited`` 警告和一条泄漏的连接。
+        """
+        if self._closed:
+            return
         self._closed = True
-        self.close()
+        await self.close()
 
     async def __aexit__(self, *args: Any) -> None:
         self._closed = True
@@ -125,6 +144,7 @@ def new_client(**kwargs: Any) -> AsyncClient:
 
 
 __all__ = [
+    "DEFAULT_TIMEOUT",
     "IMPERSONATE",
     "AsyncClient",
     "ConnectTimeout",
