@@ -16,7 +16,15 @@ from services.cache import CacheEntry, CacheParseResult, PersistentCache
     [("", False, False), ("Author", False, True), ("", True, True), ("Author", True, True)],
 )
 def test_cache_refreshes_only_legacy_entries_missing_author(author, versioned, hit):
-    payload = {"parse_result": {"title": "T", "author_name": author, "published_at": None, "view_count": None}}
+    payload = {
+        "parse_result": {
+            "title": "T",
+            "author_name": author,
+            "published_at": None,
+            "view_count": None,
+            "tags": [],
+        }
+    }
     if versioned:
         payload["author_metadata_version"] = 1
     stored = SimpleNamespace(entry_json=payload)
@@ -45,6 +53,25 @@ def test_cache_refreshes_entries_written_before_metadata_line():
 
     with patch("services.cache.get_session", session), patch("services.cache.CacheRepo", return_value=repo):
         result = asyncio.run(PersistentCache().get("https://www.threads.com/@user/post/Abc"))
+    assert result is None
+    assert repo.touch.await_count == 0
+
+
+def test_cache_refreshes_entries_written_before_tags():
+    """没有 tags 字段的缓存要重新解析, 否则 inline 结果缺 tag 行"""
+    payload = {
+        "parse_result": {"title": "T", "author_name": "Author", "published_at": None, "view_count": None},
+        "author_metadata_version": 1,
+    }
+    stored = SimpleNamespace(entry_json=payload)
+    repo = SimpleNamespace(get=AsyncMock(return_value=stored), touch=AsyncMock())
+
+    @asynccontextmanager
+    async def session():
+        yield None
+
+    with patch("services.cache.get_session", session), patch("services.cache.CacheRepo", return_value=repo):
+        result = asyncio.run(PersistentCache().get("https://www.pixiv.net/artworks/1"))
     assert result is None
     assert repo.touch.await_count == 0
 
@@ -220,8 +247,9 @@ def test_rich_markdown_renders_tags():
     markdown = build_rich_markdown(
         result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
     )
-    assert "#AI画像 #足裏" in markdown
-    assert markdown.index("正文") < markdown.index("#AI画像")
+    # # 必须转义, 否则富文本把 #标签 当一级标题 (字号巨大)
+    assert "\\#AI画像 \\#足裏" in markdown
+    assert markdown.index("正文") < markdown.index("AI画像")
 
 
 def test_rich_markdown_places_media_between_body_and_footer():

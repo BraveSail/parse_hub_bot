@@ -273,6 +273,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                         is_sensitive=parse_result.is_sensitive,
                         published_at=parse_result.published_at,
                         view_count=parse_result.view_count,
+                        tags=list(getattr(parse_result, "tags", None) or []),
                     ),
                     telegraph_url=ph_url,
                 ),
@@ -319,6 +320,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                     is_sensitive=parse_result.is_sensitive,
                     published_at=parse_result.published_at,
                     view_count=parse_result.view_count,
+                    tags=list(getattr(parse_result, "tags", None) or []),
                 )
             )
             await persistent_cache.set(raw_url, cache_entry)

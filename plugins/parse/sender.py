@@ -496,6 +496,7 @@ async def send_media(
             is_sensitive=parse_result.is_sensitive,
             published_at=getattr(parse_result, "published_at", None),
             view_count=getattr(parse_result, "view_count", None),
+            tags=list(getattr(parse_result, "tags", None) or []),
         ),
         media=media_list,
     )

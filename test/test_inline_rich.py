@@ -101,24 +101,27 @@ def test_inline_cover_url_without_media():
     assert inline_cover_url(make_result()) == ""
 
 
-def test_media_result_uses_cover_placeholder():
-    """有封面时消息里先出现一张图 (老体验), 而不是纯文字"""
+def test_media_result_stays_rich_text():
+    """有媒体也必须走富文本 Article。
+
+    曾经用 InlineQueryResultPhoto 做封面占位, 结果发出来是一张图 + caption,
+    富文本的排版/图集/标签/页脚全丢 —— 用封面图当 thumb_url 就够, 不能换成 Photo 结果。
+    """
     result = make_result(media=[VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg")])
     results = asyncio.run(build_inline_results(result, None, "zh-hans", _config()))
     item = results[0]
-    assert type(item).__name__ == "InlineQueryResultPhoto"
-    assert item.photo_url == "https://a/c.jpg"
+    assert type(item).__name__ == "InlineQueryResultArticle"
+    assert item.thumb_url == "https://a/c.jpg"
     assert item.id == "rich"
+    assert isinstance(item.input_message_content, InputRichMessageContent)
     assert item.reply_markup is not None  # 需要句柄才能在选中后替换
 
 
-def test_single_media_ref_does_not_break_dimensions():
-    """media 是单个 ref (非 list) 时取尺寸不能抛"""
-    result = make_result(
-        media=VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg", width=1080, height=1920)
-    )
+def test_single_media_ref_does_not_break_cover_lookup():
+    """media 是单个 ref (非 list) 时取封面不能抛"""
+    result = make_result(media=VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg"))
     results = asyncio.run(build_inline_results(result, None, "zh-hans", _config()))
-    assert results[0].photo_width == 1080
+    assert results[0].thumb_url == "https://a/c.jpg"
 
 
 def _config():

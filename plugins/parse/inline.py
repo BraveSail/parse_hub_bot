@@ -46,6 +46,7 @@ from plugins.helpers import (
     build_rich_markdown_by_str,
     build_start_text,
     create_richtext_telegraph,
+    wrap_collage,
 )
 from plugins.parse.inline_rich import RICH_RESULT_ID, build_media_items, edit_inline_rich_message
 from plugins.parse.reporters import InlineStatusReporter
@@ -416,7 +417,8 @@ def build_cached_rich_result(
         author_handle=entry.parse_result.author_handle,
         published_at=entry.parse_result.published_at,
         view_count=entry.parse_result.view_count,
-        media_placeholders=placeholders,
+        tags=entry.parse_result.tags,
+        media_placeholders=wrap_collage(placeholders),
     )
     # 没有 file_id 时挂键盘: 提示客户端保留句柄, 选中后可补上媒体
     reply_markup = None if media else Ikm([[Ikb("原链接", url=raw_url)]])
@@ -597,34 +599,19 @@ async def build_inline_results(
     # 所以这里只发文字占位; 用户选中后由 inline_result_download 下载+上传, 再编辑成带媒体的
     # 富文本。键盘是为了换取 inline_message_id (编辑的前提), 选中后立刻摘掉。
     if config.rich_mode:
-        # 有封面可用的媒体: 用封面图做占位 (消息里先出现一张图, 与老模式观感一致),
-        # 选中后再由 inline_result_download 编辑成带媒体的富文本。
-        # 富文本本身在回答查询时不能带外链媒体, 但 InlineQueryResultPhoto 的 URL 是
-        # Telegram 服务端去抓的, 这里没问题。
-        if cover := inline_cover_url(parse_result):
-            first = to_list(parse_result.media)[0]
-            results.append(
-                InlineQueryResultPhoto(
-                    cover,
-                    id=RICH_RESULT_ID,
-                    thumb_url=cover,
-                    photo_width=max(getattr(first, "width", 0) or 0, 0),
-                    photo_height=max(getattr(first, "height", 0) or 0, 0),
-                    title=title,
-                    description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
-                    caption=build_caption(
-                        parse_result, config=config, allow_expandable=True, lang=lang, view_label=_t("查看")
-                    ),
-                    reply_markup=inline_reply_markup(parse_result),
-                )
-            )
-            return results
-
+        # 一律用 Article + 富文本: 回答查询时带不了媒体, 正文里先放占位符, 选中后
+        # 由 inline_result_download 下载上传再编辑成带媒体的富文本。
+        # 不要用 InlineQueryResultPhoto 做"封面占位": 那样发出来就是一张图 + caption,
+        # 富文本的排版、图集、标签、页脚全没了 (实测就是这个现象)。
+        cover = inline_cover_url(parse_result)
         results.append(
             InlineQueryResultArticle(
                 id=RICH_RESULT_ID,
                 title=title,
                 description=clip_inline_text(parse_result.content, INLINE_DESC_LIMIT),
+                thumb_url=cover or None,
+                thumb_width=320 if cover else None,
+                thumb_height=320 if cover else None,
                 input_message_content=build_inline_rich_content(parse_result, lang=lang, config=config),
                 reply_markup=inline_reply_markup(parse_result),
             )

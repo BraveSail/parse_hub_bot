@@ -221,15 +221,10 @@ def build_rich_markdown(
     if custom_content:
         parts.append(custom_content)
 
-    tags = getattr(parse_result, "tags", None) or []
-    if tags:
-        parts.append(" ".join(f"#{tag}" for tag in tags))
+    if tag_line := format_tags(parse_result):
+        parts.append(tag_line)
 
-    if len(media_placeholders) > 1:
-        # 多张媒体要包在 <tg-collage> 里才显示成图集; 分开的图片块会变成各自独立的图
-        parts.append("<tg-collage>\n\n" + "\n".join(media_placeholders) + "\n\n</tg-collage>")
-    else:
-        parts.extend(media_placeholders)
+    parts.extend(wrap_collage(media_placeholders))
 
     body = "\n\n".join(part for part in parts if part)
 
@@ -268,12 +263,13 @@ def build_rich_markdown_by_str(
     author_handle: str = "",
     published_at: datetime | None = None,
     view_count: int | None = None,
+    tags: Sequence[str] | None = None,
     custom_content: str = "",
     media_placeholders: Sequence[str] = (),
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。"""
     return build_rich_markdown(
-        _RichFields(title, content, raw_url, author_name, author_handle, published_at, view_count),  # type: ignore[arg-type]
+        _RichFields(title, content, raw_url, author_name, author_handle, published_at, view_count, tags),  # type: ignore[arg-type]
         config=config,
         lang=lang,
         view_label=view_label,
@@ -285,7 +281,7 @@ def build_rich_markdown_by_str(
 class _RichFields:
     """最小 duck-type: 让 build_rich_markdown 能吃缓存里的字段。"""
 
-    def __init__(self, title, content, raw_url, author_name, author_handle, published_at, view_count):
+    def __init__(self, title, content, raw_url, author_name, author_handle, published_at, view_count, tags=None):
         self.title = title or ""
         self.content = content or ""
         self.raw_url = raw_url
@@ -293,6 +289,7 @@ class _RichFields:
         self.author_handle = author_handle or ""
         self.published_at = published_at
         self.view_count = view_count
+        self.tags = list(tags or [])
         self.platform = None
         self.markdown_content = ""
 
@@ -307,6 +304,29 @@ def rich_content(parse_result: AnyParseResult) -> str:
     if isinstance(parse_result, RichTextParseResult) and markdown_content:
         return markdown_content
     return parse_result.content or ""
+
+
+def wrap_collage(placeholders: Sequence[str]) -> list[str]:
+    """多张媒体包成一个图集块。
+
+    富文本里多个独立的图片块会渲染成各自分散的图; 包进 ``<tg-collage>`` 才是图集。
+    单张直接返回原样。
+    """
+    if len(placeholders) <= 1:
+        return list(placeholders)
+    return ["<tg-collage>\n\n" + "\n".join(placeholders) + "\n\n</tg-collage>"]
+
+
+def format_tags(parse_result: AnyParseResult) -> str:
+    """把作品标签渲染成一行。
+
+    ``#`` 必须转义: 富文本的 markdown 里行首的 ``#标签`` 会被当成一级标题,
+    字号会大得离谱 (实测服务端把它解析成 section heading)。
+    """
+    tags = getattr(parse_result, "tags", None) or []
+    if not tags:
+        return ""
+    return " ".join(f"\\#{tag}" for tag in tags)
 
 
 def get_parse_author_name(parse_result: AnyParseResult) -> str:
