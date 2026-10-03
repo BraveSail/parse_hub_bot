@@ -413,8 +413,9 @@ class YtParser(BaseParser, register=False):
             url = dl.get("webpage_url") or url
         title = dl["title"]
         duration = dl.get("duration", 0)
-        thumbnail = dl["thumbnail"]
-        description = dl["description"]
+        # facebook 等站点的条目可能没有 thumbnail / description, 用下标会直接 KeyError
+        thumbnail = dl.get("thumbnail", "")
+        description = dl.get("description", "")
         width = dl.get("width", 0)
         height = dl.get("height", 0)
         return YtVideoInfo(

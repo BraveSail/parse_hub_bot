@@ -99,6 +99,26 @@ def test_ytdlp_without_stats():
     assert dl.view_count is None
 
 
+def test_ytdlp_tolerates_missing_thumbnail_and_description():
+    """facebook 的条目可能没有缩略图/简介: 用下标访问会直接 KeyError 让整条解析失败"""
+    info = {
+        "title": "T",
+        "webpage_url": "https://www.facebook.com/watch?v=1",
+        "timestamp": 1759406400,
+        "view_count": 5,
+    }
+    parsed = YtVideoInfo(
+        title=info["title"],
+        description="",
+        thumbnail="",
+        url=info["webpage_url"],
+        info_json=info,
+    )
+    assert parsed.thumbnail == ""
+    assert parsed.published_at == datetime(2025, 10, 2, 12, 0, tzinfo=UTC)
+    assert parsed.view_count == 5
+
+
 def test_ytdlp_release_timestamp_as_fallback():
     dl = yt_info(timestamp=None, release_timestamp=1759406400)
     assert dl.published_at == datetime(2025, 10, 2, 12, 0, tzinfo=UTC)
