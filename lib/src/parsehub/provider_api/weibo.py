@@ -31,7 +31,8 @@ class WeiboAPI:
         async def fn() -> str:
             async with http.AsyncClient(proxy=self.proxy, follow_redirects=False, timeout=30) as client:
                 response = await client.get(url)
-                if response.is_error:
+                if not response.ok:
+                    # curl_cffi 的响应没有 httpx 的 is_error, 用 ok
                     response.raise_for_status()
             return response.headers.get("location") or url
 

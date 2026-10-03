@@ -96,6 +96,21 @@ class AsyncClient(AsyncSession):
                 params.setdefault("max_clients", max_conn)
 
         super().__init__(**params)
+        self._closed = False
+
+    @property
+    def is_closed(self) -> bool:
+        """curl_cffi 没有这个属性，但调用点用它判断"要不要重建客户端"。"""
+        return self._closed
+
+    async def aclose(self) -> None:
+        """curl_cffi 只有同步的 ``close()``，这里补齐异步写法（httpx 的调用点用的是它）。"""
+        self._closed = True
+        self.close()
+
+    async def __aexit__(self, *args: Any) -> None:
+        self._closed = True
+        await super().__aexit__(*args)
 
     async def request(self, method: str, url: str, **kwargs: Any):  # type: ignore[override]
         """请求级也接受 ``follow_redirects``（httpx 的写法），翻译成 curl_cffi 的 ``allow_redirects``。"""
