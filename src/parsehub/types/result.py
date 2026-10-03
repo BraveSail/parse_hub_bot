@@ -40,6 +40,7 @@ class ParseResult(ABC):  # noqa: B024
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        tags: Sequence[str] | None = None,
     ):
         """
         :param title: 标题
@@ -50,6 +51,7 @@ class ParseResult(ABC):  # noqa: B024
         :param published_at: 发布时间 (带时区), 平台没提供时为 None
         :param view_count: 浏览量/播放量, 平台没提供时为 None
         :param author_handle: 作者的用户名/账号 (不带 @), 平台没提供时为空
+        :param tags: 作品标签 (平台提供时才有, 去重且保持原顺序)
         """
         self.raw_url: str = ""
         self.title = title.strip()
@@ -61,6 +63,7 @@ class ParseResult(ABC):  # noqa: B024
         self.is_sensitive = is_sensitive
         self.published_at = to_datetime(published_at)
         self.view_count = to_int(view_count)
+        self.tags = self._clean_tags(tags)
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -75,6 +78,18 @@ class ParseResult(ABC):  # noqa: B024
             f" content={self.content or ''}, author_name={self.author_name or ''}, media={media_count}, "
             f"raw_url={self.raw_url})"
         )
+
+    @staticmethod
+    def _clean_tags(tags: Sequence[str] | None) -> list[str]:
+        """去空、去重 (保持原顺序), 复用平台给的标签。"""
+        seen: set[str] = set()
+        result: list[str] = []
+        for tag in tags or []:
+            text = str(tag).strip()
+            if text and text.casefold() not in seen:
+                seen.add(text.casefold())
+                result.append(text)
+        return result
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -95,6 +110,7 @@ class ParseResult(ABC):  # noqa: B024
             "is_sensitive": self.is_sensitive,
             "published_at": self.published_at.isoformat() if self.published_at else None,
             "view_count": self.view_count,
+            "tags": list(self.tags),
             "media": media,
         }
 
@@ -322,6 +338,7 @@ class VideoParseResult(ParseResult):
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        tags: Sequence[str] | None = None,
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -333,6 +350,7 @@ class VideoParseResult(ParseResult):
             published_at=published_at,
             view_count=view_count,
             author_handle=author_handle,
+            tags=tags,
         )
 
 
@@ -351,6 +369,7 @@ class ImageParseResult(ParseResult):
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        tags: Sequence[str] | None = None,
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
@@ -362,6 +381,7 @@ class ImageParseResult(ParseResult):
             published_at=published_at,
             view_count=view_count,
             author_handle=author_handle,
+            tags=tags,
         )
 
 
@@ -380,6 +400,7 @@ class MultimediaParseResult(ParseResult):
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        tags: Sequence[str] | None = None,
     ):
         super().__init__(
             title=title,
@@ -390,6 +411,7 @@ class MultimediaParseResult(ParseResult):
             published_at=published_at,
             view_count=view_count,
             author_handle=author_handle,
+            tags=tags,
         )
 
 
@@ -408,6 +430,7 @@ class RichTextParseResult(ParseResult):
         published_at: datetime | None = None,
         view_count: int | None = None,
         author_handle: str = "",
+        tags: Sequence[str] | None = None,
     ):
         """
         :param title: 标题
@@ -424,6 +447,7 @@ class RichTextParseResult(ParseResult):
             published_at=published_at,
             view_count=view_count,
             author_handle=author_handle,
+            tags=tags,
         )
 
     def __repr__(self) -> str:

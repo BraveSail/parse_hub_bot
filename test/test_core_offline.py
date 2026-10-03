@@ -187,6 +187,7 @@ class TestParseResultToDict(unittest.TestCase):
                 "is_sensitive": False,
                 "published_at": None,
                 "view_count": None,
+                "tags": [],
                 "media": {
                     "url": "https://cdn.example/video.mp4",
                     "ext": "mp4",
@@ -203,6 +204,16 @@ class TestParseResultToDict(unittest.TestCase):
         result = VideoParseResult(title="T", video=VideoRef(url="https://cdn.example/v.mp4"), author_handle="  @abc ")
         assert result.to_dict()["author_handle"] == "abc"
         assert result.author_handle == "abc"
+
+    def test_tags_are_cleaned_and_deduplicated(self):
+        """标签去空去重 (忽略大小写), 保持原顺序"""
+        result = VideoParseResult(
+            title="T",
+            video=VideoRef(url="https://cdn.example/v.mp4"),
+            tags=["  AI画像 ", "", "足裏", "ai画像", "SilverWolf"],
+        )
+        assert result.tags == ["AI画像", "足裏", "SilverWolf"]
+        assert result.to_dict()["tags"] == ["AI画像", "足裏", "SilverWolf"]
 
     def test_to_dict_normalizes_published_at_and_view_count(self):
         """平台给的时间/计数五花八门, to_dict 里要已是归一化后的值"""
