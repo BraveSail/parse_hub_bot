@@ -4,8 +4,10 @@
 
 **Telegram Multi-Platform Content Parsing Bot**
 
-Built on [z-mio/parse_hub_bot](https://github.com/z-mio/parse_hub_bot) and maintained
-independently — this repository is no longer a GitHub fork. See
+Built on [z-mio/parse_hub_bot](https://github.com/z-mio/parse_hub_bot) and
+[z-mio/ParseHub](https://github.com/z-mio/ParseHub), and maintained independently — this is
+not a fork of either. The parser library is vendored under `lib/` (git subtree), so one clone
+builds, tests and deploys everything. See
 [LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md) for the list of local changes.
 
 <p align="center">
@@ -26,7 +28,7 @@ independently — this repository is no longer a GitHub fork. See
 [简体中文](README.md) | English
 
 [**🤖 Upstream Demo**](https://t.me/ParseHubot) ·
-[**📚 Parser Library**](https://github.com/BraveSail/ParseHub) ·
+[**📚 Parser Library (lib/)**](https://github.com/BraveSail/shirobako/tree/main/lib) ·
 [**🐛 Report an Issue**](https://github.com/BraveSail/shirobako/issues)
 
 </div>
@@ -77,25 +79,39 @@ independently — this repository is no longer a GitHub fork. See
 
 ### 🐳 Run with Docker (recommended)
 
-```bash
-mkdir parse_hub_bot && cd parse_hub_bot
+No prebuilt image is published; build locally with the repository's `compose.deploy.yaml`
+(the parser library is vendored in `lib/`, so **a single clone is enough**):
 
-docker run -d \
-  --restart=always \
-  -e API_ID=YOUR_API_ID \
-  -e API_HASH=YOUR_API_HASH \
-  -e BOT_TOKEN=YOUR_BOT_TOKEN \
-  -v ./logs:/app/logs \
-  -v ./data:/app/data \
-  --name parse-hub-bot \
-  ghcr.io/z-mio/parse_hub_bot:latest  # upstream image, without the local changes
+```bash
+git clone git@github.com:BraveSail/shirobako.git
+cd shirobako
+cp .env.example .env   # at least API_ID / API_HASH / BOT_TOKEN
+docker compose -f compose.deploy.yaml build bot
+docker compose -f compose.deploy.yaml up -d
 ```
+
+> For the upstream image (without the local changes) you can still pull
+> `ghcr.io/z-mio/parse_hub_bot:latest`.
 
 ### 💻 Run from Source
 
 ```bash
-uv sync
+uv sync          # the uv workspace installs lib/ as an editable dependency
 uv run bot.py
+```
+
+### 🧪 Tests
+
+```bash
+uv run pytest test/                        # bot
+uv run --package parsehub pytest lib/test/ # parser library
+```
+
+### 🔄 Sync upstream
+
+```bash
+git fetch upstream && git merge upstream/main                                 # bot upstream
+git subtree pull --prefix=lib https://github.com/z-mio/ParseHub.git master    # library upstream
 ```
 
 ---
@@ -280,8 +296,8 @@ uv run pytest
 
 ## 🙏 Credits
 
-- [ParseHubBot (z-mio/parse_hub_bot)](https://github.com/z-mio/parse_hub_bot) — the base of this project
-- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — the parser library
+- [ParseHubBot (z-mio/parse_hub_bot)](https://github.com/z-mio/parse_hub_bot) — the base of the bot
+- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — the parser library (now in `lib/`)
 
 ## 📄 License
 

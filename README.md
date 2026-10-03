@@ -4,8 +4,10 @@
 
 **Telegram 多平台聚合解析机器人**
 
-本项目基于 [z-mio/parse_hub_bot](https://github.com/z-mio/parse_hub_bot) 改造，已脱离 fork
-关系独立维护。本地改动清单见 [LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md)。
+本项目基于 [z-mio/parse_hub_bot](https://github.com/z-mio/parse_hub_bot) 与
+[z-mio/ParseHub](https://github.com/z-mio/ParseHub) 改造，已独立维护（不是任何仓库的 fork）。
+解析库以 **git subtree** 内置于 `lib/`，单仓库即可构建、测试、部署。
+本地改动清单见 [LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md)。
 
 <p align="center">
   <a href="https://github.com/BraveSail/shirobako/blob/main/LICENSE">
@@ -26,7 +28,7 @@
 [English](README.en.md)
 
 [**🤖 上游实例**](https://t.me/ParseHubot) ·
-[**📚 解析库**](https://github.com/BraveSail/ParseHub) ·
+[**📚 解析库 (lib/)**](https://github.com/BraveSail/shirobako/tree/main/lib) ·
 [**🐛 问题反馈**](https://github.com/BraveSail/shirobako/issues)
 
 </div>
@@ -75,14 +77,11 @@
 
 ### 🐳 Docker 运行 (推荐)
 
-本仓库不发布预构建镜像，用仓库内的 `compose.deploy.yaml` 本地构建（镜像里会用
-`additional_contexts` 覆盖安装本仓库配套的 [ParseHub](https://github.com/BraveSail/ParseHub)
-checkout，所以两个仓库要放成同级目录）：
+本仓库不发布预构建镜像，用仓库内的 `compose.deploy.yaml` 本地构建（解析库已内置于
+`lib/`，**只需克隆本仓库**）：
 
 ```bash
 git clone git@github.com:BraveSail/shirobako.git
-git clone git@github.com:BraveSail/ParseHub.git
-
 cd shirobako
 cp .env.example .env   # 至少填 API_ID / API_HASH / BOT_TOKEN
 docker compose -f compose.deploy.yaml build bot
@@ -94,8 +93,22 @@ docker compose -f compose.deploy.yaml up -d
 ### 💻 源码运行
 
 ```bash
-uv sync
+uv sync          # uv workspace 会把 lib/ 里的解析库一并装成可编辑依赖
 uv run bot.py
+```
+
+### 🧪 测试
+
+```bash
+uv run pytest test/                       # bot
+uv run --package parsehub pytest lib/test/  # 解析库
+```
+
+### 🔄 同步上游
+
+```bash
+git fetch upstream && git merge upstream/main                      # bot 上游
+git subtree pull --prefix=lib https://github.com/z-mio/ParseHub.git master   # 库上游
 ```
 
 ---
@@ -280,8 +293,8 @@ uv run pytest
 
 ## 🙏 致谢
 
-- [ParseHubBot (z-mio/parse_hub_bot)](https://github.com/z-mio/parse_hub_bot) — 本项目的基础
-- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — 解析库
+- [ParseHubBot (z-mio/parse_hub_bot)](https://github.com/z-mio/parse_hub_bot) — bot 部分的基础
+- [ParseHub (z-mio/ParseHub)](https://github.com/z-mio/ParseHub) — 解析库（现位于 `lib/`）
 
 ## 📄 开源协议
 

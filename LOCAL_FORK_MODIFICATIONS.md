@@ -1,11 +1,17 @@
-# Local fork modifications
+# Local modifications
 
-This repository is derived from [z-mio/parse_hub_bot][upstream-bot]. It is no longer a
-GitHub fork — it has been detached from the fork network and renamed to `shirobako` — but
-the upstream project stays the base and changes are pulled in manually.
+This repository is derived from two upstream projects and is an independent project now
+(it is not a GitHub fork of either):
+
+- [z-mio/parse_hub_bot][upstream-bot] — the bot, at the repository root
+- [z-mio/ParseHub][upstream-lib] — the parser library, vendored under `lib/`
+
+The library used to live in a separate repository and was pulled in as a published package
+plus a build-time overlay; it is now in-tree (`lib/`, added with `git subtree`, full history
+preserved) and resolved as a uv workspace member.
 
 Below is what differs from upstream, grouped by topic. Every item has a matching commit in
-`git log upstream/main..main`.
+`git log upstream/main..main`, or — for the library — the corresponding commit under `lib/`.
 
 ## 1. 发送形态：富文本（rich message）是唯一路径
 
@@ -48,8 +54,8 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
 
 ## 3. 元数据与作者
 
-- **库侧新增字段的消费端**：`published_at` / `view_count` / `author_handle` / `author_url` /
-  `tags`（对应 [BraveSail/ParseHub][fork-lib] 的改动）。每个字段的落地清单是
+- **库侧新增字段的消费端**（`lib/src/parsehub`）：`published_at` / `view_count` /
+  `author_handle` / `author_url` / `tags`。每个字段的落地清单是
   库 → 直发路径 → 缓存路径（`build_rich_markdown_by_str`）→ `CacheParseResult` →
   「缺字段即过期」的重解析判据，漏一处就是「有时候有、有时候没有」。
 - **作者行**：`名字 @handle：`，其中 `@handle` 链到作者主页；显示名与用户名相同时只写
@@ -71,29 +77,60 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
 
 ## 5. 构建与部署
 
-- **`uv.lock` 不能把 parsehub 写成 git 源**：builder 镜像里没有 git，`uv sync --frozen` 会
-  直接失败。保持 `pyproject.toml` 写 PyPI 版本，Dockerfile 再用 `additional_contexts` 覆盖安装。
-- 新增 `Dockerfile.deploy` + `compose.deploy.yaml`（本仓库的部署方式）。
+- **单仓库构建**：库是 uv workspace 成员（`lib/`），`uv lock` 把 `parsehub` 解析到本地目录
+  （lock 里 `source = { editable = "lib" }`），镜像里 `COPY lib/ ./lib/` + `uv sync --frozen` 即可，
+  **不再需要 `additional_contexts` 或构建期覆盖安装**。
+  - 历史坑（已作废，别再往 lock 里写 git 源）：builder 镜像**没有 git**，`uv sync --frozen`
+    遇到 git 源会直接失败 —— 这也是当初要搞「PyPI 占位 + 构建期覆盖」的原因。
+- `Dockerfile.deploy` + `compose.deploy.yaml` 是本仓库的部署方式；`Dockerfile` 为通用构建。
 
-## 6. i18n
+## 6. 库侧改动（`lib/`，相对 z-mio/ParseHub）
+
+- **帖子与作者元数据**（上层消费方依赖）：
+  - `is_sensitive` —— 平台有官方标记才置位（pixiv `xRestrict > 0`、twitter `possibly_sensitive`），
+    4 个 `ParseResult` 子类同参转发 + `to_dict()` 带上；**不靠关键词猜**。
+  - `published_at` / `view_count` —— 取值来源：twitter `legacy.created_at` + `views.count`、
+    threads `taken_at`、douyin `create_time` + `statistics.play_count`、bilibili `View.pubdate` +
+    `stat.view`、yt-dlp `timestamp` + `view_count`、pixiv `createDate` + `viewCount`。
+  - `author_name` / `author_handle` / `author_url` —— 给所有支持平台补齐作者名与主页地址，
+    只用**明确的作者对象**取值，**绝不从正文猜**（`utils/helpers.get_author_name`）。
+  - `tags` —— 平台自带标签（pixiv `tags.tags[].tag` 等），归一化（去空、忽略大小写去重、
+    保持原顺序）在库层完成。
+- **引用 / 回复上下文**：
+  - twitter：被回复（`in_reply_to_status_id_str`）与被引用（`is_quote_status` +
+    `quoted_status_id_str`）**互不排斥**，各自生成；内嵌 `quoted_status_result.result` 可能被
+    匿名请求降级成 `TweetUnavailable`，故有 `quoted_status_id` 兜底补取，失败只记 warning。
+  - threads：**无需二次请求** —— 父帖与目标帖同处一个 `thread_items` 数组、紧邻前一条即父帖
+    （仅在 `text_post_app_info.is_reply` 为 true 时取）。
+  - t.co 还原：按 `entities.urls` 把短链换成 `expanded_url`。
+- **公共排版 helper**（所有平台共用）：`format_author_label` / `format_author_link` /
+  `format_quote_block` / `profile_url` + `PROFILE_URL_TEMPLATES`。
+- **平台解析修复**：pixiv 整平台支持（尺寸、真实后缀、下载带 `Referer`、`master1200`）、
+  facebook `watch/?v=` 与 `v` 参数保留、bilibili `view/detail` 需 cookie、
+  yt-dlp 条目缺 `thumbnail`/`description` 时不再 KeyError、保留原语言音轨。
+
+## 7. i18n
 
 新增文案（「查看」、「获取全部 N 项」、「上 传 中...」等）补齐 16 种语言：de / en / es /
 fr / id / it / ja / ko / nl / pl / pt-br / ru / th / tr / vi / zh-hant。
 
-## 依赖库
+## 上游同步
 
-本仓库依赖 [BraveSail/ParseHub][fork-lib]（上游 [z-mio/ParseHub][upstream-lib]）的衍生版本，
-相关的库侧改动（富文本排版所需的字段与公共 helper）记在该仓库自己的说明里。
+```bash
+# bot 上游
+git fetch upstream && git merge upstream/main
+# 库上游 (改的是 lib/ 子树)
+git subtree pull --prefix=lib https://github.com/z-mio/ParseHub.git master
+```
 
 ## Credits
 
-- [ParseHubBot (z-mio/parse_hub_bot)][upstream-bot] — 本项目的基础
-- [ParseHub (z-mio/ParseHub)][upstream-lib] — 解析库
+- [ParseHubBot (z-mio/parse_hub_bot)][upstream-bot] — bot 部分的基础
+- [ParseHub (z-mio/ParseHub)][upstream-lib] — 解析库（现位于 `lib/`）
 
 ## License
 
-MIT License，见 [LICENSE](LICENSE)。
+MIT License，见 [LICENSE](LICENSE)（库见 `lib/LICENSE`）。
 
 [upstream-bot]: https://github.com/z-mio/parse_hub_bot
 [upstream-lib]: https://github.com/z-mio/ParseHub
-[fork-lib]: https://github.com/BraveSail/ParseHub
