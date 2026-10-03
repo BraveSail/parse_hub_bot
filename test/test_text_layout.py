@@ -23,7 +23,8 @@ def test_preserve_linebreaks_skips_blank_and_last_lines():
 def test_link_leading_hashtags_uses_tag_page():
     out = link_leading_hashtags("#敬請準時收看", Platform.THREADS)
     assert out.startswith('<a href="https://www.threads.com/search?q=%23')
-    assert out.endswith(">\\#敬請準時收看</a>")
+    # 链接里不转义 # (行首是 <a, 本来就不是标题; 转义会在复制时露出反斜杠)
+    assert out.endswith(">#敬請準時收看</a>")
 
 
 def test_link_leading_hashtags_escapes_without_tag_page():
@@ -133,11 +134,11 @@ def test_linuxdo_tags_link_to_the_tag_page():
     assert line.count("<a href=") == 3
     assert "https://linux.do/tag/%E7%BA%AF%E6%B0%B4" in line
     assert "https://linux.do/tag/NSFW" in line
-    assert ">\\#女装</a>" in line
+    assert ">#女装</a>" in line
 
 
-def test_tags_sit_directly_under_the_title():
-    """标签要排在标题正下方 (在作者行**之前**, 不是作者下面)"""
+def test_tags_sit_after_the_body():
+    """标签排在正文之后 (与正文之间自然空一行)"""
     from plugins.helpers import build_rich_markdown
 
     result = ImageParseResult(content="我的回复", photo=[])
@@ -154,7 +155,7 @@ def test_tags_sit_directly_under_the_title():
     pos_tags = md.index("linux.do/tag/")
     pos_body = md.index("我的回复")
 
-    assert pos_title < pos_tags < pos_author < pos_body
+    assert pos_title < pos_author < pos_body < pos_tags
 
 
 def test_setext_underlines_are_escaped():

@@ -312,11 +312,11 @@ def test_rich_markdown_renders_tags():
     markdown = build_rich_markdown(
         result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
     )
-    # # 要转义 (否则被当一级标题/字号巨大), 并渲染成标签页链接
-    assert '<a href="https://www.pixiv.net/tags/AI%E7%94%BB%E5%83%8F">\\#AI画像</a>' in markdown
-    assert '<a href="https://www.pixiv.net/tags/%E8%B6%B3%E8%A3%8F">\\#足裏</a>' in markdown
-    # 标签是标题的元信息: 在正文之前 (紧跟标题/作者)
-    assert markdown.index("AI画像") < markdown.index("正文")
+    # 渲染成标签页链接; 链接里的 # 不转义 (行首是 <a 不会是标题, 转义会在复制时露出反斜杠)
+    assert '<a href="https://www.pixiv.net/tags/AI%E7%94%BB%E5%83%8F">#AI画像</a>' in markdown
+    assert '<a href="https://www.pixiv.net/tags/%E8%B6%B3%E8%A3%8F">#足裏</a>' in markdown
+    # 标签排在正文之后
+    assert markdown.index("正文") < markdown.index("AI画像")
 
 
 def test_author_handle_links_to_profile():

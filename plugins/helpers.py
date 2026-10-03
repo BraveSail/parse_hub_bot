@@ -213,9 +213,6 @@ def build_rich_markdown(
     parts: list[str] = []
     if title and not config.hide_title:
         parts.append(f"### {title}")
-    # 标签紧跟在标题正下方 (在作者行之前, 不在作者下方)
-    if tag_line := format_tags(parse_result):
-        parts.append(tag_line)
     if author := format_author_line(parse_result):
         parts.append(author)
     body_text, quote = split_trailing_quote(content) if content else ("", "")
@@ -223,6 +220,10 @@ def build_rich_markdown(
         parts.append(body_text)
     if custom_content:
         parts.append(custom_content)
+
+    # 标签是正文的收尾: 放在正文之后 (与正文之间自然空一行)
+    if tag_line := format_tags(parse_result):
+        parts.append(tag_line)
 
     parts.extend(wrap_collage(media_placeholders))
 
@@ -355,10 +356,10 @@ def link_leading_hashtags(text: str, platform: Platform | None = None) -> str:
 
     def repl(match: re.Match[str]) -> str:
         indent, tag = match.group(1), match.group(2)
-        label = f"\\#{tag}"
         url = tag_page_url(platform, tag)
         if not url:
-            return f"{indent}{label}"
+            return f"{indent}{_tag_label(tag, linked=False)}"
+        label = _tag_label(tag, linked=True)
         return f'{indent}<a href="{html.escape(url, quote=True)}">{label}</a>'
 
     return _LINE_HASH_TAG_RE.sub(repl, text)
@@ -452,13 +453,23 @@ def tag_page_url(platform: Platform | None, tag: str) -> str:
     return template.format(tag=quote(str(tag), safe="")) if template else ""
 
 
+def _tag_label(tag: str, *, linked: bool) -> str:
+    """标签的显示文本。
+
+    ``#`` 需要转义是因为**行首**的 ``#xxx`` 会被当标题。带链接时行首是 ``<a``,
+    本来就不是标题, 所以不加转义 —— 加了虽然渲染正常, 但复制消息时会露出反斜杠。
+    退回纯文本时行首就是 ``#``, 必须转义。
+    """
+    escaped = html.escape(str(tag))
+    return f"#{escaped}" if linked else f"\\#{escaped}"
+
+
 def _render_tag(platform: Platform | None, tag: str) -> str:
     """单个标签: 能拿到标签页就渲染成链接, 否则退回纯文本"""
-    label = f"\\#{html.escape(str(tag))}"
     url = tag_page_url(platform, tag)
     if not url:
-        return label
-    return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+        return _tag_label(tag, linked=False)
+    return f'<a href="{html.escape(url, quote=True)}">{_tag_label(tag, linked=True)}</a>'
 
 
 def format_tags(parse_result: AnyParseResult) -> str:
