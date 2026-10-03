@@ -148,8 +148,29 @@ def test_rich_markdown_puts_metadata_and_source_in_footer():
     # 统计与来源在 footer, 且位于正文之后
     footer = markdown.split("<footer>")[1]
     assert "下午7:00 · 2026年10月3日 · 1,455 查看" in footer
-    assert "[Source（Twitter）](https://x.com/u/status/1)" in footer
+    # footer 里 markdown 链接语法不生效, 必须用 HTML 的 a href
+    assert '<a href="https://x.com/u/status/1">Source（Twitter）</a>' in footer
     assert markdown.index("- 列表项") < markdown.index("<footer>")
+
+
+def test_rich_markdown_author_label_with_handle():
+    """作者名带上用户名: "名字 @handle"; 名字与用户名相同时只写 @handle"""
+    from parsehub.types import MultimediaParseResult, Platform
+
+    config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
+    result = MultimediaParseResult(content="正文")
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+    result.author_name = "隣人X"
+    result.author_handle = "user_ydyj5227"
+    assert build_rich_markdown(result, config=config).startswith("**隣人X @user_ydyj5227：**")
+
+    only_handle = MultimediaParseResult(content="正文")
+    only_handle.platform = Platform.THREADS
+    only_handle.raw_url = "https://www.threads.com/@same/post/x"
+    only_handle.author_name = "same"
+    only_handle.author_handle = "same"
+    assert build_rich_markdown(only_handle, config=config).startswith("**@same：**")
 
 
 def test_rich_markdown_places_media_between_body_and_footer():

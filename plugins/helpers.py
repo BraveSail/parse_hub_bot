@@ -74,7 +74,9 @@ def build_caption(
         platform=parse_result.platform,
         hide_source=config.hide_source,
         custom_content=custom_content,
-        author_name=get_parse_author_name(parse_result),
+        author_name=format_author_label(
+            get_parse_author_name(parse_result), getattr(parse_result, "author_handle", "")
+        ),
         hide_title=config.hide_title,
         hide_desc=config.hide_desc,
         rich=rich,
@@ -211,7 +213,7 @@ def build_rich_markdown(
     parts: list[str] = []
     if title and not config.hide_title:
         parts.append(f"### {title}")
-    author = get_parse_author_name(parse_result)
+    author = format_author_label(get_parse_author_name(parse_result), getattr(parse_result, "author_handle", ""))
     if author:
         parts.append(f"**{author}：**")
     if content and not config.hide_desc:
@@ -235,7 +237,9 @@ def build_rich_markdown(
         platform = parse_result.platform or ParseHub().get_platform(parse_result.raw_url)
         display = platform.display_name if platform else ""
         label = f"Source（{display}）" if display else "Source"
-        footer_parts.append(f"[{label}]({parse_result.raw_url})")
+        # footer 里 markdown 链接语法不生效 (会原样显示成 "[文字](url)"), 必须用 HTML
+        href = html.escape(parse_result.raw_url, quote=True)
+        footer_parts.append(f'<a href="{href}">{html.escape(label)}</a>')
 
     if not footer_parts:
         return body
@@ -268,6 +272,26 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
             if isinstance(name, str) and name.strip():
                 return name.strip()
     return ""
+
+
+def format_author_label(name: str, handle: str = "") -> str:
+    """把作者名与 handle 拼成一行标签。
+
+    - 两者都有且不同 → ``名字 @handle``
+    - 两者相同 (忽略大小写、首尾空白与 handle 的 ``@`` 前缀) → 只留 ``@handle``
+    - 只有 name → 返回 name; 只有 handle → 返回 ``@handle``; 都没有 → 空串
+
+    handle 传入时可能已带 ``@`` (如 ``"@abc"``), 会统一去掉前缀, 避免出现 ``@@``。
+    """
+    name = (name or "").strip()
+    handle = (handle or "").strip().lstrip("@").strip()
+    if not name:
+        return f"@{handle}" if handle else ""
+    if not handle:
+        return name
+    if name.casefold() == handle.casefold():
+        return f"@{handle}"
+    return f"{name} @{handle}"
 
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
