@@ -1,6 +1,6 @@
 from ...provider_api.threads import ThreadsAPI, ThreadsAPIError, ThreadsMedia, ThreadsMediaType, ThreadsPost
 from ...types import AnyMediaRef, ImageRef, MultimediaParseResult, ParseError, Platform, VideoRef
-from ...utils.helpers import format_author_label
+from ...utils.helpers import format_author_link, format_quote_block, profile_url
 from ..base.base import BaseParser
 
 
@@ -30,24 +30,25 @@ class ThreadsParser(BaseParser):
             media=media,
             author_name=post.author_name,
             author_handle=post.author_handle,
-            author_url=f"https://www.threads.com/@{post.author_handle}" if post.author_handle else "",
+            author_url=profile_url(Platform.THREADS, post.author_handle),
             published_at=post.published_at,
             view_count=post.view_count,
         )
 
     @staticmethod
     def _build_quote(post: ThreadsPost) -> str:
-        """把被回复的帖子渲染成 Markdown 引用块, 不是回复或内容为空时返回空串."""
+        """把被回复的帖子渲染成引用块 (排版统一由公共 helper 决定)."""
         reply = post.reply_to
         if not reply:
             return ""
-        text = (reply.content or "").strip()
-        if not text:
-            return ""
-        author = format_author_label(reply.author_name or "", reply.author_handle or "")
-        head = f"> 回复 {author}：" if author else "> 回复："
-        lines = "\n".join(f"> {line}" if line.strip() else ">" for line in text.splitlines())
-        return f"{head}\n{lines}\n\n"
+        return format_quote_block(
+            reply.content or "",
+            format_author_link(
+                reply.author_name or "",
+                reply.author_handle or "",
+                profile_url(Platform.THREADS, reply.author_handle or ""),
+            ),
+        )
 
     async def _parse(self, url: str) -> ThreadsPost:
         # 公开帖子无需登录即可解析; 登录墙内容 (私密/受限/年龄限制) 才需要 Cookie, 有则带上

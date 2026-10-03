@@ -8,6 +8,7 @@ from ...types import (
     Platform,
     ProgressCallback,
 )
+from ...utils.helpers import profile_url
 from ..base.base import BaseParser
 
 
@@ -53,7 +54,7 @@ class PixivParser(BaseParser):
             content=illust.description,
             author_name=illust.author_name,
             author_handle=illust.user_account,
-            author_url=f"https://www.pixiv.net/users/{illust.author_id}" if illust.author_id else "",
+            author_url=profile_url(Platform.PIXIV, user_id=illust.author_id),
             tags=illust.tags,
             published_at=illust.create_date,
             view_count=illust.view_count,

@@ -1,0 +1,59 @@
+"""公共排版 helper: 作者链接 / 引用块 / 主页地址 (所有平台共用同一套)."""
+
+from parsehub.types import Platform
+from parsehub.utils.helpers import format_author_link, format_quote_block, profile_url
+
+
+def test_profile_url_per_platform():
+    assert profile_url(Platform.TWITTER, "ysoke145") == "https://x.com/ysoke145"
+    assert profile_url(Platform.THREADS, "@ani.gamer.com.tw") == "https://www.threads.com/@ani.gamer.com.tw"
+    assert profile_url(Platform.PIXIV, user_id="123568955") == "https://www.pixiv.net/users/123568955"
+
+
+def test_profile_url_returns_empty_when_data_missing():
+    """缺所需字段或平台没模板时给空串, 由调用方退回纯文本, 不拼出半截链接"""
+    assert profile_url(Platform.PIXIV, "only_handle") == ""
+    assert profile_url(Platform.TWITTER, "") == ""
+    assert profile_url(None, "someone") == ""
+    assert profile_url(Platform.COOLAPK, "someone") == ""
+
+
+def test_profile_url_escapes_handle():
+    assert profile_url(Platform.TWITTER, "a b") == "https://x.com/a%20b"
+
+
+def test_format_author_link_wraps_handle():
+    link = format_author_link("Jason Lee", "huacnlee", "https://x.com/huacnlee")
+    assert link == 'Jason Lee <a href="https://x.com/huacnlee">@huacnlee</a>'
+
+
+def test_format_author_link_without_url_is_plain():
+    assert format_author_link("隣人X", "user_ydyj5227") == "隣人X @user_ydyj5227"
+    assert format_author_link("隣人X", "user_ydyj5227", "") == "隣人X @user_ydyj5227"
+
+
+def test_format_author_link_collapses_same_name():
+    """显示名与用户名相同时只出 @用户名 (链接态也一样)"""
+    assert format_author_link("same", "same", "https://x.com/same") == '<a href="https://x.com/same">@same</a>'
+
+
+def test_format_quote_block_is_italic_and_labelless():
+    """引用块不写 引用/回复 字样, 整块斜体, 作者行在前"""
+    block = format_quote_block("line1\nline2", 'Jason Lee <a href="u">@h</a>')
+    assert block == '> *Jason Lee <a href="u">@h</a>：*\n> *line1*\n> *line2*\n\n'
+    assert "引用" not in block
+    assert "回复" not in block
+
+
+def test_format_quote_block_keeps_blank_lines():
+    assert format_quote_block("a\n\nb") == "> *a*\n>\n> *b*\n\n"
+
+
+def test_format_quote_block_without_author():
+    assert format_quote_block("x") == "> *x*\n\n"
+
+
+def test_format_quote_block_empty_text():
+    assert format_quote_block("") == ""
+    assert format_quote_block("   ") == ""
+    assert format_quote_block("", "author") == ""

@@ -1,12 +1,16 @@
 import asyncio
+import html
 import json
 import re
 from collections.abc import Coroutine, Mapping
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 
 from pydantic import SecretStr
 from urlextract import URLExtract
+
+from ..types.platform import Platform
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 
@@ -53,6 +57,63 @@ def format_author_label(name: str, handle: str = "") -> str:
     if name.casefold() == handle.casefold():
         return f"@{handle}"
     return f"{name} @{handle}"
+
+
+# 各平台的作者主页地址模板. ``{handle}`` 用用户名, ``{id}`` 用平台数字/字符串 ID。
+# 平台没有主页概念 (或只有 ID) 时就不列, 对应结果里 author_url 为空串。
+PROFILE_URL_TEMPLATES: dict[Platform, str] = {
+    Platform.BILIBILI: "https://space.bilibili.com/{id}",
+    Platform.DOUBAN: "https://www.douban.com/people/{id}/",
+    Platform.INSTAGRAM: "https://www.instagram.com/{handle}/",
+    Platform.PIXIV: "https://www.pixiv.net/users/{id}",
+    Platform.THREADS: "https://www.threads.com/@{handle}",
+    Platform.TIKTOK: "https://www.tiktok.com/@{handle}",
+    Platform.TWITTER: "https://x.com/{handle}",
+    Platform.WEIBO: "https://weibo.com/u/{id}",
+    Platform.YOUTUBE: "https://www.youtube.com/@{handle}",
+    Platform.ZHIHU: "https://www.zhihu.com/people/{id}",
+}
+
+
+def profile_url(platform: Platform | None, handle: str = "", user_id: str = "") -> str:
+    """作者主页地址; 平台没有模板或缺少所需字段时返回空串。"""
+    template = PROFILE_URL_TEMPLATES.get(platform) if platform else None
+    if not template:
+        return ""
+    values = {
+        "handle": quote((handle or "").strip().lstrip("@"), safe=""),
+        "id": quote(str(user_id or "").strip(), safe=""),
+    }
+    if any(not values[key] for key in values if f"{{{key}}}" in template):
+        return ""
+    return template.format(**values)
+
+
+def format_author_link(name: str, handle: str = "", url: str = "") -> str:
+    """作者标签 (名字 @handle); 给了主页地址时把 @handle 渲染成 HTML 链接。
+
+    富文本 (rich message) 里 markdown 链接语法不生效, 会原样显示成 ``[文字](url)``,
+    所以在这里统一用 ``<a href>``。
+    """
+    label = format_author_label(name, handle)
+    clean = (handle or "").strip().lstrip("@").strip()
+    if label and url and clean and f"@{clean}" in label:
+        link = f'<a href="{html.escape(url, quote=True)}">@{html.escape(clean)}</a>'
+        label = label.replace(f"@{clean}", link)
+    return label
+
+
+def format_quote_block(text: str, author: str = "") -> str:
+    """把一段文本渲染成斜体的 Markdown 引用块, 文本为空时返回空串。
+
+    不写 "回复/引用" 字样: 引用块本身已经表明关系。整块斜体, 作者行在前。
+    """
+    body = (text or "").strip()
+    if not body:
+        return ""
+    lines = "\n".join(f"> *{line}*" if line.strip() else ">" for line in body.splitlines())
+    head = f"> *{author}：*\n" if author else ""
+    return f"{head}{lines}\n\n"
 
 
 def run_sync[T](coro: Coroutine[Any, Any, T]) -> T:

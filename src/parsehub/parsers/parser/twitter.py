@@ -1,4 +1,3 @@
-import html
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -19,7 +18,7 @@ from ...types import (
     RichTextParseResult,
     VideoRef,
 )
-from ...utils.helpers import format_author_label
+from ...utils.helpers import format_author_link, format_quote_block, profile_url
 from ..base.base import BaseParser
 
 
@@ -56,28 +55,15 @@ class TwitterParser(BaseParser):
 
     @staticmethod
     def _quote_block(source: TwitterTweet) -> str:
-        """把一条被回复/被引用的推文渲染成 Markdown 引用块, 内容为空时返回空串.
-
-        不写 "回复/引用" 字样 (引用块本身已经表明关系); 整块用斜体, 作者 handle
-        指向其主页 (与主推作者行一致, 用 HTML 是因为富文本里 markdown 链接语法不生效).
-        """
-        text = (source.full_text or "").strip()
-        if not text:
-            return ""
-        lines = "\n".join(f"> *{line}*" if line.strip() else ">" for line in text.splitlines())
-        author = TwitterParser._quote_author(source)
-        return f"> *{author}：*\n{lines}\n\n" if author else f"{lines}\n\n"
-
-    @staticmethod
-    def _quote_author(source: TwitterTweet) -> str:
-        """引用块里的作者标签, handle 渲染成指向其主页的链接"""
-        author = format_author_label(source.author_name or "", source.author_handle or "")
-        handle = (source.author_handle or "").strip().lstrip("@")
-        if author and handle and f"@{handle}" in author:
-            link = f'<a href="https://x.com/{html.escape(handle)}">@{html.escape(handle)}</a>'
-            author = author.replace(f"@{handle}", link)
-            return author
-        return author
+        """把一条被回复/被引用的推文渲染成引用块 (排版统一由公共 helper 决定)."""
+        return format_quote_block(
+            source.full_text or "",
+            format_author_link(
+                source.author_name or "",
+                source.author_handle or "",
+                profile_url(Platform.TWITTER, source.author_handle or ""),
+            ),
+        )
 
     @staticmethod
     def _build_quote(tweet: TwitterTweet) -> str:
@@ -122,7 +108,7 @@ class TwitterParser(BaseParser):
                 media=media,
                 author_name=tweet.author_name,
                 author_handle=tweet.author_handle,
-                author_url=f"https://x.com/{tweet.author_handle}" if tweet.author_handle else "",
+                author_url=profile_url(Platform.TWITTER, tweet.author_handle),
                 is_sensitive=tweet.is_sensitive,
                 published_at=tweet.published_at,
                 view_count=tweet.view_count,
@@ -132,7 +118,7 @@ class TwitterParser(BaseParser):
             media=media,
             author_name=tweet.author_name,
             author_handle=tweet.author_handle,
-            author_url=f"https://x.com/{tweet.author_handle}" if tweet.author_handle else "",
+            author_url=profile_url(Platform.TWITTER, tweet.author_handle),
             is_sensitive=tweet.is_sensitive,
             published_at=tweet.published_at,
             view_count=tweet.view_count,
