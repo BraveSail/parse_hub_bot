@@ -45,8 +45,12 @@ class BiliParse(BaseParser):
             return ImageParseResult(
                 title=dynamic.title or "",
                 author_name=dynamic.author_name,
+                # B 站没有 @用户名, 主页靠 UID: 名字本身会渲染成 space 链接
+                author_url=profile_url(Platform.BILIBILI, user_id=dynamic.author_mid),
                 content=content,
                 photo=photos,
+                published_at=dynamic.published_at,
+                like_count=dynamic.like_count,
             )
         else:
             try:

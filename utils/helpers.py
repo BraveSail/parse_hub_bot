@@ -25,7 +25,15 @@ async def run_cmd(*cmd: str, timeout: float = 30) -> str:
     return stdout.decode().strip()
 
 
-def to_list[T](v: T | Sequence[T]) -> Sequence[T]:
+def to_list[T](v: T | Sequence[T] | None) -> Sequence[T]:
+    """把一个值或序列统一成序列.
+
+    ``None`` 当作**空**处理 —— 不能返回 ``[None]``: 那会把"这个结果没有媒体"
+    变成"有 1 个媒体(空)", 下游按数量做的判断 (跳过下载阈值、GIF 判断、
+    媒体计数、封面准备) 会跟着一起错。
+    """
+    if v is None:
+        return []
     return v if isinstance(v, Sequence) else [v]
 
 

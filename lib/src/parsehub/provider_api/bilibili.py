@@ -11,7 +11,7 @@ from hashlib import md5
 from typing import Any, Self, cast
 
 from ..utils import http
-from ..utils.helpers import get_author_name
+from ..utils.helpers import get_author_name, to_int
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
@@ -255,13 +255,25 @@ class BiliDynamic:
     content: str | None = ""
     images: list[BiliImage] | None = None
     author_name: str = ""
+    #: 作者的 UID (B 站没有 @用户名, 主页靠它拼)
+    author_mid: int | str | None = None
+    #: 发布时间的 unix 时间戳 (module_author.pub_ts)
+    published_at: int | None = None
+    #: 点赞数 (module_stat.like.count)
+    like_count: int | None = None
 
     @classmethod
     def parse(cls, data: dict) -> Self:
         module_dynamic: dict = data["item"]["modules"]["module_dynamic"]
         major: dict | None = module_dynamic.get("major", None)
         result = cls._parse_forward(module_dynamic) if not major else cls._parse_major(module_dynamic, major)
-        result.author_name = get_author_name(data["item"]["modules"].get("module_author"))
+        modules = data["item"]["modules"]
+        author = modules.get("module_author") or {}
+        result.author_name = get_author_name(author)
+        result.author_mid = author.get("mid")
+        result.published_at = to_int(author.get("pub_ts"))
+        stat = (modules.get("module_stat") or {}).get("like") or {}
+        result.like_count = to_int(stat.get("count"))
         return result
 
     @classmethod

@@ -254,11 +254,13 @@ async def handle_parse(req: ParseRequest) -> bool:
             lang=req.t_.locale,
             view_label=req.t_("查看"),
         )
-        gif_only = all(isinstance(i, AniRef) for i in to_list(parse_result.media))
+        media_refs = to_list(parse_result.media)
+        # 显式要求非空: all() 对空列表返回 True, 不能让它把"没有媒体"当成"全是 GIF"
+        gif_only = bool(media_refs) and all(isinstance(i, AniRef) for i in media_refs)
         if (
             req.mode == ParseMode.PREVIEW
             and gif_only
-            and len(to_list(parse_result.media)) > GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD
+            and len(media_refs) > GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD
         ):
             await sender.typing()
             await sender.text_no_preview(caption, reply_markup=build_gif_button(to_list(parse_result.media)))
