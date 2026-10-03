@@ -24,6 +24,8 @@ def test_cache_refreshes_only_legacy_entries_missing_author(author, versioned, h
             "view_count": None,
             "like_count": None,
             "tags": [],
+            "quoted_media_count": 0,
+            "reply_media_count": 0,
         }
     }
     if versioned:

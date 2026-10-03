@@ -32,15 +32,39 @@ def _entry(**kwargs):
 
 def test_cache_media_blocks_reuses_file_ids_without_upload():
     """file_id 直接进 InputMedia, 不触发上传"""
-    media, placeholders = cache_media_blocks(_entry())
+    media, placeholders, quoted, reply = cache_media_blocks(_entry())
     assert len(media) == 3
     assert placeholders == [
         "![](tg://photo?id=m0)",
         "![](tg://photo?id=m1)",
         "![](tg://video?id=m2)",
     ]
+    assert quoted == []
+    assert reply == []
     # InputMediaPhoto 把 file_id 存在 media 字段里
     assert media[0].media.media == "f1"
+
+
+def test_cache_media_blocks_splits_the_quoted_tail():
+    """末尾 N 项属于引用块: 要单独给出来, 否则被引用内容的媒体会摆到正文后面"""
+    entry = _entry()
+    entry.parse_result.quoted_media_count = 1
+    media, placeholders, quoted, reply = cache_media_blocks(entry)
+    assert placeholders == ["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"]
+    assert quoted == ["![](tg://video?id=m2)"]
+    assert reply == []
+
+
+def test_cached_rich_content_puts_quoted_media_in_the_quote_block():
+    """缓存路径同样要把引用媒体放进引用块内部 (每行带 > 前缀)"""
+    entry = _entry()
+    entry.parse_result.quoted_media_count = 1
+    entry.parse_result.content = "正文\n\n> *被引用的文字*"
+    markdown, _ = build_cached_rich_content(
+        entry, "https://www.pixiv.net/artworks/1", lang="zh-hans", config=_config(), view_label="查看"
+    )
+    assert "> *被引用的文字*" in markdown
+    assert "> ![](tg://video?id=m2)" in markdown
 
 
 def test_cached_rich_content_keeps_layout_tags_and_collage():

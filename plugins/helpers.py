@@ -198,6 +198,8 @@ def build_rich_markdown(
     view_label: str = "",
     custom_content: str = "",
     media_placeholders: Sequence[str] = (),
+    quote_media_placeholders: Sequence[str] = (),
+    reply_media_placeholders: Sequence[str] = (),
 ) -> str:
     """构建富文本 (rich message) 正文: 标题 + 作者 + 原文格式正文 + 媒体 + 页尾。
 
@@ -216,7 +218,19 @@ def build_rich_markdown(
         parts.append(f"### {title}")
     if author := format_author_line(parse_result):
         parts.append(author)
-    body_text, quote = split_trailing_quote(content) if content else ("", "")
+    # 被回复的卡片在正文前、被引用的卡片在正文后, 各自的媒体留在自己的块里
+    reply_quote, body_text, quote = split_quote_blocks(content) if content else ("", "", "")
+    reply_media = list(reply_media_placeholders)
+    if reply_quote and not config.hide_desc:
+        parts.append(attach_quote_media(reply_quote, reply_media))
+        reply_media = []  # 已安置
+    elif not reply_quote:
+        # 没有独立的回复块 (例如正文为空): 媒体不能丢, 兜到末尾引用块或正文媒体里
+        if quote:
+            quote_media_placeholders = [*quote_media_placeholders, *reply_media]
+        else:
+            media_placeholders = [*media_placeholders, *reply_media]
+        reply_media = []
     if body_text and not config.hide_desc:
         parts.append(body_text)
     if custom_content:
@@ -230,7 +244,8 @@ def build_rich_markdown(
 
     if quote and not config.hide_desc:
         # 被引用/被回复的卡片: 主推自己的媒体要排在它上面 (与 X 上的观感一致)
-        parts.append(quote)
+        # 引用内容自己的媒体放进引用块内部 (每行都要 > 前缀, 否则会被踢出引用块)
+        parts.append(attach_quote_media(quote, quote_media_placeholders))
 
     body = "\n\n".join(part for part in parts if part)
 
@@ -276,6 +291,8 @@ def build_rich_markdown_by_str(
     tags: Sequence[str] | None = None,
     custom_content: str = "",
     media_placeholders: Sequence[str] = (),
+    quote_media_placeholders: Sequence[str] = (),
+    reply_media_placeholders: Sequence[str] = (),
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。"""
     return build_rich_markdown(
@@ -296,6 +313,8 @@ def build_rich_markdown_by_str(
         view_label=view_label,
         custom_content=custom_content,
         media_placeholders=media_placeholders,
+        quote_media_placeholders=quote_media_placeholders,
+        reply_media_placeholders=reply_media_placeholders,
     )
 
 
@@ -395,24 +414,60 @@ def preserve_linebreaks(text: str) -> str:
     return "\n".join(out)
 
 
-def split_trailing_quote(content: str) -> tuple[str, str]:
-    """把正文末尾的引用块拆出来, 返回 (引用之前的部分, 引用块)。
+def split_quote_blocks(content: str) -> tuple[str, str, str]:
+    """把正文拆成 (开头的引用块, 中间正文, 末尾的引用块)。
 
-    被引用的推文由解析器渲染成 markdown 引用块放在正文最后, 但主推自己的媒体
-    按 X 的观感应该紧跟主推文字、在被引用卡片**之上**, 所以先把尾部引用块摘出来,
-    由调用方把媒体插在它前面。只有连续的行首 ``>`` 才算引用块, 不会跨普通空行,
-    因此不会误吃正文前面的 "回复" 引用块。
+    解析器把**被回复**的推文渲染在正文最前、**被引用**的推文渲染在正文最后
+    (与 X 上的卡片位置一致)。主推自己的媒体要夹在两个卡片之间, 所以两边都要摘出来。
+
+    只认连续的行首 ``>``, 不跨普通空行。开头那个块必须紧贴正文开头 ——
+    正文里自己写的引用 (中间位置) 不会被误当卡片。
     """
     lines = content.split("\n")
+
+    # 末尾块
     end = len(lines)
     while end > 0 and not lines[end - 1].strip():
         end -= 1
-    start = end
-    while start > 0 and lines[start - 1].lstrip().startswith(">"):
-        start -= 1
-    if start >= end:
-        return content, ""
-    return "\n".join(lines[:start]).rstrip(), "\n".join(lines[start:end]).strip()
+    tail_start = end
+    while tail_start > 0 and lines[tail_start - 1].lstrip().startswith(">"):
+        tail_start -= 1
+
+    # 开头块 (在末尾块之前)
+    head_end = 0
+    while head_end < tail_start and not lines[head_end].strip():
+        head_end += 1
+    head_scan = head_end
+    while head_scan < tail_start and lines[head_scan].lstrip().startswith(">"):
+        head_scan += 1
+    # 只有确实是一整块引用 (后面跟空行或正文) 才算, 且不能把整个正文都吃进来
+    head = "\n".join(lines[head_end:head_scan]).strip() if head_scan > head_end else ""
+
+    middle = "\n".join(lines[head_scan:tail_start]).strip() if head else "\n".join(lines[:tail_start]).strip()
+    tail = "\n".join(lines[tail_start:end]).strip()
+    return head, middle, tail
+
+
+def split_trailing_quote(content: str) -> tuple[str, str]:
+    """兼容旧调用点: 返回 (去掉末尾引用块后的正文, 末尾引用块)。"""
+    head, middle, tail = split_quote_blocks(content)
+    body = f"{head}\n\n{middle}".strip() if head else middle
+    return body, tail
+
+
+def attach_quote_media(quote: str, placeholders: Sequence[str]) -> str:
+    """把被引用内容的媒体接进引用块内部。
+
+    富文本里引用块的成员是"连续以 ``>`` 开头的行", 所以占位符也必须带 ``> ``,
+    否则媒体会掉到引用块外面 (实测: 不带前缀就变成独立的图片块)。
+    多张时包成 ``<tg-collage>``, 与正文媒体一致 —— 引用块里嵌图集同样成立。
+    """
+    if not quote or not placeholders:
+        return quote
+    lines: list[str] = []
+    for block in wrap_collage(placeholders):
+        lines.extend(f"> {line}" if line.strip() else ">" for line in block.split("\n"))
+    return "\n".join([quote, *lines])
 
 
 def wrap_collage(placeholders: Sequence[str]) -> list[str]:

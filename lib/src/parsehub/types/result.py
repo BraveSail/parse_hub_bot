@@ -43,6 +43,8 @@ class ParseResult(ABC):  # noqa: B024
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        quoted_media_count: int = 0,
+        reply_media_count: int = 0,
     ):
         """
         :param title: 标题
@@ -56,6 +58,10 @@ class ParseResult(ABC):  # noqa: B024
         :param author_handle: 作者的用户名/账号 (不带 @), 平台没提供时为空
         :param author_url: 作者主页地址, 平台没提供或拿不到时为空
         :param tags: 作品标签 (平台提供时才有, 去重且保持原顺序)
+        :param quoted_media_count: ``media`` 末尾有多少个是**被引用内容**的媒体
+            (渲染在被引用卡片里, 其余属于正文/被回复内容)
+        :param reply_media_count: ``media`` 中, 在 ``quoted_media_count`` 之前的多少个
+            属于**被回复内容** (渲染在回复卡片里, 位置在正文之前)
         """
         self.raw_url: str = ""
         self.title = title.strip()
@@ -70,6 +76,8 @@ class ParseResult(ABC):  # noqa: B024
         self.view_count = to_int(view_count)
         self.like_count = to_int(like_count)
         self.tags = self._clean_tags(tags)
+        self.quoted_media_count = max(0, to_int(quoted_media_count) or 0)
+        self.reply_media_count = max(0, to_int(reply_media_count) or 0)
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -119,6 +127,8 @@ class ParseResult(ABC):  # noqa: B024
             "view_count": self.view_count,
             "like_count": self.like_count,
             "tags": list(self.tags),
+            "quoted_media_count": self.quoted_media_count,
+            "reply_media_count": self.reply_media_count,
             "media": media,
         }
 
@@ -349,6 +359,8 @@ class VideoParseResult(ParseResult):
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        quoted_media_count: int = 0,
+        reply_media_count: int = 0,
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -363,6 +375,8 @@ class VideoParseResult(ParseResult):
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
+            quoted_media_count=quoted_media_count,
+            reply_media_count=reply_media_count,
         )
 
 
@@ -384,6 +398,8 @@ class ImageParseResult(ParseResult):
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        quoted_media_count: int = 0,
+        reply_media_count: int = 0,
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
@@ -398,6 +414,8 @@ class ImageParseResult(ParseResult):
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
+            quoted_media_count=quoted_media_count,
+            reply_media_count=reply_media_count,
         )
 
 
@@ -419,6 +437,8 @@ class MultimediaParseResult(ParseResult):
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        quoted_media_count: int = 0,
+        reply_media_count: int = 0,
     ):
         super().__init__(
             title=title,
@@ -432,6 +452,8 @@ class MultimediaParseResult(ParseResult):
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
+            quoted_media_count=quoted_media_count,
+            reply_media_count=reply_media_count,
         )
 
 
@@ -459,6 +481,8 @@ class RichTextParseResult(ParseResult):
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        quoted_media_count: int = 0,
+        reply_media_count: int = 0,
     ):
         """
         :param title: 标题
@@ -478,6 +502,8 @@ class RichTextParseResult(ParseResult):
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
+            quoted_media_count=quoted_media_count,
+            reply_media_count=reply_media_count,
         )
 
     def __repr__(self) -> str:

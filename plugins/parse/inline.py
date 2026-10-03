@@ -286,12 +286,14 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 if config.video_cover
                 else {}
             )
-            media, placeholders, media_blocks = build_rich_media(
+            media, placeholders, media_blocks, quoted_placeholders, reply_placeholders = build_rich_media(
                 media_refs,
                 result.processed_list,
                 video_cover=config.video_cover,
                 is_sensitive=parse_result.is_sensitive,
                 video_thumbs=video_thumbs,
+                quoted_media_count=getattr(parse_result, "quoted_media_count", 0),
+                reply_media_count=getattr(parse_result, "reply_media_count", 0),
             )
             markdown = build_rich_markdown(
                 parse_result,
@@ -299,6 +301,8 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 lang=lang,
                 view_label=_t("查看"),
                 media_placeholders=placeholders,
+                quote_media_placeholders=quoted_placeholders,
+                reply_media_placeholders=reply_placeholders,
             )
             logger.debug(
                 f"inline 编辑为富文本: media={len(media)}, blocks={len(media_blocks)}, "

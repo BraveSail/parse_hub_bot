@@ -105,6 +105,10 @@ class CacheParseResult(BaseModel):
     view_count: int | None = None
     like_count: int | None = None
     tags: list[str] = []
+    #: 末尾有多少个媒体项属于被引用内容, 紧接其前的多少个属于被回复内容
+    #: (两者都在各自的引用块内部渲染)
+    quoted_media_count: int = 0
+    reply_media_count: int = 0
 
 
 class CacheMedia(BaseModel):
@@ -178,6 +182,11 @@ class PersistentCache:
             if "tags" not in entry.parse_result.model_fields_set:
                 # 旧缓存没有标签: 复用会让 inline 结果缺 tag 行
                 self.logger.debug(f"旧缓存缺少标签, 重新解析: key={url}")
+                return None
+
+            if {"quoted_media_count", "reply_media_count"} - entry.parse_result.model_fields_set:
+                # 旧缓存不知道引用块里有没有媒体: 复用会让被引用/被回复内容的图/视频丢掉
+                self.logger.debug(f"旧缓存缺少引用媒体信息, 重新解析: key={url}")
                 return None
 
             await repo.touch(cache, self._now())

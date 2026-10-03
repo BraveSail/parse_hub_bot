@@ -482,8 +482,18 @@ def media_input(media: PathType | BinaryIO | None) -> PathType | BinaryIO:
     return cast(PathType | BinaryIO, media)
 
 
-def _rich_cache_entry(parse_result: AnyParseResult, media: list[CacheMedia]) -> CacheEntry:
-    """把一次富文本发送的字段与媒体 file_id 收成缓存条目。"""
+def _rich_cache_entry(
+    parse_result: AnyParseResult,
+    media: list[CacheMedia],
+    *,
+    quoted_media_count: int = 0,
+    reply_media_count: int = 0,
+) -> CacheEntry:
+    """把一次富文本发送的字段与媒体 file_id 收成缓存条目。
+
+    ``quoted_media_count`` 记的是**媒体项数** (缓存里平铺的条数), 不是 ref 数
+    —— 一个 ref 可能展开成多个文件, 缓存只能按项切分。
+    """
     return CacheEntry(
         parse_result=CacheParseResult(
             title=parse_result.title,
@@ -496,6 +506,8 @@ def _rich_cache_entry(parse_result: AnyParseResult, media: list[CacheMedia]) -> 
             view_count=getattr(parse_result, "view_count", None),
             like_count=getattr(parse_result, "like_count", None),
             tags=list(getattr(parse_result, "tags", None) or []),
+            quoted_media_count=quoted_media_count,
+            reply_media_count=reply_media_count,
         ),
         media=media or None,
         rich=True,
@@ -523,12 +535,14 @@ async def send_rich_media(
         if sender.config.video_cover
         else {}
     )
-    media, placeholders, media_blocks = build_rich_media(
+    media, placeholders, media_blocks, quoted_placeholders, reply_placeholders = build_rich_media(
         media_refs,
         processed_list,
         video_cover=sender.config.video_cover,
         is_sensitive=parse_result.is_sensitive,
         video_thumbs=video_thumbs,
+        quoted_media_count=getattr(parse_result, "quoted_media_count", 0),
+        reply_media_count=getattr(parse_result, "reply_media_count", 0),
     )
     markdown = build_rich_markdown(
         parse_result,
@@ -537,6 +551,8 @@ async def send_rich_media(
         view_label=_t("查看"),
         custom_content=custom_content,
         media_placeholders=placeholders,
+        quote_media_placeholders=quoted_placeholders,
+        reply_media_placeholders=reply_placeholders,
     )
     if parse_result.is_sensitive and media_blocks:
         # 敏感内容的媒体必须打码: 官方 API 的富文本媒体块没有 spoiler 字段,
@@ -553,8 +569,22 @@ async def send_rich_media(
     if raw_url and media:
         cached_media = extract_cache_media(getattr(message, "rich_message", None))
         if cached_media:
-            await persistent_cache.set(raw_url, _rich_cache_entry(parse_result, cached_media))
-            logger.debug(f"富文本媒体已写入缓存: count={len(cached_media)}")
+            # 缓存里媒体是平铺的: 末尾 N 项属于被引用块、其前 M 项属于被回复块
+            # (用占位符数量推, 两者一一对应)
+            quoted_items = min(len(quoted_placeholders), len(cached_media))
+            reply_items = min(len(reply_placeholders), len(cached_media) - quoted_items)
+            await persistent_cache.set(
+                raw_url,
+                _rich_cache_entry(
+                    parse_result,
+                    cached_media,
+                    quoted_media_count=quoted_items,
+                    reply_media_count=reply_items,
+                ),
+            )
+            logger.debug(
+                f"富文本媒体已写入缓存: count={len(cached_media)}, 引用{quoted_items} 回复{reply_items}"
+            )
     return True
 
 

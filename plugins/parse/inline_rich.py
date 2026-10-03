@@ -51,7 +51,9 @@ def build_rich_media(
     video_cover: bool = True,
     is_sensitive: bool = False,
     video_thumbs: Mapping[str, Path] | None = None,
-) -> tuple[list[InputRichMessageMedia], list[str], dict[str, Any]]:
+    quoted_media_count: int = 0,
+    reply_media_count: int = 0,
+) -> tuple[list[InputRichMessageMedia], list[str], dict[str, Any], list[str], list[str]]:
     """把已下载的媒体构造成富文本 media 块 + 正文占位符 + (打码用的) blocks 映射。
 
     媒体用下载好的本地文件上传 (``send_rich_message`` 内部走 ``messages.UploadMedia``),
@@ -61,6 +63,10 @@ def build_rich_media(
 
     :param video_thumbs: 视频封面 URL -> 已下载好的本地图片 (见 ``covers.prepare_video_thumbs``)。
         必须是本地文件: 富文本路径只上传 document 本身, 远端 cover 参数会被丢弃。
+    :param quoted_media_count: ``media_refs`` 末尾有多少个属于**被引用内容**。
+    :param reply_media_count: 紧接在被引用媒体之前的多少个属于**被回复内容**。
+        两者的占位符分别作为第四、五个返回值给出, 由调用方放进对应的引用块内部。
+    :return: ``(media, placeholders, media_blocks, quoted_placeholders, reply_placeholders)``
     """
     from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
     from services.media import resolve_media_info
@@ -70,8 +76,12 @@ def build_rich_media(
     placeholders: list[str] = []
     media_blocks: dict[str, Any] = {}
     index = 0
+    # 每个 ref 产出的占位符 (一个 ref 可能展开成多个文件), 供末尾切分引用帖媒体
+    per_ref: list[list[str]] = []
 
     for media_ref, processed in zip(media_refs, processed_list, strict=False):
+        group: list[str] = []
+        per_ref.append(group)
         file_paths = processed.output_paths or [processed.source.path]
         for file_path in file_paths:
             file_path_str = str(file_path)
@@ -115,7 +125,9 @@ def build_rich_media(
             media_id = f"m{index}"
             index += 1
             media.append(InputRichMessageMedia(media_id, item))
-            placeholders.append(f"![](tg://{kind}?id={media_id})")
+            placeholder = f"![](tg://{kind}?id={media_id})"
+            placeholders.append(placeholder)
+            group.append(placeholder)
             # blocks 路径: 官方 API 的 InputRichBlockPhoto/Video 没有 spoiler, 自定义块才有
             match processed.source:
                 case ImageFile():
@@ -125,7 +137,22 @@ def build_rich_media(
                 case AniFile():
                     media_blocks[media_id] = InputRichBlockAnimation(item)
 
-    return media, placeholders, media_blocks
+    # refs 顺序是 [正文..., 被回复..., 被引用...]: 从末尾往前切出两个引用块
+    quoted_count = max(0, min(quoted_media_count, len(per_ref)))
+    tail_split = len(per_ref) - quoted_count
+    reply_count = max(0, min(reply_media_count, tail_split))
+    head_split = tail_split - reply_count
+
+    def flat(groups: list[list[str]]) -> list[str]:
+        return [p for ref_group in groups for p in ref_group]
+
+    return (
+        media,
+        flat(per_ref[:head_split]),
+        media_blocks,
+        flat(per_ref[tail_split:]),
+        flat(per_ref[head_split:tail_split]),
+    )
 
 
 async def edit_inline_rich_message(
@@ -164,11 +191,14 @@ async def edit_inline_rich_message(
     return True
 
 
-def cache_media_blocks(entry) -> tuple[list, list[str]]:
-    """把缓存里的 file_id 变成富文本的 media 块 + markdown 占位符。
+def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str]]:
+    """把缓存里的 file_id 变成富文本的 media 块 + 正文/被引用/被回复三级占位符。
 
     用已存在的 file_id 走 ``InputMediaPhoto/Document``: pyrogram 的 ``_get_input_photo``
     遇到 ``InputMediaPhoto`` 直接返回它的 id, **不触发任何上传**, 所以是即时可用的。
+
+    缓存的媒体是平铺的媒体项列表, 顺序与 ``media_refs`` 一致
+    (``[正文..., 被回复..., 被引用...]``), 按两个计数从末尾往前划给对应的引用块。
     """
     from pyrogram.types import (
         InputMediaAnimation,
@@ -196,7 +226,13 @@ def cache_media_blocks(entry) -> tuple[list, list[str]]:
         media_id = f"m{index}"
         media.append(InputRichMessageMedia(media_id, item))
         placeholders.append(f"![](tg://{kind}?id={media_id})")
-    return media, placeholders
+
+    pr = entry.parse_result
+    quoted_count = max(0, min(int(getattr(pr, "quoted_media_count", 0) or 0), len(placeholders)))
+    tail_split = len(placeholders) - quoted_count
+    reply_count = max(0, min(int(getattr(pr, "reply_media_count", 0) or 0), tail_split))
+    head_split = tail_split - reply_count
+    return media, placeholders[:head_split], placeholders[tail_split:], placeholders[head_split:tail_split]
 
 
 def build_cached_rich_content(
@@ -209,7 +245,7 @@ def build_cached_rich_content(
     """
     from plugins.helpers import build_rich_markdown_by_str, wrap_collage
 
-    media, placeholders = cache_media_blocks(entry)
+    media, placeholders, quoted_placeholders, reply_placeholders = cache_media_blocks(entry)
     markdown = build_rich_markdown_by_str(
         entry.parse_result.title,
         entry.parse_result.content,
@@ -226,6 +262,8 @@ def build_cached_rich_content(
         tags=entry.parse_result.tags,
         custom_content=custom_content,
         media_placeholders=wrap_collage(placeholders),
+        quote_media_placeholders=quoted_placeholders,
+        reply_media_placeholders=reply_placeholders,
     )
     return markdown, media
 

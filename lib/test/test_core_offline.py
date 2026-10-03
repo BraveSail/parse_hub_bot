@@ -190,6 +190,8 @@ class TestParseResultToDict(unittest.TestCase):
                 "view_count": None,
                 "like_count": None,
                 "tags": [],
+                "quoted_media_count": 0,
+                "reply_media_count": 0,
                 "media": {
                     "url": "https://cdn.example/video.mp4",
                     "ext": "mp4",

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -83,24 +84,36 @@ class TwitterParser(BaseParser):
         return f"{text}\n\n{quoted}" if quoted else text
 
     @staticmethod
-    async def media_parse(tweet: TwitterTweet) -> MultimediaParseResult | RichTextParseResult:
-        media: list[AnyMediaRef] = []
-        if tweet.media:
-            for m in tweet.media:
-                match m:
-                    case TwitterPhoto():
-                        path: AnyMediaRef = ImageRef(url=m.url, height=m.height, width=m.width, thumb_url=m.thumb_url)
-                    case TwitterVideo():
-                        path = VideoRef(
+    def to_media_refs(media_items: Sequence[TwitterPhoto | TwitterVideo | TwitterAni] | None) -> list[AnyMediaRef]:
+        """把 provider 的媒体对象转成下载用的 ref (主推与被引用推文共用)。"""
+        refs: list[AnyMediaRef] = []
+        for m in media_items or []:
+            match m:
+                case TwitterPhoto():
+                    refs.append(ImageRef(url=m.url, height=m.height, width=m.width, thumb_url=m.thumb_url))
+                case TwitterVideo():
+                    refs.append(
+                        VideoRef(
                             url=m.url,
                             height=m.height,
                             width=m.width,
                             duration=int(m.duration_millis / 1000),
                             thumb_url=m.thumb_url,
                         )
-                    case TwitterAni():
-                        path = AniRef(url=m.url, ext="mp4", height=m.height, width=m.width, thumb_url=m.thumb_url)
-                media.append(path)
+                    )
+                case TwitterAni():
+                    refs.append(AniRef(url=m.url, ext="mp4", height=m.height, width=m.width, thumb_url=m.thumb_url))
+        return refs
+
+    @staticmethod
+    async def media_parse(tweet: TwitterTweet) -> MultimediaParseResult | RichTextParseResult:
+        media: list[AnyMediaRef] = TwitterParser.to_media_refs(tweet.media)
+        # 被回复/被引用内容的媒体追加在正文媒体之后, 并用两个计数告诉渲染层怎么切:
+        # 顺序是 [正文..., 被回复..., 被引用...], 让它们分别落到对应的引用块里
+        reply_media = TwitterParser.to_media_refs(tweet.reply_to.media if tweet.reply_to else None)
+        quoted_media = TwitterParser.to_media_refs(tweet.quoted_status.media if tweet.quoted_status else None)
+        media.extend(reply_media)
+        media.extend(quoted_media)
         if article := tweet.article:
             return RichTextParseResult(
                 markdown_content=TwitterParser._compose(article.content, tweet),
@@ -113,6 +126,8 @@ class TwitterParser(BaseParser):
                 published_at=tweet.published_at,
                 view_count=tweet.view_count,
                 like_count=tweet.like_count,
+                quoted_media_count=len(quoted_media),
+                reply_media_count=len(reply_media),
             )
         return MultimediaParseResult(
             content=TwitterParser._compose(tweet.full_text, tweet),
@@ -124,6 +139,8 @@ class TwitterParser(BaseParser):
             published_at=tweet.published_at,
             view_count=tweet.view_count,
             like_count=tweet.like_count,
+            quoted_media_count=len(quoted_media),
+            reply_media_count=len(reply_media),
         )
 
 
