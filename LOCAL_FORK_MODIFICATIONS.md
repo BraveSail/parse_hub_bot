@@ -47,8 +47,6 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
   富文本的排版 / 图集 / 标签 / 页脚全部丢失。封面只当结果列表的缩略图（`thumb_url`）。
 - **键盘的用途**：Telegram 只在消息带 inline keyboard 时才回传 `inline_message_id`，
   这是二次编辑的前提；选中后立刻用 `ReplyKeyboardHide` 摘掉（空的 `ReplyInlineMarkup` 非法）。
-- **多图全量获取**：结果过多时用 `switch_pm_text` 深链跳转私聊继续发送
-  （`services/inline_share.py`，`token_urlsafe(16)` 做 TTL 映射，参数限 `A-Za-z0-9_-`）。
 - **兜底**：`answer()` 被拒时先剔掉富文本项重试，再回落纯文字提示 —— 拒答发生在
   `answer()` 这一步，不兜底客户端只会一直转圈。
 - **折叠**：长正文按 350 字符 / 8 行折叠（`<blockquote expandable>`，不可嵌套）。
@@ -131,7 +129,7 @@ curl_cffi 拿到 200。
 
 ## 8. i18n
 
-新增文案（「查看」、「获取全部 N 项」、「上 传 中...」等）补齐 16 种语言：de / en / es /
+新增文案（「查看」、「上 传 中...」等）补齐 16 种语言：de / en / es /
 fr / id / it / ja / ko / nl / pl / pt-br / ru / th / tr / vi / zh-hant。
 
 ## 上游同步

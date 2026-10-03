@@ -44,7 +44,7 @@ from plugins.parse.inline_rich import (
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
 from repo.settings import SettingsConfig
-from services import ParseService, SettingsService, UserService, inline_start_link
+from services import ParseService, SettingsService, UserService
 from services.cache import CacheEntry, parse_cache, persistent_cache
 from services.pipeline import ParsePipeline
 from utils.helpers import to_list, with_request_id
@@ -56,10 +56,6 @@ INLINE_TITLE_LIMIT = 90
 
 INLINE_DESC_LIMIT = 200
 """inline 结果项描述上限"""
-
-INLINE_SWITCH_PM_MIN_MEDIA = 2
-"""给"获取全部"按钮的最小媒体数 (inline 一次只能发一个媒体)"""
-
 
 def clip_inline_text(text: str | None, limit: int) -> str:
     """压平换行并截断, 用于 inline 结果项的 title/description。
@@ -74,24 +70,6 @@ def clip_inline_text(text: str | None, limit: int) -> str:
 def count_inline_media(media: object) -> int:
     """inline 结果对应的媒体数量 (无媒体/None 都算 0)。"""
     return 0 if media is None else len(to_list(media))  # type: ignore[arg-type]
-
-
-async def build_switch_pm(media_count: int, raw_url: str, lang: str) -> tuple[str, str]:
-    """多图时给 inline 结果加"切到私聊发全部"的 switch_pm 参数。
-
-    Telegram 的 switch_pm 会在 inline 结果上方显示一行文字, 点击后切到 bot 私聊
-    并发送 `/start <parameter>`。inline 一次只能发一个媒体, 多图作品只能这样把
-    整份内容交给 bot 在私聊里发 (相册), 所以仅媒体数 >= 2 时下发。
-
-    parameter 只允许 A-Za-z0-9_- 且不超过 64 字符, 装不下链接, 所以用短期映射的
-    token 代替 (见 services/inline_share.py)。无需按钮时返回两个空串 (pyrogram
-    只在 text 非空时才把 switch_pm 发给 Telegram)。
-    """
-    if media_count < INLINE_SWITCH_PM_MIN_MEDIA:
-        return "", ""
-    _t = t_[lang]
-    token = await inline_start_link.register(raw_url)
-    return _t(f"获取全部 {media_count} 项"), token
 
 
 SEARCH_ICON = "https://i.imgloc.com/2023/06/15/Vbfazk.png"
@@ -125,8 +103,6 @@ async def answer_inline(
     *,
     lang: str,
     cache_time: int = 0,
-    switch_pm_text: str = "",
-    switch_pm_parameter: str = "",
     fallback_results: list[InlineQueryResult] | None = None,
 ) -> None:
     """回答内联查询, 失败时退化成一条可读的错误结果。
@@ -138,12 +114,7 @@ async def answer_inline(
     """
     _t = t_[lang]
     try:
-        await inline_query.answer(
-            results[:50],
-            cache_time=cache_time,
-            switch_pm_text=switch_pm_text,
-            switch_pm_parameter=switch_pm_parameter,
-        )
+        await inline_query.answer(results[:50], cache_time=cache_time)
         return
     except BadRequest as e:
         logger.warning(f"内联回答被拒: {e}")
@@ -154,12 +125,7 @@ async def answer_inline(
         plain = fallback_results  # 结果全是富文本时换用调用方给的备选 (通常是媒体项)
     if plain and plain != results:
         try:
-            await inline_query.answer(
-                plain[:50],
-                cache_time=cache_time,
-                switch_pm_text=switch_pm_text,
-                switch_pm_parameter=switch_pm_parameter,
-            )
+            await inline_query.answer(plain[:50], cache_time=cache_time)
             return
         except BadRequest as e:
             logger.warning(f"去掉富文本项后仍被拒: {e}")
@@ -239,17 +205,7 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
         # 没有 file_id 的旧缓存则给纯文字占位, 选中后由 inline_result_download 补齐媒体。
         results = [build_cached_rich_result(cached, raw_url, lang, config)]
-        switch_pm_text, switch_pm_parameter = await build_switch_pm(
-            count_inline_media(cached.media), raw_url, lang
-        )
-        await answer_inline(
-            inline_query,
-            results,
-            lang=lang,
-            cache_time=60,
-            switch_pm_text=switch_pm_text,
-            switch_pm_parameter=switch_pm_parameter,
-        )
+        await answer_inline(inline_query, results, lang=lang, cache_time=60)
         return
 
     parse_result = await parse_cache.get(raw_url)
@@ -259,11 +215,7 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
 
     results = await build_inline_results(parse_result, cli, lang, config)
     logger.debug(f"inline 查询完成, 返回 {len(results)} 个结果")
-    switch_pm_text, switch_pm_parameter = await build_switch_pm(
-        count_inline_media(parse_result.media), raw_url, lang
-    )
-    await answer_inline(inline_query, results, lang=lang, cache_time=0,
-                        switch_pm_text=switch_pm_text, switch_pm_parameter=switch_pm_parameter)
+    await answer_inline(inline_query, results, lang=lang, cache_time=0)
 
 
 async def _drop_inline_keyboard(cli: Client, inline_message_id: str) -> None:
