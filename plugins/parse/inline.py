@@ -49,6 +49,7 @@ from plugins.helpers import (
 )
 from plugins.parse.inline_rich import RICH_RESULT_ID, build_media_items, edit_inline_rich_message
 from plugins.parse.reporters import InlineStatusReporter
+from plugins.parse.rich_blocks import markdown_to_blocks
 from repo.settings import SettingsConfig
 from services import ParseService, SettingsService, UserService, inline_start_link
 from services.cache import CacheEntry, CacheMediaType, parse_cache, persistent_cache
@@ -335,7 +336,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         await reporter.report(_t("上 传 中..."))
         try:
             media_refs = to_list(parse_result.media)
-            media, placeholders = build_media_items(
+            media, placeholders, media_blocks = build_media_items(
                 result.processed_list,
                 media_refs,
                 is_sensitive=parse_result.is_sensitive,
@@ -347,8 +348,16 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 view_label=_t("查看"),
                 media_placeholders=placeholders,
             )
-            logger.debug(f"inline 编辑为富文本: media={len(media)}, markdown={len(markdown)}")
-            await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, media=media)
+            logger.debug(
+                f"inline 编辑为富文本: media={len(media)}, blocks={len(media_blocks)}, "
+                f"markdown={len(markdown)}, sensitive={parse_result.is_sensitive}"
+            )
+            if parse_result.is_sensitive and media_blocks:
+                # 敏感内容: markdown+media 路径的 raw 类型没有 spoiler, 只能走 blocks
+                blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
+                await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, blocks=blocks)
+            else:
+                await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, media=media)
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
             logger.error(f"inline 富文本编辑失败: {e}")

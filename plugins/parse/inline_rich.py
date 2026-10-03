@@ -46,10 +46,13 @@ def build_media_items(
     media_refs: list,
     *,
     is_sensitive: bool = False,
-) -> tuple[list[InputRichMessageMedia], list[str]]:
-    """把已下载的媒体构造成富文本 media 块 + 正文占位符。"""
+) -> tuple[list[InputRichMessageMedia], list[str], dict]:
+    """把已下载的媒体构造成富文本 media 块 + 正文占位符 + (打码用的) blocks 映射。"""
+    from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
+
     media: list[InputRichMessageMedia] = []
     placeholders: list[str] = []
+    media_blocks: dict = {}
     index = 0
 
     for media_ref, processed in zip(media_refs, processed_list, strict=False):
@@ -77,7 +80,12 @@ def build_media_items(
             index += 1
             media.append(InputRichMessageMedia(media_id, item))
             placeholders.append(f"![](tg://{kind}?id={media_id})")
-    return media, placeholders
+            match kind:
+                case "photo":
+                    media_blocks[media_id] = SpoilerPhotoBlock(item, spoiler=is_sensitive)
+                case _:
+                    media_blocks[media_id] = SpoilerVideoBlock(item, spoiler=is_sensitive)
+    return media, placeholders, media_blocks
 
 
 async def edit_inline_rich_message(
@@ -86,17 +94,26 @@ async def edit_inline_rich_message(
     *,
     markdown: str,
     media: list[InputRichMessageMedia] | None = None,
+    blocks: list | None = None,
 ) -> bool:
     """把一条 inline 消息编辑成富文本 (可带媒体)。
 
     媒体会在这一步真正上传 (peer=self), 所以调用方要保证文件还在本地。
     返回是否成功 —— **返回值不能当成功判据**, 用户看到的消息才是。
+
+    ``blocks`` 非空时走 blocks 路径: 官方 API 的富文本媒体块没有 spoiler 字段,
+    敏感内容只有 raw 的 ``PageBlockPhoto/Video(spoiler=True)`` 才能打码。
     """
     unpacked = utils.unpack_inline_message_id(inline_message_id)
     session = await cli.get_session(unpacked.dc_id, is_media=True)
-    rich = InputRichMessage(markdown=markdown, media=media or None)
-    # 走 InputRichMessage.write: 它负责把媒体上传/复用成 InputRichFile*
-    raw_rich = await rich.write(client=cli, chat_id=None)
+    if blocks:
+        rich = InputRichMessage(blocks=blocks)
+        # blocks 里的媒体由各 block 自己上传 (_get_input_photo/Document, peer=self)
+        raw_rich = await rich.write(client=cli, chat_id=None)
+    else:
+        rich = InputRichMessage(markdown=markdown, media=media or None)
+        # 走 InputRichMessage.write: 它负责把媒体上传/复用成 InputRichFile*
+        raw_rich = await rich.write(client=cli, chat_id=None)
     await session.invoke(
         raw.functions.messages.EditInlineBotMessage(
             id=unpacked,
