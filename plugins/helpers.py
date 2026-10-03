@@ -4,7 +4,7 @@ import html
 import re
 from collections.abc import Sequence
 from datetime import datetime
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
 from easy_ai18n import LocaleContent
@@ -317,16 +317,57 @@ def wrap_collage(placeholders: Sequence[str]) -> list[str]:
     return ["<tg-collage>\n\n" + "\n".join(placeholders) + "\n\n</tg-collage>"]
 
 
-def format_tags(parse_result: AnyParseResult) -> str:
-    """把作品标签渲染成一行。
+# 各平台的标签页/标签搜索页. 没有列出的平台退回纯文本 #标签
+TAG_PAGE_URLS: dict[Platform, str] = {
+    Platform.PIXIV: "https://www.pixiv.net/tags/{tag}",
+    Platform.TWITTER: "https://x.com/hashtag/{tag}",
+    Platform.WEIBO: "https://s.weibo.com/weibo?q=%23{tag}%23",
+    Platform.BILIBILI: "https://search.bilibili.com/all?keyword={tag}",
+    Platform.THREADS: "https://www.threads.com/search?q=%23{tag}",
+    Platform.TIKTOK: "https://www.tiktok.com/tag/{tag}",
+    Platform.INSTAGRAM: "https://www.instagram.com/explore/tags/{tag}/",
+    Platform.YOUTUBE: "https://www.youtube.com/hashtag/{tag}",
+    Platform.FACEBOOK: "https://www.facebook.com/hashtag/{tag}",
+    Platform.DOUYIN: "https://www.douyin.com/search/{tag}",
+    Platform.KUAISHOU: "https://www.kuaishou.com/search/video?searchKey={tag}",
+    Platform.ZHIHU: "https://www.zhihu.com/search?q={tag}",
+    Platform.TIEBA: "https://tieba.baidu.com/f/search/res?qw={tag}",
+    Platform.DOUBAN: "https://www.douban.com/search?q={tag}",
+    Platform.XHS: "https://www.xiaohongshu.com/search_result?keyword={tag}",
+}
 
-    ``#`` 必须转义: 富文本的 markdown 里行首的 ``#标签`` 会被当成一级标题,
-    字号会大得离谱 (实测服务端把它解析成 section heading)。
+
+def tag_page_url(platform: Platform | None, tag: str) -> str:
+    """平台上的标签页地址; 没有对应模板时返回空串"""
+    template = TAG_PAGE_URLS.get(platform) if platform else None
+    return template.format(tag=quote(str(tag), safe="")) if template else ""
+
+
+def _render_tag(platform: Platform | None, tag: str) -> str:
+    """单个标签: 能拿到标签页就渲染成链接, 否则退回纯文本"""
+    label = f"\\#{html.escape(str(tag))}"
+    url = tag_page_url(platform, tag)
+    if not url:
+        return label
+    return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+
+
+def format_tags(parse_result: AnyParseResult) -> str:
+    """把作品标签渲染成一行, 尽量渲染成指向标签页的链接。
+
+    两个坑都靠链接绕开:
+    1. 行首的 ``#标签`` 在富文本 markdown 里是一级标题语法, 字号会大得离谱;
+    2. Telegram 解析 hashtag 时遇到 ``・`` 之类的非字母字符就停, 长标签
+       (如 ``アリサ・ミハイロヴナ・九条``) 只会染蓝到 ``・`` 之前, 看着像被截断。
+    链接形式两者都没有, 还多了点击进标签页的能力。
     """
     tags = getattr(parse_result, "tags", None) or []
     if not tags:
         return ""
-    return " ".join(f"\\#{tag}" for tag in tags)
+    platform = getattr(parse_result, "platform", None) or ParseHub().get_platform(
+        getattr(parse_result, "raw_url", "") or ""
+    )
+    return " ".join(_render_tag(platform, tag) for tag in tags)
 
 
 def get_parse_author_name(parse_result: AnyParseResult) -> str:

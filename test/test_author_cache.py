@@ -247,9 +247,57 @@ def test_rich_markdown_renders_tags():
     markdown = build_rich_markdown(
         result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
     )
-    # # 必须转义, 否则富文本把 #标签 当一级标题 (字号巨大)
-    assert "\\#AI画像 \\#足裏" in markdown
+    # # 要转义 (否则被当一级标题/字号巨大), 并渲染成标签页链接
+    assert '<a href="https://www.pixiv.net/tags/AI%E7%94%BB%E5%83%8F">\\#AI画像</a>' in markdown
+    assert '<a href="https://www.pixiv.net/tags/%E8%B6%B3%E8%A3%8F">\\#足裏</a>' in markdown
     assert markdown.index("正文") < markdown.index("AI画像")
+
+
+def test_tags_with_middle_dot_are_linked_not_bare_hashtags():
+    """含 ``・`` 的长标签必须走链接。
+
+    裸 hashtag 时 Telegram 遇到 ``・`` 就停止解析, 只染蓝到中点之前,
+    看起来就是标签被截断 (实测 ``#アリサ・ミハイロヴナ・九条`` -> ``#アリサ``)。
+    """
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+    result.tags = ["アリサ・ミハイロヴナ・九条"]
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
+    )
+    assert "<a href=" in markdown
+    assert "アリサ・ミハイロヴナ・九条</a>" in markdown
+
+
+def test_tags_fall_back_to_plain_text_without_tag_page():
+    """平台没有标签页时退回纯文本 #标签"""
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.COOLAPK
+    result.raw_url = "https://www.coolapk.com/feed/1"
+    result.tags = ["手机"]
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
+    )
+    assert "\\#手机" in markdown
+    tag_line = next(line for line in markdown.splitlines() if "手机" in line)
+    assert "<a href" not in tag_line
+
+
+def test_tag_page_url_encodes_japanese():
+    from parsehub.types import Platform
+
+    from plugins.helpers import tag_page_url
+
+    assert tag_page_url(Platform.PIXIV, "周防有希") == "https://www.pixiv.net/tags/%E5%91%A8%E9%98%B2%E6%9C%89%E5%B8%8C"
+    assert tag_page_url(Platform.XHS, "x") == "" or "xiaohongshu" in tag_page_url(Platform.XHS, "x")
+    assert tag_page_url(None, "x") == ""
 
 
 def test_rich_markdown_places_media_between_body_and_footer():
