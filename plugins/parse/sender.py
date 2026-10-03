@@ -21,6 +21,7 @@ from pyrogram.types import (
     InputMediaDocument,
     InputMediaPhoto,
     InputMediaVideo,
+    InputRichBlockAnimation,
     InputRichMessage,
     InputRichMessageMedia,
     LinkPreviewOptions,
@@ -39,6 +40,7 @@ from plugins.helpers import (
     get_parse_author_name,
 )
 from plugins.parse.cache import build_cached_media_group, cache_media_from_message
+from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock, markdown_to_blocks
 from repo.settings import SettingsConfig
 from services import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult, PipelineResult, StatusReporter
 from services.media import ProcessedMedia, resolve_media_info
@@ -570,15 +572,20 @@ def build_rich_media(
     *,
     video_cover: bool,
     is_sensitive: bool = False,
-) -> tuple[list[InputRichMessageMedia], list[str]]:
+) -> tuple[list[InputRichMessageMedia], list[str], dict[str, Any]]:
     """构建富文本的媒体块与正文里的占位符.
 
     媒体用下载好的本地文件上传 (send_rich_message 内部走 messages.UploadMedia),
     不把原始 URL 交给 Telegram 抓取 —— 那条路有 20 MB 上限。
-    返回 (media 列表, markdown 占位符列表)。
+
+    返回三样:
+    - media: markdown 路径用的 InputRichMessageMedia 列表
+    - placeholders: 正文里的 markdown 占位符
+    - media_blocks: blocks 路径用的 id -> 块映射 (敏感内容打码只能走这条)
     """
     media: list[InputRichMessageMedia] = []
     placeholders: list[str] = []
+    media_blocks: dict[str, Any] = {}
     index = 0
 
     for media_ref, processed in zip(media_refs, processed_list, strict=False):
@@ -622,8 +629,16 @@ def build_rich_media(
             index += 1
             media.append(InputRichMessageMedia(media_id, item))
             placeholders.append(f"![](tg://{kind}?id={media_id})")
+            # blocks 路径: 官方 API 的 InputRichBlockPhoto/Video 没有 spoiler, 自定义块才有
+            match processed.source:
+                case ImageFile():
+                    media_blocks[media_id] = SpoilerPhotoBlock(item, spoiler=is_sensitive)
+                case VideoFile() | LivePhotoFile():
+                    media_blocks[media_id] = SpoilerVideoBlock(item, spoiler=is_sensitive)
+                case AniFile():
+                    media_blocks[media_id] = InputRichBlockAnimation(item)
 
-    return media, placeholders
+    return media, placeholders, media_blocks
 
 
 async def send_rich_media(
@@ -636,7 +651,7 @@ async def send_rich_media(
 ) -> bool:
     """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。"""
     media_refs = to_list(parse_result.media)
-    media, placeholders = build_rich_media(
+    media, placeholders, media_blocks = build_rich_media(
         media_refs,
         processed_list,
         video_cover=sender.config.video_cover,
@@ -650,6 +665,14 @@ async def send_rich_media(
         custom_content=custom_content,
         media_placeholders=placeholders,
     )
+    if parse_result.is_sensitive and media_blocks:
+        # 敏感内容的媒体必须打码: 官方 API 的富文本媒体块没有 spoiler 字段,
+        # 只能自己构造 raw blocks (PageBlockPhoto/Video 带 spoiler)
+        blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
+        logger.debug(f"富文本(blocks)发送: media={len(media_blocks)}, blocks={len(blocks)}")
+        await sender.rich_message(rich_message=InputRichMessage(blocks=blocks))
+        return True
+
     logger.debug(f"富文本发送: media={len(media)}, markdown_len={len(markdown)}")
     await sender.rich_message(rich_message=InputRichMessage(markdown=markdown, media=media or None))
     return True

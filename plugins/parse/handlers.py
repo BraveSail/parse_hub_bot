@@ -236,8 +236,7 @@ async def handle_parse(req: ParseRequest) -> bool:
 
         if isinstance(parse_result, RichTextParseResult):
             # 富文本发送: 与普通结果同一条路径 (媒体上传 + 页脚), 只是正文取 markdown_content
-            # 敏感内容有媒体时不给富文本 —— 它的媒体打不了码 (见下方注释)
-            if req.config.rich_mode and not (parse_result.is_sensitive and result.processed_list):
+            if req.config.rich_mode:
                 await sender.typing()
                 await send_rich_media(
                     sender,
@@ -336,9 +335,9 @@ async def handle_parse(req: ParseRequest) -> bool:
         logger.debug(f"开始上传媒体: media_count={len(result.processed_list)}")
         await reporter.report(req.t_("上 传 中..."))
         try:
-            # 敏感内容走老路径: 富文本的媒体打不了码 (官方 API 的 InputRichBlockPhoto
-            # 没有 spoiler 字段), 老路径才有 has_spoiler, 不能为了排版牺牲遮罩
-            if req.config.rich_mode and not parse_result.is_sensitive:
+            # 敏感内容的媒体打码在 send_rich_media 内部切到 blocks 路径 (官方 API 的
+            # 富文本媒体块没有 spoiler, 只有 raw 的 PageBlockPhoto/Video 有)
+            if req.config.rich_mode:
                 await send_rich_media(
                     sender,
                     parse_result,
