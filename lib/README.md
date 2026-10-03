@@ -7,12 +7,13 @@
 [![PyPI version](https://img.shields.io/pypi/v/parsehub?color=blue&logo=pypi&logoColor=white)](https://pypi.org/project/parsehub/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/BraveSail/ParseHub?style=social)](https://github.com/BraveSail/ParseHub)
+[![GitHub stars](https://img.shields.io/github/stars/z-mio/ParseHub?style=social)](https://github.com/z-mio/ParseHub)
 
 轻量, 异步, 开箱即用的社交媒体解析与媒体下载库, 支持 17+ 平台
 
-本项目基于 [z-mio/ParseHub](https://github.com/z-mio/ParseHub) 改造，已脱离 fork 关系独立维护。
-本地改动清单见 [LOCAL_FORK_MODIFICATIONS.md](LOCAL_FORK_MODIFICATIONS.md)。
+本项目基于 [z-mio/ParseHub](https://github.com/z-mio/ParseHub) 改造，已独立维护。
+本目录是 [shirobako](https://github.com/BraveSail/shirobako) 的 `lib/` 子树（git subtree），
+改动清单见仓库根目录的 [LOCAL_FORK_MODIFICATIONS.md](../LOCAL_FORK_MODIFICATIONS.md)。
 
 简体中文 | [English](README.en.md)
 

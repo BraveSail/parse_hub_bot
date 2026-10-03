@@ -13,7 +13,7 @@ A lightweight, asynchronous, ready-to-use social media parser and media download
 
 [简体中文](README.md) | English
 
-[Installation](#-installation) · [Quick Start](#-quick-start) · [Advanced Usage](#-advanced-usage) · [TG Bot](https://github.com/z-mio/parse_hub_bot)
+[Installation](#-installation) · [Quick Start](#-quick-start) · [Advanced Usage](#-advanced-usage) · [TG Bot](https://github.com/BraveSail/shirobako)
 
 </div>
 
