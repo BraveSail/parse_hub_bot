@@ -85,7 +85,21 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
     遇到 git 源会直接失败 —— 这也是当初要搞「PyPI 占位 + 构建期覆盖」的原因。
 - `Dockerfile.deploy` + `compose.deploy.yaml` 是本仓库的部署方式；`Dockerfile` 为通用构建。
 
-## 6. 库侧改动（`lib/`，相对 z-mio/ParseHub）
+## 6. HTTP 客户端统一走 curl_cffi（`lib/src/parsehub/utils/http.py`）
+
+所有 provider 与下载器的请求都经由一个薄封装层，底层是 **curl_cffi**（浏览器 TLS 指纹，
+统一 `IMPERSONATE = "chrome150"`）。这不是性能优化 —— 部分是**能不能访问**的问题：
+Cloudflare 前置的站点（如 linux.do）在**同一份 cookie** 下，普通 HTTP 客户端拿到 403 挑战页，
+curl_cffi 拿到 200。
+
+- 封装层保持原有调用形态与异常名（`AsyncClient` / `HTTPError` / `HTTPStatusError` /
+  `TimeoutException` / `NetworkError` / …），并补齐了 curl_cffi 缺失的两个能力：
+  `aclose()`（它只有同步的 `close()`）与 `is_closed`；`follow_redirects` 在会话级与请求级
+  都翻译成 `allow_redirects`（curl_cffi 默认跟随重定向，与原来的行为相反）。
+- 下载器的流式读取改为 `stream=True` + `aiter_content()`（没有 `client.stream()` 上下文管理器形态）。
+- `httpx` 已从运行时依赖移除（仅剩 i18n 构建工具的间接依赖，生产镜像里不存在）。
+
+## 7. 平台侧改动（`lib/`，相对 z-mio/ParseHub）
 
 - **帖子与作者元数据**（上层消费方依赖）：
   - `is_sensitive` —— 平台有官方标记才置位（pixiv `xRestrict > 0`、twitter `possibly_sensitive`），
@@ -107,11 +121,15 @@ Telegram 的富文本消息（`sendRichMessage`），正文按原文 markdown �
   - t.co 还原：按 `entities.urls` 把短链换成 `expanded_url`。
 - **公共排版 helper**（所有平台共用）：`format_author_label` / `format_author_link` /
   `format_quote_block` / `profile_url` + `PROFILE_URL_TEMPLATES`。
+- **新增平台 linux.do（Discourse 论坛）**：读站点自带的话题 JSON（`/t/topic/<id>.json`）而非抓 HTML；
+  映射标题 / 楼主帖正文（cooked HTML → markdown，展开 `details` 折叠壳、按媒体单独发送图片）/ 作者 /
+  发布时间 / 浏览量 / 点赞 / 回复数 / 标签；`NSFW` 标签即平台自带敏感标记，驱动打码。
+  **需要 cookie**（`cf_clearance` + `_forum_session`），配置在 `platforms.linuxdo.cookies`。
 - **平台解析修复**：pixiv 整平台支持（尺寸、真实后缀、下载带 `Referer`、`master1200`）、
   facebook `watch/?v=` 与 `v` 参数保留、bilibili `view/detail` 需 cookie、
   yt-dlp 条目缺 `thumbnail`/`description` 时不再 KeyError、保留原语言音轨。
 
-## 7. i18n
+## 8. i18n
 
 新增文案（「查看」、「获取全部 N 项」、「上 传 中...」等）补齐 16 种语言：de / en / es /
 fr / id / it / ja / ko / nl / pl / pt-br / ru / th / tr / vi / zh-hant。

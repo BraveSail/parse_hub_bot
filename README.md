@@ -39,7 +39,7 @@ builds, tests and deploys everything. See
 
 ## ✨ Features
 
-- 🎬 **Multi-platform parsing** — Parse content from 16+ major platforms, including Douyin, Bilibili, YouTube,
+- 🎬 **Multi-platform parsing** — Parse content from 22 major platforms, including Douyin, Bilibili, YouTube,
   Xiaohongshu, and Twitter
 - ⚡ **Inline mode** — Parse a link from any chat by typing `@BotUsername <link>`
 - 🖼️ **Telegram-ready media** — Automatic transcoding, long-image splitting, and large-video segmentation
@@ -59,6 +59,7 @@ builds, tests and deploys everything. See
 | **Threads**     |  ✅   |     ✅      |                                 |
 | **Pixiv**       |       |     ✅      |          🖼️ Illustrations        |
 | **Bilibili**    |  ✅   |             |           📝 Updates            |
+| **linux.do**    |       |     ✅      |            📝 Forum             |
 | **Douyin**      |  ✅   |     ✅      |         ☀️ Daily posts          |
 | **TikTok**      |  ✅   |     ✅      |                                 |
 | **Weibo**       |  ✅   |     ✅      |                                 |
@@ -192,6 +193,7 @@ Direct connection (no proxy)
 | `threads`   | Threads     |
 | `pixiv`     | Pixiv       |
 | `bilibili`  | Bilibili    |
+| `linuxdo`   | linux.do    |
 | `douyin`    | Douyin      |
 | `tiktok`    | TikTok      |
 | `weibo`     | Weibo       |
@@ -215,6 +217,7 @@ Direct connection (no proxy)
 - `YouTube`
 - `Pixiv`
 - `Bilibili`
+- `linux.do`
 - `Douyin`
 - `TikTok`
 - `Kuaishou`

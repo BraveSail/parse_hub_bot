@@ -38,7 +38,7 @@
 
 ## ✨ 功能特性
 
-- 🎬 **多平台解析** — 抖音、B站、YouTube、小红书、Twitter 等 16+ 主流平台一站搞定
+- 🎬 **多平台解析** — 抖音、B站、YouTube、小红书、Twitter 等 22 个平台一站搞定
 - 📰 **富文本排版** — 正文按 Telegram 富文本消息还原原文格式, 发布时间/浏览量/来源收在页尾
 - ⚡ **内联模式** — 在任意聊天窗口输入 `@BotUsername <链接>` 即可解析
 - 🖼️ **Tg 兼容** — 自动转码、长图切割、大视频分段
@@ -56,6 +56,7 @@
 | **Threads**     |  ✅  |  ✅  |                           |
 | **Pixiv**       |      |  ✅  |          🖼️ 插画          |
 | **Bilibili**    |  ✅  |      |          📝 动态          |
+| **linux.do**    |      |  ✅  |          📝 论坛          |
 | **抖音**        |  ✅  |  ✅  |          ☀️日常           |
 | **TikTok**      |  ✅  |  ✅  |                           |
 | **微博**        |  ✅  |  ✅  |                           |
@@ -188,6 +189,7 @@ platforms:
 | `threads`   | Threads     |
 | `pixiv`     | Pixiv       |
 | `bilibili`  | 哔哩哔哩    |
+| `linuxdo`   | linux.do    |
 | `douyin`    | 抖音        |
 | `tiktok`    | TikTok      |
 | `weibo`     | 微博        |
@@ -211,6 +213,7 @@ platforms:
 - `YouTube`
 - `Pixiv`
 - `Bilibili`
+- `linux.do`
 - `抖音`
 - `TikTok`
 - `快手`
