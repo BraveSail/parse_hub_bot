@@ -103,7 +103,8 @@ def test_inline_cover_url_without_media():
 
 def test_media_result_uses_cover_placeholder():
     """有封面时消息里先出现一张图 (老体验), 而不是纯文字"""
-    results = asyncio.run(build_inline_results(make_result(media=[VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg")]), None, "zh-hans", _config()))
+    result = make_result(media=[VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg")])
+    results = asyncio.run(build_inline_results(result, None, "zh-hans", _config()))
     item = results[0]
     assert type(item).__name__ == "InlineQueryResultPhoto"
     assert item.photo_url == "https://a/c.jpg"
@@ -113,7 +114,10 @@ def test_media_result_uses_cover_placeholder():
 
 def test_single_media_ref_does_not_break_dimensions():
     """media 是单个 ref (非 list) 时取尺寸不能抛"""
-    results = asyncio.run(build_inline_results(make_result(media=VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg", width=1080, height=1920)), None, "zh-hans", _config()))
+    result = make_result(
+        media=VideoRef(url="https://a/v.mp4", thumb_url="https://a/c.jpg", width=1080, height=1920)
+    )
+    results = asyncio.run(build_inline_results(result, None, "zh-hans", _config()))
     assert results[0].photo_width == 1080
 
 
