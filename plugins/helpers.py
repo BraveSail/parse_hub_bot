@@ -105,7 +105,7 @@ def build_metadata_line(
     lang: str = "",
     view_label: str = "",
 ) -> str:
-    """把发布时间/浏览量渲染成一行, 例如「下午7:00 · 2026年10月3日 · 1,455 查看」。
+    """把发布时间/浏览量渲染成一行, 例如「19:00 · 2026年10月3日 · 1,455 查看」。
 
     两项都没有 (或平台不提供) 时返回空串, 不会留下空占位符。
     view_label 由调用方用 ``t_("查看")`` 提供以获得正确语言。
@@ -120,20 +120,17 @@ def build_metadata_line(
 
 
 def _format_published(value: datetime, lang: str) -> list[str]:
-    """返回 [时间, 日期] 两段 (中文按 12 小时制 + 中文日期, 其他语言用数字格式)。"""
+    """返回 [时间, 日期] 两段 (一律 24 小时制, 中文用中文日期)。"""
     local = value
     try:
         local = value.astimezone(ZoneInfo(_METADATA_TIMEZONE))
     except Exception:  # noqa: BLE001 - 时区数据缺失时退回原时区, 不该让整条消息失败
         pass
 
+    clock = f"{local.hour:02d}:{local.minute:02d}"
     if lang.startswith("zh"):
-        hour = local.hour
-        ampm = "上午" if hour < 12 else "下午"
-        clock = f"{ampm}{hour % 12 or 12}:{local.minute:02d}"
-        date = f"{local.year}年{local.month}月{local.day}日"
-        return [clock, date]
-    return [local.strftime("%H:%M"), local.strftime("%Y-%m-%d")]
+        return [clock, f"{local.year}年{local.month}月{local.day}日"]
+    return [clock, local.strftime("%Y-%m-%d")]
 
 
 def build_caption_by_str(

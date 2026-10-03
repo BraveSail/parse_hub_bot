@@ -108,7 +108,24 @@ def test_metadata_line_zh_format():
         lang="zh-hans",
         view_label="查看",
     )
-    assert line == "下午7:00 · 2026年10月3日 · 1,455 查看"
+    assert line == "19:00 · 2026年10月3日 · 1,455 查看"
+
+
+def test_metadata_line_uses_24_hour_clock():
+    """一律 24 小时制: 凌晨与下午都不带 上午/下午"""
+    import datetime
+
+    morning = build_metadata_line(
+        published_at=datetime.datetime(2026, 10, 3, 3, 45, tzinfo=datetime.UTC), lang="zh-hans"
+    )
+    assert morning == "11:45 · 2026年10月3日"
+
+    midnight = build_metadata_line(
+        published_at=datetime.datetime(2026, 10, 3, 16, 5, tzinfo=datetime.UTC), lang="zh-hans"
+    )
+    assert midnight == "00:05 · 2026年10月4日"
+    assert "上午" not in morning + midnight
+    assert "下午" not in morning + midnight
 
 
 def test_metadata_line_other_language_uses_numeric_datetime():
@@ -130,7 +147,7 @@ def test_metadata_line_without_views():
     line = build_metadata_line(
         published_at=datetime.datetime(2026, 10, 3, 11, 0, tzinfo=datetime.UTC), view_count=None, lang="zh-hans"
     )
-    assert line == "下午7:00 · 2026年10月3日"
+    assert line == "19:00 · 2026年10月3日"
     assert " ·  · " not in line
 
 
@@ -140,7 +157,7 @@ def test_metadata_line_empty_when_nothing_available():
 
 def test_caption_places_metadata_before_source():
     caption = build_caption_by_str(
-        "Title", "Body", "https://x.com/u/status/1", author_name="Author", metadata_line="下午7:00 · 2026年10月3日"
+        "Title", "Body", "https://x.com/u/status/1", author_name="Author", metadata_line="19:00 · 2026年10月3日"
     )
     assert "Body" in caption
     assert caption.index("2026年10月3日") < caption.index("Source")
@@ -174,7 +191,7 @@ def test_rich_markdown_puts_metadata_and_source_in_footer():
     assert "---" in markdown
     # 统计与来源在 footer, 且位于正文之后
     footer = markdown.split("<footer>")[1]
-    assert "下午7:00 · 2026年10月3日 · 1,455 查看" in footer
+    assert "19:00 · 2026年10月3日 · 1,455 查看" in footer
     # footer 里 markdown 链接语法不生效, 必须用 HTML 的 a href
     assert '<a href="https://x.com/u/status/1">Source（Twitter）</a>' in footer
     assert markdown.index("- 列表项") < markdown.index("<footer>")

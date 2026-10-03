@@ -38,7 +38,7 @@ def test_parse_inline_markdown_link():
 
 def test_parse_inline_html_link():
     """footer 里的来源链接是 HTML: markdown 链接语法在 footer 块里不解析"""
-    parts = parse_inline('下午2:37 · 32,846 查看 · <a href="https://x.com/u/status/1">Source（Twitter）</a>')
+    parts = parse_inline('14:37 · 32,846 查看 · <a href="https://x.com/u/status/1">Source（Twitter）</a>')
     link = next(p for p in parts if isinstance(p, RichTextUrl))
     assert link.text == "Source（Twitter）"
     assert link.url == "https://x.com/u/status/1"
