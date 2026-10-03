@@ -2,10 +2,13 @@
 
 import asyncio
 from datetime import UTC, datetime
+
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from parsehub.parsers.base.ytdlp import YtVideoInfo
 from parsehub.parsers.parser.bilibili import BiliParse
+from parsehub.parsers.parser.facebook import FacebookParse
 from parsehub.parsers.parser.douyin import DouyinApiResult, DouyinMediaType
 from parsehub.parsers.parser.threads import ThreadsParser
 from parsehub.parsers.parser.twitter import TwitterParser
@@ -107,6 +110,26 @@ def test_ytdlp_parse_result_carries_metadata():
     result = YtVideoParseResult(dl=yt_info(), title="T")
     assert result.published_at == datetime(2014, 12, 5, 8, 0, 2, tzinfo=UTC)
     assert result.view_count == 2823887
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.facebook.com/watch/?v=10153231379946729",
+        "https://www.facebook.com/watch?v=10153231379946729",
+        "https://www.facebook.com/someuser/videos/123456789/",
+        "https://www.facebook.com/share/v/abc123/",
+        "https://www.facebook.com/reel/123456789",
+    ],
+)
+def test_facebook_url_forms_are_matched(url):
+    assert FacebookParse.match(url)
+
+
+def test_facebook_keeps_v_parameter():
+    """v 是定位视频的参数, 被清理掉就会退化成 /watch 让 yt-dlp 解析失败"""
+    raw = asyncio.run(FacebookParse().get_raw_url("https://www.facebook.com/watch?v=10153231379946729"))
+    assert "v=10153231379946729" in raw
 
 
 # ── bilibili: data.View.pubdate + stat.view ───────────────────
