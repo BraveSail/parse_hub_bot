@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from easy_ai18n import LocaleContent
 from parsehub import ParseHub, Platform
 from parsehub.types import AnyParseResult, RichTextParseResult
+from parsehub.utils.helpers import format_author_label, format_author_link
 from pyrogram.types import Message
 
 from i18n import t_
@@ -524,44 +525,18 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
     return ""
 
 
-def format_author_label(name: str, handle: str = "") -> str:
-    """把作者名与 handle 拼成一行标签。
-
-    - 两者都有且不同 → ``名字 @handle``
-    - 两者相同 (忽略大小写、首尾空白与 handle 的 ``@`` 前缀) → 只留 ``@handle``
-    - 只有 name → 返回 name; 只有 handle → 返回 ``@handle``; 都没有 → 空串
-
-    handle 传入时可能已带 ``@`` (如 ``"@abc"``), 会统一去掉前缀, 避免出现 ``@@``。
-    """
-    name = (name or "").strip()
-    handle = (handle or "").strip().lstrip("@").strip()
-    if not name:
-        return f"@{handle}" if handle else ""
-    if not handle:
-        return name
-    if name.casefold() == handle.casefold():
-        return f"@{handle}"
-    return f"{name} @{handle}"
-
-
 def format_author_line(parse_result: AnyParseResult) -> str:
     """作者行 (markdown): ``**名字 @handle：**``。
 
-    有作者主页地址时, ``@handle`` 渲染成指向主页的链接 (富文本里 markdown 链接
-    语法不生效, 必须用 HTML ``<a href>``); 没有地址就保持纯文本。
+    拼装与链接一律交给库里的 ``format_author_link`` —— 这里不要再手写一遍替换,
+    否则"作者长什么样"这件事就有了两份实现 (曾经就是如此)。
     """
-    label = format_author_label(
-        get_parse_author_name(parse_result), getattr(parse_result, "author_handle", "")
+    label = format_author_link(
+        get_parse_author_name(parse_result),
+        str(getattr(parse_result, "author_handle", "") or ""),
+        str(getattr(parse_result, "author_url", "") or ""),
     )
-    if not label:
-        return ""
-    handle = str(getattr(parse_result, "author_handle", "") or "").strip().lstrip("@").strip()
-    url = str(getattr(parse_result, "author_url", "") or "").strip()
-    if url and handle and f"@{handle}" in label:
-        href = html.escape(url, quote=True)
-        link = f'<a href="{href}">@{html.escape(handle)}</a>'
-        label = label.replace(f"@{handle}", link)
-    return f"**{label}：**"
+    return f"**{label}：**" if label else ""
 
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")

@@ -34,6 +34,7 @@ from plugins.helpers import (
     build_rich_markdown,
     build_start_text,
 )
+from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     RICH_RESULT_ID,
     build_cached_rich_content,
@@ -328,10 +329,17 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         await reporter.report(_t("上 传 中..."))
         try:
             media_refs = to_list(parse_result.media)
+            video_thumbs = (
+                await prepare_video_thumbs(media_refs, platform=parse_result.platform)
+                if config.video_cover
+                else {}
+            )
             media, placeholders, media_blocks = build_rich_media(
                 media_refs,
                 result.processed_list,
+                video_cover=config.video_cover,
                 is_sensitive=parse_result.is_sensitive,
+                video_thumbs=video_thumbs,
             )
             markdown = build_rich_markdown(
                 parse_result,

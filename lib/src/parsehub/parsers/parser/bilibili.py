@@ -19,7 +19,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import UA, get_author_name
+from ...utils.helpers import UA, get_author_name, profile_url
 from ..base.base import BaseParser
 from ..base.ytdlp import YtParser, YtVideoParseResult
 
@@ -129,9 +129,12 @@ class BiliParse(BaseParser):
         content = desc.strip()
         if content == "-":
             content = ""
+        owner = view.get("owner") or {}
         return BiliVideoParseResult(
             title=data["View"]["title"],
-            author_name=get_author_name(view.get("owner")),
+            author_name=get_author_name(owner),
+            # B 站没有 @用户名, 主页靠 UID: 名字本身会渲染成 space 链接
+            author_url=profile_url(Platform.BILIBILI, user_id=owner.get("mid")),
             content=content,
             published_at=view.get("pubdate"),
             view_count=(view.get("stat") or {}).get("view"),

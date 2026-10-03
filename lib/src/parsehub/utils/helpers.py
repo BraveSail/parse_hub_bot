@@ -91,16 +91,24 @@ def profile_url(platform: Platform | None, handle: str = "", user_id: str = "") 
 
 
 def format_author_link(name: str, handle: str = "", url: str = "") -> str:
-    """作者标签 (名字 @handle); 给了主页地址时把 @handle 渲染成 HTML 链接。
+    """作者标签 (名字 @handle); 给了主页地址时渲染成 HTML 链接.
 
     富文本 (rich message) 里 markdown 链接语法不生效, 会原样显示成 ``[文字](url)``,
     所以在这里统一用 ``<a href>``。
+
+    有 handle 时链接挂在 ``@handle`` 上; **没有 handle 时链接挂在显示名上**
+    —— 像 B 站这种只有主页 ID、没有 @用户名 的平台, 这样至少名字是可点的。
     """
     label = format_author_label(name, handle)
+    if not (label and url):
+        return label
+    href = html.escape(url, quote=True)
     clean = (handle or "").strip().lstrip("@").strip()
-    if label and url and clean and f"@{clean}" in label:
-        link = f'<a href="{html.escape(url, quote=True)}">@{html.escape(clean)}</a>'
-        label = label.replace(f"@{clean}", link)
+    if clean and f"@{clean}" in label:
+        return label.replace(f"@{clean}", f'<a href="{href}">@{html.escape(clean)}</a>')
+    display = (name or "").strip()
+    if display and display in label:
+        return label.replace(display, f'<a href="{href}">{html.escape(display)}</a>', 1)
     return label
 
 

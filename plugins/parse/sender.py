@@ -35,6 +35,7 @@ from plugins.helpers import (
     get_parse_author_name,
 )
 from plugins.parse.cache import cache_media_from_message
+from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import build_cached_rich_content, build_rich_media, extract_cache_media
 from plugins.parse.rich_blocks import markdown_to_blocks
 from repo.settings import SettingsConfig
@@ -516,11 +517,18 @@ async def send_rich_media(
     inline 也能直接带媒体 (不用二次编辑)。
     """
     media_refs = to_list(parse_result.media)
+    # 视频封面要本地文件: 富文本的 document 只带 id, 远端 cover 会被丢掉
+    video_thumbs = (
+        await prepare_video_thumbs(media_refs, platform=parse_result.platform)
+        if sender.config.video_cover
+        else {}
+    )
     media, placeholders, media_blocks = build_rich_media(
         media_refs,
         processed_list,
         video_cover=sender.config.video_cover,
         is_sensitive=parse_result.is_sensitive,
+        video_thumbs=video_thumbs,
     )
     markdown = build_rich_markdown(
         parse_result,
