@@ -213,11 +213,11 @@ def build_rich_markdown(
     parts: list[str] = []
     if title and not config.hide_title:
         parts.append(f"### {title}")
-    author = format_author_label(get_parse_author_name(parse_result), getattr(parse_result, "author_handle", ""))
-    if author:
-        parts.append(f"**{author}：**")
-    if content and not config.hide_desc:
-        parts.append(content)
+    if author := format_author_line(parse_result):
+        parts.append(author)
+    body_text, quote = split_trailing_quote(content) if content else ("", "")
+    if body_text and not config.hide_desc:
+        parts.append(body_text)
     if custom_content:
         parts.append(custom_content)
 
@@ -225,6 +225,10 @@ def build_rich_markdown(
         parts.append(tag_line)
 
     parts.extend(wrap_collage(media_placeholders))
+
+    if quote and not config.hide_desc:
+        # 被引用/被回复的卡片: 主推自己的媒体要排在它上面 (与 X 上的观感一致)
+        parts.append(quote)
 
     body = "\n\n".join(part for part in parts if part)
 
@@ -261,6 +265,7 @@ def build_rich_markdown_by_str(
     view_label: str = "",
     author_name: str = "",
     author_handle: str = "",
+    author_url: str = "",
     published_at: datetime | None = None,
     view_count: int | None = None,
     tags: Sequence[str] | None = None,
@@ -269,7 +274,9 @@ def build_rich_markdown_by_str(
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。"""
     return build_rich_markdown(
-        _RichFields(title, content, raw_url, author_name, author_handle, published_at, view_count, tags),  # type: ignore[arg-type]
+        _RichFields(  # type: ignore[arg-type]
+            title, content, raw_url, author_name, author_handle, author_url, published_at, view_count, tags
+        ),
         config=config,
         lang=lang,
         view_label=view_label,
@@ -281,12 +288,15 @@ def build_rich_markdown_by_str(
 class _RichFields:
     """最小 duck-type: 让 build_rich_markdown 能吃缓存里的字段。"""
 
-    def __init__(self, title, content, raw_url, author_name, author_handle, published_at, view_count, tags=None):
+    def __init__(
+        self, title, content, raw_url, author_name, author_handle, author_url, published_at, view_count, tags=None
+    ):
         self.title = title or ""
         self.content = content or ""
         self.raw_url = raw_url
         self.author_name = author_name or ""
         self.author_handle = author_handle or ""
+        self.author_url = author_url or ""
         self.published_at = published_at
         self.view_count = view_count
         self.tags = list(tags or [])
@@ -304,6 +314,26 @@ def rich_content(parse_result: AnyParseResult) -> str:
     if isinstance(parse_result, RichTextParseResult) and markdown_content:
         return markdown_content
     return parse_result.content or ""
+
+
+def split_trailing_quote(content: str) -> tuple[str, str]:
+    """把正文末尾的引用块拆出来, 返回 (引用之前的部分, 引用块)。
+
+    被引用的推文由解析器渲染成 markdown 引用块放在正文最后, 但主推自己的媒体
+    按 X 的观感应该紧跟主推文字、在被引用卡片**之上**, 所以先把尾部引用块摘出来,
+    由调用方把媒体插在它前面。只有连续的行首 ``>`` 才算引用块, 不会跨普通空行,
+    因此不会误吃正文前面的 "回复" 引用块。
+    """
+    lines = content.split("\n")
+    end = len(lines)
+    while end > 0 and not lines[end - 1].strip():
+        end -= 1
+    start = end
+    while start > 0 and lines[start - 1].lstrip().startswith(">"):
+        start -= 1
+    if start >= end:
+        return content, ""
+    return "\n".join(lines[:start]).rstrip(), "\n".join(lines[start:end]).strip()
 
 
 def wrap_collage(placeholders: Sequence[str]) -> list[str]:
@@ -403,6 +433,26 @@ def format_author_label(name: str, handle: str = "") -> str:
     if name.casefold() == handle.casefold():
         return f"@{handle}"
     return f"{name} @{handle}"
+
+
+def format_author_line(parse_result: AnyParseResult) -> str:
+    """作者行 (markdown): ``**名字 @handle：**``。
+
+    有作者主页地址时, ``@handle`` 渲染成指向主页的链接 (富文本里 markdown 链接
+    语法不生效, 必须用 HTML ``<a href>``); 没有地址就保持纯文本。
+    """
+    label = format_author_label(
+        get_parse_author_name(parse_result), getattr(parse_result, "author_handle", "")
+    )
+    if not label:
+        return ""
+    handle = str(getattr(parse_result, "author_handle", "") or "").strip().lstrip("@").strip()
+    url = str(getattr(parse_result, "author_url", "") or "").strip()
+    if url and handle and f"@{handle}" in label:
+        href = html.escape(url, quote=True)
+        link = f'<a href="{href}">@{html.escape(handle)}</a>'
+        label = label.replace(f"@{handle}", link)
+    return f"**{label}：**"
 
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")

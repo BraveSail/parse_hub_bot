@@ -99,6 +99,7 @@ class CacheParseResult(BaseModel):
     content: str = ""
     author_name: str = ""
     author_handle: str = ""
+    author_url: str = ""
     is_sensitive: bool = False
     published_at: datetime | None = None
     view_count: int | None = None

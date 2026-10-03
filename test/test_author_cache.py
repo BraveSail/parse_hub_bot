@@ -253,6 +253,74 @@ def test_rich_markdown_renders_tags():
     assert markdown.index("正文") < markdown.index("AI画像")
 
 
+def test_author_handle_links_to_profile():
+    """@handle 渲染成作者主页链接 (富文本里必须用 HTML a 标签)"""
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+    result.author_name = "隣人X"
+    result.author_handle = "user_ydyj5227"
+    result.author_url = "https://www.pixiv.net/users/123568955"
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
+    )
+    assert '<a href="https://www.pixiv.net/users/123568955">@user_ydyj5227</a>' in markdown
+    assert "隣人X" in markdown
+
+
+def test_author_without_profile_url_stays_plain():
+    """没有主页地址时保持纯文本, 不留空链接"""
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.PIXIV
+    result.raw_url = "https://www.pixiv.net/artworks/1"
+    result.author_name = "某人"
+    result.author_handle = "someone"
+
+    markdown = build_rich_markdown(
+        result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
+    )
+    author_line = next(line for line in markdown.splitlines() if "@someone" in line)
+    assert "<a href=" not in author_line
+
+
+def test_media_sits_above_the_quote_card():
+    """主推自己的媒体要排在引用卡片之上: 正文 → 标签 → 媒体 → 引用"""
+    from parsehub.types import ImageParseResult, Platform
+
+    result = ImageParseResult(content="主推正文", photo=[])
+    result.platform = Platform.TWITTER
+    result.raw_url = "https://x.com/a/status/1"
+    result.content = "主推正文\n\n> 引用 某人 @other：\n> 被引用的内容"
+
+    markdown = build_rich_markdown(
+        result,
+        config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False),
+        media_placeholders=["![](tg://photo?id=m0)"],
+    )
+    assert markdown.index("主推正文") < markdown.index("tg://photo?id=m0") < markdown.index("被引用的内容")
+
+
+def test_reply_quote_stays_above_the_body():
+    """回复块仍在正文之前 (只有尾部引用块会后移)"""
+    from plugins.helpers import split_trailing_quote
+
+    head, quote = split_trailing_quote("> 回复 a：\n> hi\n\n正文\n\n> 引用 b：\n> yo")
+    assert head == "> 回复 a：\n> hi\n\n正文"
+    assert quote == "> 引用 b：\n> yo"
+
+
+def test_split_without_quote_returns_content_untouched():
+    from plugins.helpers import split_trailing_quote
+
+    assert split_trailing_quote("纯正文") == ("纯正文", "")
+    assert split_trailing_quote("") == ("", "")
+
+
 def test_tags_with_middle_dot_are_linked_not_bare_hashtags():
     """含 ``・`` 的长标签必须走链接。
 

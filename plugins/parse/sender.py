@@ -493,6 +493,7 @@ async def send_media(
             content=parse_result.content,
             author_name=get_parse_author_name(parse_result),
             author_handle=getattr(parse_result, "author_handle", ""),
+            author_url=getattr(parse_result, "author_url", ""),
             is_sensitive=parse_result.is_sensitive,
             published_at=getattr(parse_result, "published_at", None),
             view_count=getattr(parse_result, "view_count", None),

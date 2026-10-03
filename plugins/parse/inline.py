@@ -415,6 +415,7 @@ def build_cached_rich_result(
         view_label=_t("查看"),
         author_name=entry.parse_result.author_name,
         author_handle=entry.parse_result.author_handle,
+        author_url=entry.parse_result.author_url,
         published_at=entry.parse_result.published_at,
         view_count=entry.parse_result.view_count,
         tags=entry.parse_result.tags,
