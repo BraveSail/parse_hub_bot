@@ -89,11 +89,55 @@ zh-hant  ⚠️ 展開全文        ja-jp  ⚠️ 全文を表示
    - ⚠️ **`inline_result_download`（选中回调）也要剥** —— 它重新读 `chosen_result.query`，
      不剥的话标记会被拼进 URL
 
+## 坑：缓存命中时 `/s` 曾完全失效
+
+用户报「我 url /s 不行」。日志给了根因：
+
+```
+06:05:47 | Parse: 收到解析请求: url=https://x.com/i/status/2106362173111034087, chat_id=-1001481033767
+06:11:31 | Parse: 收到解析请求: url=https://x.com/i/status/2106362173111034087, chat_id=-1001481033767  ← 带 /s
+```
+
+**同一条链接几分钟前已解析过 → file_id 缓存命中 → 走缓存直发路径**：
+
+```
+handle_parse → persistent_cache.get(raw_url) 命中
+             → _try_send_cached → send_cached → build_cached_rich_content
+```
+
+而 `build_cached_rich_content` 一直**不知道 `force_spoiler`** —— 它在缓存历次改动里
+只加了 `view_label`/`custom_content`，没有任何渲染开关。于是带 `/s` 发送时，
+排版照旧不带折叠，表现就是"/s 没用"。
+
+**关键认识**：`CacheEntry` 存的是**解析字段**（title/content/author/…）+ 媒体 file_id，
+**不含渲染后的 markdown**，`rich` 只是个标志。所以"遮不遮"是**发送时的排版决定**，
+缓存命中时完全可以照做 —— 不需要跳过缓存，只要把参数传下去。
+
+**修复**（3 条缓存路径，6 处）：
+
+| 路径 | 链路 |
+| --- | --- |
+| 私聊/群 | `handle_parse` → `_try_send_cached` → `send_cached` → `build_cached_rich_content` |
+| inline | `_call_inline_parse` → `build_cached_rich_result` → 同上 |
+| guest | `_answer` → 同上 |
+
+`force_spoiler` 依次传进 `send_cached` / `build_cached_rich_result` / `build_cached_rich_content`
+→ `build_rich_markdown_by_str` 的 `hide_content` → `build_rich_markdown`。
+
+另外**请求日志加上 `force_spoiler=`** —— 这次的日志里 url 已被剥掉标记，无法分辨
+用户到底带没带 `/s`，只能靠时间线推断缓存命中。以后一眼可见。
+
 ## 验证
 
-- bot 305 passed（新增 18 条：标记解析 / 与纯链接判定共存 / 渲染 / 不留预览 /
-  媒体与引用媒体都在折叠内 / 摘要随语言 / 短正文不误折）、lib 435 passed、
-  `check.sh`（ruff + pylint）干净。
+- bot 309 passed（新增 22 条：标记解析 / 与纯链接判定共存 / 渲染 / 不留预览 /
+  媒体与引用媒体都在折叠内 / 摘要随语言 / 短正文不误折 / **缓存路径渲染与传参**）、
+  lib 435 passed、`check.sh`（ruff + pylint）干净。
+- **真机 · 用真实缓存条目**（用户报障的那条 URL，缓存已命中）走 `send_cached`：
+
+```
+不带 /s: 折叠=False
+带 /s:   折叠=True  摘要=⚠️  媒体在折叠内=True      ← 修复后才对
+```
 - **真机服务端块**（全遮）：
 
 ```
