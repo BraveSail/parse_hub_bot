@@ -39,6 +39,7 @@ from plugins.parse.inline_rich import (
     edit_inline_rich_message,
 )
 from plugins.parse.reporters import InlineStatusReporter
+from plugins.parse.rich_blocks import markdown_to_blocks
 from services import ParsePipeline, ParseService, SettingsService, StatusReporter, UserService
 from services.cache import persistent_cache
 from utils.helpers import to_list, with_request_id
@@ -195,7 +196,7 @@ async def _answer(
     # ① 缓存命中: 直接用 file_id 发, 跳过解析/下载/转码/上传 (与私聊/群/inline 一致)
     if cached := await persistent_cache.get(raw_url):
         logger.debug(f"guest: file_id 缓存命中, 直接发送 url={raw_url}")
-        markdown, cached_media = build_cached_rich_content(
+        markdown, cached_media, cached_blocks = build_cached_rich_content(
             cached,
             raw_url,
             lang=locale,
@@ -212,6 +213,8 @@ async def _answer(
             description=_clip(pr.content, 200),
             markdown=markdown,
             media=cached_media or None,
+            # 敏感内容走 blocks 才打得了码 (缓存里带着 is_sensitive, 以前没用上)
+            blocks=markdown_to_blocks(markdown, media_blocks=cached_blocks) if cached_blocks else None,
         )
         return True
 

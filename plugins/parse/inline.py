@@ -43,6 +43,7 @@ from plugins.parse.inline_rich import (
     RICH_RESULT_ID,
     build_cached_rich_content,
     build_rich_media,
+    cached_rich_message,
     edit_inline_rich_message,
 )
 from plugins.parse.reporters import InlineStatusReporter
@@ -380,7 +381,7 @@ def build_cached_rich_result(
 ) -> InlineQueryResult:
     """缓存路径的富文本结果项 (带 file_id 媒体, 一项同时给图和页脚)。"""
     _t = t_[lang]
-    markdown, media = build_cached_rich_content(
+    markdown, media, media_blocks = build_cached_rich_content(
         entry,
         raw_url,
         lang=lang,
@@ -394,7 +395,7 @@ def build_cached_rich_result(
         id=RICH_RESULT_ID,
         title=clip_inline_text(entry.parse_result.title, INLINE_TITLE_LIMIT) or "-",
         description=clip_inline_text(entry.parse_result.content, INLINE_DESC_LIMIT),
-        input_message_content=InputRichMessageContent(InputRichMessage(markdown=markdown, media=media or None)),
+        input_message_content=InputRichMessageContent(cached_rich_message(markdown, media, media_blocks)),
         reply_markup=reply_markup,
     )
 

@@ -2,7 +2,12 @@
 
 import types
 
-from plugins.parse.inline_rich import build_cached_rich_content, cache_media_blocks, extract_cache_media
+from plugins.parse.inline_rich import (
+    build_cached_rich_content,
+    cache_media_blocks,
+    cached_rich_message,
+    extract_cache_media,
+)
 from services.cache import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult
 
 
@@ -32,7 +37,7 @@ def _entry(**kwargs):
 
 def test_cache_media_blocks_reuses_file_ids_without_upload():
     """file_id 直接进 InputMedia, 不触发上传"""
-    media, placeholders, quoted, reply = cache_media_blocks(_entry())
+    media, placeholders, quoted, reply, blocks = cache_media_blocks(_entry())
     assert len(media) == 3
     assert placeholders == [
         "![](tg://photo?id=m0)",
@@ -49,7 +54,7 @@ def test_cache_media_blocks_splits_the_quoted_tail():
     """末尾 N 项属于引用块: 要单独给出来, 否则被引用内容的媒体会摆到正文后面"""
     entry = _entry()
     entry.parse_result.quoted_media_count = 1
-    media, placeholders, quoted, reply = cache_media_blocks(entry)
+    media, placeholders, quoted, reply, blocks = cache_media_blocks(entry)
     assert placeholders == ["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"]
     assert quoted == ["![](tg://video?id=m2)"]
     assert reply == []
@@ -60,7 +65,7 @@ def test_cached_rich_content_puts_quoted_media_in_the_quote_block():
     entry = _entry()
     entry.parse_result.quoted_media_count = 1
     entry.parse_result.content = "正文\n\n> <i>被引用的文字</i>"
-    markdown, _ = build_cached_rich_content(
+    markdown, _, _ = build_cached_rich_content(
         entry, "https://www.pixiv.net/artworks/1", lang="zh-hans", config=_config(), view_label="查看"
     )
     assert "> <i>被引用的文字</i>" in markdown
@@ -68,7 +73,7 @@ def test_cached_rich_content_puts_quoted_media_in_the_quote_block():
 
 
 def test_cached_rich_content_keeps_layout_tags_and_collage():
-    markdown, media = build_cached_rich_content(
+    markdown, media, _ = build_cached_rich_content(
         _entry(), "https://www.pixiv.net/artworks/1", lang="zh-hans", config=_config(), view_label="查看"
     )
     assert "正文" in markdown
@@ -80,7 +85,7 @@ def test_cached_rich_content_keeps_layout_tags_and_collage():
 
 def test_cached_rich_content_without_media():
     entry = CacheEntry(parse_result=CacheParseResult(title="T", content="正文"))
-    markdown, media = build_cached_rich_content(entry, "https://x.com/a/status/1", lang="zh-hans", config=_config())
+    markdown, media, _ = build_cached_rich_content(entry, "https://x.com/a/status/1", lang="zh-hans", config=_config())
     assert "正文" in markdown
     assert media == []
     assert "<tg-collage>" not in markdown
@@ -181,6 +186,57 @@ def test_extract_cache_media_reads_file_ids_from_blocks():
     assert all(m.type == CacheMediaType.PHOTO for m in found)
 
 
+# ── 缓存命中的敏感内容必须打码 ─────────────────────────────────────────
+#
+# 回归: 缓存路径以前造的是**不带 spoiler** 的 InputMediaPhoto, 而且走 markdown 路径
+# (markdown 的富文本媒体块**打不了码**)。于是"第一次发有遮罩、第二次发同一个链接没了"
+# —— 而第二次恰恰必然命中缓存 (用户报「自动遮罩 …我刚DM还是没」)。
+# CacheParseResult 里一直带着 is_sensitive, 只是渲染时没用上。
+
+
+def test_sensitive_entry_produces_spoiler_blocks():
+    entry = _entry(is_sensitive=True)
+    _media, _placeholders, _quoted, _reply, blocks = cache_media_blocks(entry)
+    assert blocks, "敏感内容的缓存必须产出 blocks 映射, 否则没处打码"
+    kinds = {type(v).__name__ for v in blocks.values()}
+    assert kinds == {"SpoilerPhotoBlock", "SpoilerVideoBlock"}
+
+
+def test_non_sensitive_entry_produces_no_blocks():
+    """不敏感时保持原样 (走 markdown + media, 少一层转换)"""
+    _media, _placeholders, _quoted, _reply, blocks = cache_media_blocks(_entry())
+    assert blocks == {}
+
+
+def test_cached_rich_message_takes_the_blocks_path_when_sensitive():
+    """敏感 -> blocks 路径; spoiler 只在 raw 块上存在, markdown 路径打不了码"""
+    entry = _entry(is_sensitive=True)
+    markdown, media, blocks = build_cached_rich_content(
+        entry, "https://x.com/a/status/1", lang="zh-hans", config=_config()
+    )
+    rich = cached_rich_message(markdown, media, blocks)
+    assert rich.blocks, "敏感内容应该走 blocks 路径"
+    assert rich.markdown is None
+
+    # 多图会被包成 collage, 打码块在它**内部** —— 要递归找
+    def walk(nodes):
+        for node in nodes or []:
+            yield node
+            yield from walk(getattr(node, "items", None) or getattr(node, "blocks", None))
+
+    kinds = {type(n).__name__ for n in walk(rich.blocks)}
+    assert "SpoilerPhotoBlock" in kinds, f"没找到打码块: {sorted(kinds)}"
+
+
+def test_cached_rich_message_stays_markdown_when_not_sensitive():
+    entry = _entry()
+    markdown, media, blocks = build_cached_rich_content(
+        entry, "https://x.com/a/status/1", lang="zh-hans", config=_config()
+    )
+    rich = cached_rich_message(markdown, media, blocks)
+    assert rich.markdown and not rich.blocks
+
+
 def test_extract_cache_media_on_empty_message():
     assert extract_cache_media(None) == []
     assert extract_cache_media(types.SimpleNamespace(blocks=None)) == []
@@ -194,7 +250,7 @@ def test_extract_cache_media_on_empty_message():
 
 
 def test_cached_content_folds_when_spoiler_is_forced():
-    markdown, _ = build_cached_rich_content(
+    markdown, _, _ = build_cached_rich_content(
         _entry(), "https://x.com/a/status/1", lang="zh-hans", config=_config(), spoiler_tag="#nsfw"
     )
     assert "<details>" in markdown
@@ -203,7 +259,7 @@ def test_cached_content_folds_when_spoiler_is_forced():
 
 def test_cached_media_goes_inside_the_fold_too():
     """缓存路径的媒体同样要进折叠 —— 否则图露在外面等于没遮"""
-    markdown, _ = build_cached_rich_content(
+    markdown, _, _ = build_cached_rich_content(
         _entry(), "https://x.com/a/status/1", lang="zh-hans", config=_config(), spoiler_tag="#nsfw"
     )
     inner = markdown.split("<details>", 1)[1]
@@ -213,7 +269,7 @@ def test_cached_media_goes_inside_the_fold_too():
 
 
 def test_cached_content_is_normal_without_the_flag():
-    markdown, _ = build_cached_rich_content(
+    markdown, _, _ = build_cached_rich_content(
         _entry(), "https://x.com/a/status/1", lang="zh-hans", config=_config()
     )
     assert "<details>" not in markdown

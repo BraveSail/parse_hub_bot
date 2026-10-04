@@ -68,7 +68,7 @@ def _run_answer(*, cached, pipeline_should_run: bool):
         patch.object(
             guest_mod,
             "build_cached_rich_content",
-            MagicMock(return_value=("**缓存正文**", [])),
+            MagicMock(return_value=("**缓存正文**", [], {})),
         ),
         patch.object(guest_mod, "ParsePipeline", pipeline_cls),
         patch.object(guest_mod, "_deliver", deliver),

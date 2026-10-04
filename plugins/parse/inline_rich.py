@@ -191,7 +191,7 @@ async def edit_inline_rich_message(
     return True
 
 
-def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str]]:
+def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], dict]:
     """把缓存里的 file_id 变成富文本的 media 块 + 正文/被引用/被回复三级占位符。
 
     用已存在的 file_id 走 ``InputMediaPhoto/Document``: pyrogram 的 ``_get_input_photo``
@@ -199,6 +199,11 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str]]:
 
     缓存的媒体是平铺的媒体项列表, 顺序与 ``media_refs`` 一致
     (``[正文..., 被回复..., 被引用...]``), 按两个计数从末尾往前划给对应的引用块。
+
+    **敏感内容 (``is_sensitive``) 额外产出一份 blocks 映射** —— 官方 API 的富文本媒体块
+    没有 spoiler 字段, 只有 raw 的 ``PageBlockPhoto/Video(spoiler=)`` 才有, 所以敏感内容
+    必须走 blocks 路径 (与直发路径 ``build_rich_media`` 同一套做法)。
+    不产出的话**缓存命中的敏感内容就是没打码的** —— 而"第二次发同一个链接"恰恰总是命中缓存。
     """
     from pyrogram.types import (
         InputMediaAnimation,
@@ -209,8 +214,10 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str]]:
 
     from services.cache import CacheMediaType
 
+    sensitive = bool(getattr(entry.parse_result, "is_sensitive", False))
     media: list[InputRichMessageMedia] = []
     placeholders: list[str] = []
+    media_blocks: dict[str, Any] = {}
     for index, m in enumerate(entry.media or []):
         match m.type:
             case CacheMediaType.PHOTO:
@@ -226,13 +233,27 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str]]:
         media_id = f"m{index}"
         media.append(InputRichMessageMedia(media_id, item))
         placeholders.append(f"![](tg://{kind}?id={media_id})")
+        if sensitive:
+            from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
+
+            match m.type:
+                case CacheMediaType.PHOTO:
+                    media_blocks[media_id] = SpoilerPhotoBlock(item)
+                case CacheMediaType.VIDEO | CacheMediaType.ANIMATION:
+                    media_blocks[media_id] = SpoilerVideoBlock(item)
 
     pr = entry.parse_result
     quoted_count = max(0, min(int(getattr(pr, "quoted_media_count", 0) or 0), len(placeholders)))
     tail_split = len(placeholders) - quoted_count
     reply_count = max(0, min(int(getattr(pr, "reply_media_count", 0) or 0), tail_split))
     head_split = tail_split - reply_count
-    return media, placeholders[:head_split], placeholders[tail_split:], placeholders[head_split:tail_split]
+    return (
+        media,
+        placeholders[:head_split],
+        placeholders[tail_split:],
+        placeholders[head_split:tail_split],
+        media_blocks,
+    )
 
 
 def rich_cache_entry(
@@ -293,7 +314,7 @@ def build_cached_rich_content(
     """
     from plugins.helpers import build_rich_markdown_by_str, wrap_collage
 
-    media, placeholders, quoted_placeholders, reply_placeholders = cache_media_blocks(entry)
+    media, placeholders, quoted_placeholders, reply_placeholders, media_blocks = cache_media_blocks(entry)
     markdown = build_rich_markdown_by_str(
         entry.parse_result.title,
         entry.parse_result.content,
@@ -314,7 +335,27 @@ def build_cached_rich_content(
         reply_media_placeholders=reply_placeholders,
         hide_content=spoiler_tag,
     )
-    return markdown, media
+    return markdown, media, media_blocks
+
+
+def cached_rich_message(
+    markdown: str, media: list[InputRichMessageMedia], media_blocks: dict | None = None
+) -> InputRichMessage:
+    """按"是否敏感"选渲染路径 —— **敏感内容必须走 blocks 才能打码**。
+
+    富文本的 markdown 路径 (``InputRichMessage(markdown=…, media=…)``) 打不了码:
+    官方 API 的 ``InputRichBlockPhoto`` 没有 spoiler 字段, 只有 raw 的
+    ``PageBlockPhoto/Video(spoiler=)`` 才有。直发路径一直在这么做
+    (``send_rich_media`` 里 ``is_sensitive and media_blocks`` 时切 blocks),
+    **缓存路径以前漏了这一步, 于是"第二次发同一个链接"就是没打码的**。
+
+    抽成一个函数给三条缓存路径 (私聊/群、inline、guest) 共用, 免得三处再各写一遍。
+    """
+    if media_blocks:
+        from plugins.parse.rich_blocks import markdown_to_blocks
+
+        return InputRichMessage(blocks=markdown_to_blocks(markdown, media_blocks=media_blocks))
+    return InputRichMessage(markdown=markdown, media=media or None)
 
 
 def extract_cache_media(rich_message) -> list:

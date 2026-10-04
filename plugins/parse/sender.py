@@ -38,6 +38,7 @@ from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     build_cached_rich_content,
     build_rich_media,
+    cached_rich_message,
     extract_cache_media,
     rich_cache_entry,
 )
@@ -504,7 +505,7 @@ async def send_cached(
     view_label = _t("查看") if _t else ""
     # 缓存路径同样走富文本排版 (与直发共用 build_cached_rich_content):
     # 不再拼老 caption —— 否则同一链接第二次发送会变成另一种格式
-    markdown, media = build_cached_rich_content(
+    markdown, media, media_blocks = build_cached_rich_content(
         entry,
         url,
         lang=lang,
@@ -513,7 +514,8 @@ async def send_cached(
         custom_content=custom_content,
         spoiler_tag=spoiler_tag,
     )
-    await sender.rich_message(rich_message=InputRichMessage(markdown=markdown, media=media or None))
+    # 敏感内容走 blocks 路径才打得了码 (以前这里直接用 markdown, 缓存命中就没遮罩)
+    await sender.rich_message(rich_message=cached_rich_message(markdown, media, media_blocks))
 
 
 def media_input(media: PathType | BinaryIO | None) -> PathType | BinaryIO:
