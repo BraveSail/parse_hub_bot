@@ -227,9 +227,11 @@ def build_rich_markdown(
         parts.append(author)
     # 被回复的卡片在正文前、被引用的卡片在正文后, 各自的媒体留在自己的块里
     reply_quote, body_text, quote = split_quote_blocks(content) if content else ("", "", "")
+    fold_summary = t_[lang]("展开全文") if lang else ""
     reply_media = list(reply_media_placeholders)
     if reply_quote and not config.hide_desc:
-        parts.append(attach_quote_media(reply_quote, reply_media))
+        # 被回复的卡片也要能折叠: 以前直接拼进 parts, 1294 字的回复块整屏铺开
+        parts.append(fold_quote_block(attach_quote_media(reply_quote, reply_media), summary=fold_summary))
         reply_media = []  # 已安置
     elif not reply_quote:
         # 没有独立的回复块 (例如正文为空): 媒体不能丢, 兜到末尾引用块或正文媒体里
@@ -241,7 +243,7 @@ def build_rich_markdown(
     if body_text and not config.hide_desc:
         # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
         # 截断会把长正文变成省略号, 折叠也就轮不上了
-        parts.append(format_text(body_text, fold_summary=t_[lang]("展开全文") if lang else ""))
+        parts.append(format_text(body_text, fold_summary=fold_summary))
     if custom_content:
         parts.append(custom_content)
 
@@ -254,7 +256,7 @@ def build_rich_markdown(
     if quote and not config.hide_desc:
         # 被引用/被回复的卡片: 主推自己的媒体要排在它上面 (与 X 上的观感一致)
         # 引用内容自己的媒体放进引用块内部 (每行都要 > 前缀, 否则会被踢出引用块)
-        parts.append(attach_quote_media(quote, quote_media_placeholders))
+        parts.append(fold_quote_block(attach_quote_media(quote, quote_media_placeholders), summary=fold_summary))
 
     body = "\n\n".join(part for part in parts if part)
 
@@ -477,6 +479,45 @@ def attach_quote_media(quote: str, placeholders: Sequence[str]) -> str:
     for block in wrap_collage(placeholders):
         lines.extend(f"> {line}" if line.strip() else ">" for line in block.split("\n"))
     return "\n".join([quote, *lines])
+
+
+def fold_quote_block(quote: str, *, summary: str = "") -> str:
+    """把过长的引用块折起来: 开头几行留外面当预览, 其余折进 details。
+
+    **引用块的折叠形态与正文不同**: 正文用 ``<details>`` 直接包文本, 引用块要
+    把 ``>`` 行原样放进 details 里 (真机返回 ``RichBlockDetails`` 内含
+    ``RichBlockBlockQuotation``)。实测 ``<blockquote expandable>`` 在这里会把
+    块内所有行**并成一行**、并把 ``>`` 变成字面量, 完全不能用。
+
+    媒体占位符行跟着所在位置走 (引用块的媒体本来就追加在末尾), 不特殊处理。
+    """
+    if not quote:
+        return quote
+    lines = quote.rstrip("\n").split("\n")
+    if not _should_fold(_strip_quote_markers(quote)):
+        return quote
+
+    preview_lines = quote_from_lines(lines, limit=_FOLD_PREVIEW_LINES, char_limit=_FOLD_PREVIEW_CHARS)
+    rest = lines[len(preview_lines):]
+    if not rest:
+        return quote
+
+    preview = "\n".join(preview_lines).rstrip()
+    folded = "\n".join(rest)
+    body = f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{folded}\n\n</details>"
+    return f"{preview}\n\n{body}" if preview else body
+
+
+def quote_from_lines(lines: list[str], *, limit: int, char_limit: int) -> list[str]:
+    """按行数与字符数上限取预览行 (至少一行; 首行就超限时也保留)。"""
+    out: list[str] = []
+    chars = 0
+    for line in lines:
+        if out and (len(out) >= limit or chars + len(line) > char_limit):
+            break
+        chars += len(line)
+        out.append(line)
+    return out
 
 
 def wrap_collage(placeholders: Sequence[str]) -> list[str]:

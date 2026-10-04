@@ -154,6 +154,63 @@ def test_split_fold_preview_returns_unfolded_for_short_content():
     assert split_fold_preview("很短") == ("很短", "")
 
 
+def test_long_quote_block_is_folded():
+    """被回复/被引用的长卡片也要折 —— 以前它们直接拼进 parts, 1294 字的回复块整屏铺开。
+
+    引用块的折叠形态与正文不同: `>` 行要原样进 details (服务端返回
+    RichBlockDetails 内含 RichBlockBlockQuotation)。实测 <blockquote expandable>
+    在这里会把所有行并成一行、并把 '>' 变成字面量。
+    """
+    from plugins.helpers import fold_quote_block
+
+    quote = "\n".join(["> *作者 @handle：*", *[f"> *第{i}行内容*  " for i in range(1, 20)]])
+    out = fold_quote_block(quote, summary="展开全文")
+    assert "<details><summary>展开全文</summary>" in out
+    assert out.endswith("</details>")
+    assert out.index("> *作者 @handle：*") < out.index("<details>")   # 预览在折叠块外
+    assert "> *第1行内容*" in out
+    assert "> *第19行内容*" in out                                     # 折起的行仍带引用前缀
+    assert "\n> *第5行内容*" in out.split("<details>")[1]             # 剩余进 details
+
+
+def test_short_quote_block_stays_untouched():
+    from plugins.helpers import fold_quote_block
+
+    quote = "> *作者：*\n> 短内容"
+    assert fold_quote_block(quote, summary="展开全文") == quote
+
+
+def test_quote_media_stays_inside_the_folded_block():
+    """引用块的媒体占位符必须跟着 '>' 前缀走, 折进 details 也要在引用块内"""
+    from plugins.helpers import attach_quote_media, fold_quote_block
+
+    quote = "\n".join(["> *作者：*", *[f"> *第{i}行内容*  " for i in range(1, 20)]])
+    with_media = attach_quote_media(quote, ["![](tg://photo?id=m0)"])
+    out = fold_quote_block(with_media, summary="展开全文")
+    assert "> ![](tg://photo?id=m0)" in out          # 前缀没丢
+
+
+def test_build_rich_markdown_folds_a_long_reply_block():
+    """端到端: 长回复块在完整渲染里被折起来"""
+    import types
+
+    from plugins.helpers import build_rich_markdown
+
+    reply = "\n".join(["> *Vincent @VincentBounce：*", *[f"> *第{i}行*  " for i in range(1, 18)]])
+    content = reply + "\n\n短正文"
+    result = types.SimpleNamespace(
+        title="", content=content, raw_url="https://x.com/a/status/1",
+        author_name="@VincentBounce", author_handle="", author_url="",
+        published_at=None, view_count=None, like_count=None, tags=None,
+        platform=None, media=None, markdown_content=content,
+    )
+    config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
+    md = build_rich_markdown(result, config=config, lang="zh-hans")
+    assert "<details><summary>展开全文</summary>" in md
+    assert md.index("> *第1行*") < md.index("<details>")     # 预览可见
+    assert "> *第17行*" in md
+
+
 def test_fold_summary_follows_locale():
     """摘要文案由调用方按 locale 传入, 不写死在渲染层"""
     out = format_text("y" * 600, fold_summary="Show full text")
