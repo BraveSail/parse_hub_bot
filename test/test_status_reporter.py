@@ -123,6 +123,26 @@ def test_progress_is_sent_as_a_rich_message():
     assert msg.answer_rich.await_args.kwargs["rich_message"].markdown == "**▎解 析 中...**"
 
 
+def test_the_stage_label_uses_markdown_not_html():
+    """阶段标签必须用 **markdown** 粗体, 不能是 ``<b>``。
+
+    处理过程走 markdown 正文, 而 ``<b>`` 只有 markdown 路径的服务端解析器认 ——
+    blocks 路径的 ``parse_inline`` **不认**, 会原样显示。两条路径都稳的写法是 ``**``。
+    (老 caption 路径仍用 HTML 的 ``format_label``, 那是 HTML parse mode, 需要 ``<b>``。)
+    """
+    from plugins.helpers import format_label, format_label_md
+
+    assert format_label_md("解 析 中...") == "**▎解 析 中...**"
+    assert format_label("解 析 中...") == "<b>▎解 析 中...</b>"   # 老路径不变
+
+    msg = _Msg()
+    reporter = _reporter(None, user_msg=msg)
+    reporter._raw_url = "https://x.com/a/status/1"
+    asyncio.run(reporter.report("解 析 中..."))
+    markdown = msg.answer_rich.await_args.kwargs["rich_message"].markdown
+    assert "<b>" not in markdown
+
+
 def test_a_stage_without_a_result_renders_a_skeleton():
     """还没有结果时给骨架 —— 结构与有结果时一致 (正文 + 页脚来源), 不跳版"""
     msg = _Msg()

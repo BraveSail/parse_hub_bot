@@ -1027,7 +1027,18 @@ def get_supported_platforms() -> str:
 
 
 def format_label(text: str) -> str:
+    """HTML 粗体的阶段标签 —— 给 **老 caption 路径** (HTML parse mode) 用。"""
     return f"<b>▎{text}</b>"
+
+
+def format_label_md(text: str) -> str:
+    """同 ``format_label``, 但产出 **markdown** 粗体。
+
+    富文本的处理过程走 markdown 正文, 用 ``**…**`` 比 ``<b>`` 更原生 ——
+    ``<b>`` 只有 markdown 路径的服务端解析器认, blocks 路径的 ``parse_inline`` **不认**
+    (会字面显示)。两条路径都稳的写法是 markdown 粗体。
+    """
+    return f"**▎{text}**"
 
 
 def parse_channel_ref(value: str) -> int | str:
