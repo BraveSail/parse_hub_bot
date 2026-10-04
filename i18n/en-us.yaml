@@ -4,7 +4,7 @@
   configuring
 06778dbf05d5: Platform Management
 091d3a0665fa: Channel Configuration
-0a87f26596ed: 'Source ({display})'
+0a87f26596ed: Source ({display})
 0d3d68e32996: A task with the same content is already being parsed, waiting for parsing
   to complete...
 0f6c4353601e: Send original file to avoid quality compression
@@ -14,7 +14,7 @@
 1d30c358e2a1: Default parsing mode
 1f3c920d087b: Processing...
 224e2ccda861: Configuration
-26ca20b161c3: 'Source'
+26ca20b161c3: Source
 27350d00b70d: Uploading...
 295bb704f520: Language
 2bc28481a223: Automatically delete link messages

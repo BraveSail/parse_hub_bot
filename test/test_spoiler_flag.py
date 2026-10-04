@@ -11,7 +11,7 @@
 
 import types
 
-from parsehub.utils.helpers import SPOILER_FOLD_SUMMARY, strip_spoiler_flag, url_only_message_urls
+from parsehub.utils.helpers import strip_spoiler_flag, url_only_message_urls
 
 from plugins.helpers import build_rich_markdown
 
@@ -86,8 +86,7 @@ def _config():
 
 def test_hide_content_folds_the_body_with_a_warning_summary():
     md = build_rich_markdown(_result("第一段\n\n第二段"), config=_config(), lang="zh-hans", hide_content=True)
-    assert f"<details><summary>{SPOILER_FOLD_SUMMARY}</summary>" in md
-    assert SPOILER_FOLD_SUMMARY == "⚠️"
+    assert "<details><summary>⚠️ 展开全文</summary>" in md
     assert "第一段" in md and "第二段" in md
 
 
@@ -105,9 +104,55 @@ def test_without_the_flag_the_body_stays_normal():
     assert "短正文" in md
 
 
-def test_hide_content_does_not_touch_quote_blocks():
-    """引用块不受影响 —— 遮的是本层正文"""
+def test_hide_content_hides_everything_but_the_header():
+    """**所有内容都遮**（用户明确要求）: 正文、引用块、标签、媒体全进 details。
+
+    只有标题与作者留在外面 —— 那是"这是什么"的元信息, 全遮掉会看不出解析了什么。
+    """
     content = "> <i>@楼主 · #1：</i>\n\n本层正文"
     md = build_rich_markdown(_result(content), config=_config(), lang="zh-hans", hide_content=True)
-    assert "> <i>@楼主 · #1：</i>" in md
-    assert md.index("@楼主") < md.index("<details>")
+    inner = md.split("<details>", 1)[1]
+    assert "@楼主" in inner and "本层正文" in inner
+    assert "<details>" in md
+
+
+def test_media_goes_inside_the_fold():
+    """媒体占位符也必须在 details 内 —— 否则图露在外面, 等于没遮"""
+    content = "本层正文"
+    md = build_rich_markdown(
+        _result(content),
+        config=_config(),
+        lang="zh-hans",
+        media_placeholders=["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"],
+        hide_content=True,
+    )
+    inner = md.split("<details>", 1)[1]
+    outside = md.replace(inner, "")
+    assert "tg://photo?id=m0" in inner and "tg://photo?id=m1" in inner
+    assert "tg://photo" not in outside
+
+
+def test_quoted_media_also_goes_inside_the_fold():
+    """引用块的媒体同样要遮进去"""
+    content = "主推正文\n\n> <i>@被引用者：</i>\n> <i>引用内容</i>"
+    md = build_rich_markdown(
+        _result(content),
+        config=_config(),
+        lang="zh-hans",
+        quote_media_placeholders=["![](tg://photo?id=q0)"],
+        hide_content=True,
+    )
+    inner = md.split("<details>", 1)[1]
+    assert "tg://photo?id=q0" in inner
+
+
+def test_spoiler_summary_reuses_the_existing_fold_label():
+    """摘要 = ⚠️ + **现成的折叠按钮文案**（「展开全文」那个词条, 16 语言早已就位）
+
+    不新建翻译: 折叠按钮的文字本来就有, 另起一个只会多出 16 条要维护的译文。
+    """
+    content = "正文"
+    for lang, expected in (("zh-hans", "展开全文"), ("zh-hant", "展開全文"),
+                           ("en-us", "Show full text"), ("ja-jp", "全文を表示")):
+        md = build_rich_markdown(_result(content), config=_config(), lang=lang, hide_content=True)
+        assert f"<summary>⚠️ {expected}</summary>" in md

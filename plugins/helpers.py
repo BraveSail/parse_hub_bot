@@ -234,14 +234,20 @@ def build_rich_markdown(
             link_leading_hashtags(rich_content(parse_result).strip(), parse_result.platform)
         )
     )
-    parts: list[str] = []
+    # 分两组: 标题/作者是"这是什么"的元信息, 留在折叠外; 其余(正文/引用块/标签/媒体)
+    # 都是内容 —— 手动遮住时整组进 details (含图, 用户明确要求"所有东西都遮")。
+    meta_parts: list[str] = []
     if title and not config.hide_title:
-        parts.append(f"### {title}")
+        meta_parts.append(f"### {title}")
     if author := format_author_line(parse_result):
-        parts.append(author)
+        meta_parts.append(author)
+    parts: list[str] = []
     # 被回复的卡片在正文前、被引用的卡片在正文后, 各自的媒体留在自己的块里
     reply_quote, body_text, quote = split_quote_blocks(content) if content else ("", "", "")
     fold_summary = t_[lang]("展开全文") if lang else ""
+    # 手动遮住时的摘要: ⚠️ + **复用现成的折叠按钮文案** (与自动折叠同一个词条,
+    # 不新建翻译 —— 16 个语言的「展开全文」早就有了)
+    spoiler_summary = f"⚠️ {fold_summary}" if fold_summary else SPOILER_FOLD_SUMMARY
     reply_media = list(reply_media_placeholders)
     # 末尾引用块不存在时, 属于它的媒体要交回**头部**引用块 (反之亦然, 下面那段)。
     # 平台产出"引用块在前"的结构时就会走到这里 (linux.do 把主楼做成引用块放最上面) ——
@@ -264,13 +270,10 @@ def build_rich_markdown(
             media_placeholders = [*media_placeholders, *reply_media]
         reply_media = []
     if body_text and not config.hide_desc:
-        if hide_content:
-            # 手动要求遮住: 整个正文进 details, **不留预览** (与自动折叠相反)
-            parts.append(f"<details><summary>{SPOILER_FOLD_SUMMARY}</summary>\n\n{body_text}\n\n</details>")
-        else:
-            # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
-            # 截断会把长正文变成省略号, 折叠也就轮不上了
-            parts.append(format_text(body_text, fold_summary=fold_summary))
+        # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
+        # 截断会把长正文变成省略号, 折叠也就轮不上了
+        # (手动遮住时不在这里折 —— 整组内容会在下面一起进 details)
+        parts.append(body_text if hide_content else format_text(body_text, fold_summary=fold_summary))
     if custom_content:
         parts.append(custom_content)
 
@@ -284,7 +287,14 @@ def build_rich_markdown(
         # 被引用/被回复的卡片: 主推自己的媒体要排在它上面 (与 X 上的观感一致)
         parts.extend(render_quote_card(quote, quote_media_placeholders, summary=fold_summary))
 
-    body = "\n\n".join(part for part in parts if part)
+    if hide_content and (visible := [part for part in parts if part]):
+        # 手动遮住: 内容整组进 details —— **正文、引用块、标签、媒体(含图集)全在里面**,
+        # 且不留预览 (留了就等于没遮)。只保留标题/作者在外面, 否则看不出这是什么内容。
+        inner = "\n\n".join(visible)
+        folded = f"<details><summary>{spoiler_summary}</summary>\n\n{inner}\n\n</details>"
+        body = "\n\n".join([*[p for p in meta_parts if p], folded])
+    else:
+        body = "\n\n".join(part for part in [*meta_parts, *parts] if part)
 
     footer_parts: list[str] = []
     metadata = build_metadata_line(
