@@ -137,7 +137,17 @@ curl_cffi 拿到 200。
 - 单个平台**校验失败或平台名不存在**时，跳过该平台并记 `error` 日志，**不再 `raise SystemExit(1)`**。
   服务着 22 个平台，一处笔误不该让整体下线。真错误（未知字段 / 类型不对）仍会被拦下。
 
-## 9. i18n
+## 9. 静态检查（本地新增）
+
+`scripts/check.sh` + `.pylintrc`：提交前跑 ruff **加** pylint `--errors-only`。
+
+- **pylint 是必需的** —— ruff 抓不到"名字导错模块"，而**函数体内的延迟 import** 在模块加载时
+  不报错，只在该分支执行时炸（2026-10-04 因此漏了一个生产 ImportError）。
+- `.pylintrc` 只关框架动态属性的误报（SQLAlchemy `func.now()`、pydantic `model_fields` 等），
+  E0611/E1123/E0701/E0704 这些**抓真问题的码一律保留**。
+- 合上游时**保留这两个文件**，别被上游的同名文件覆盖。
+
+## 10. i18n
 
 新增文案（「查看」、「上 传 中...」等）补齐 16 种语言：de / en / es /
 fr / id / it / ja / ko / nl / pl / pt-br / ru / th / tr / vi / zh-hant。
