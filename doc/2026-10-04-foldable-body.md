@@ -36,6 +36,28 @@ RichBlockDetails   摘要='展开全文'   is_open=False（默认收起 = 折叠
 - 摘要文案按 locale 传：`t_[lang]("展开全文")`，16 个 locale 全补（键 = `md5(源文)[:12]`，字典序插入）。
 - 渲染层不自取 locale，保持纯函数。
 
+## 折叠态必须留预览
+
+`<details>` 收起时**只显示 summary**，所以按上面修完，用户看到的是光秃秃一个「展开全文」，
+正文一个字都没有（用户原话：「这个折叠看不到一点内容啊」）。
+
+`split_fold_preview()` 把开头几行**留在折叠块外**当预览（`_FOLD_PREVIEW_LINES=2` / `_FOLD_PREVIEW_CHARS=100`，
+任一触顶即停），只把剩余部分折起来：
+
+```
+**@Waifunomics：**
+
+When you realize the reason Blue Archive is a normie repellent isn't because of lolis …   ← 折叠块外, 可见
+
+<details><summary>展开全文</summary>
+…（其余 5 段）
+</details>
+```
+
+真机返回的块序列：`Paragraph`(作者行) → `Paragraph`(预览) → `RichBlockDetails`(收起, 内 5 段) → `Divider` → `Footer`。
+
+细节：整条正文挤在一行时行切不出来，会**永远折不起来** —— 这种情况按字符切出预览。
+
 ## 顺带修掉的两处
 
 1. **截断默认值反转**：`format_text` 的 `max_length` 默认由 `1000` 改为 `None`（不截断）。
@@ -48,7 +70,7 @@ RichBlockDetails   摘要='展开全文'   is_open=False（默认收起 = 折叠
 
 - bot 255 passed / 库 403 passed；ruff 全过。
 - 本地：三种 locale 摘要正确（`展开全文` / `全文を表示` / `Show full text`），多段落长正文生成 details 结构。
-- 生产容器真机发送真实推文：`RichBlockDetails` + 6 个独立段落，`is_open=False`。
+- 生产容器真机发送真实推文：`Paragraph`(预览) + `RichBlockDetails`(收起, 内 5 段) + `Footer`。
 
 ## 教训
 
