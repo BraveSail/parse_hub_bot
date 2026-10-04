@@ -95,14 +95,16 @@ def test_views_and_likes_follow_the_user_language():
     from plugins.helpers import build_metadata_line
 
     at = datetime(2026, 10, 4, 1, 37, tzinfo=UTC)
-    assert build_metadata_line(published_at=at, view_count=10, like_count=2, lang="zh-hans") == (
-        "09:37 · 2026年10月4日 · 10 查看 · 2 点赞"
+    # 时间那段是客户端渲染的 tg-time 实体 (见 test_author_cache 的 _time_tag), 这里只比对
+    # 它之后的「查看/点赞」—— 本测试要盯的就是这两个标签跟随语言
+    assert build_metadata_line(published_at=at, view_count=10, like_count=2, lang="zh-hans").endswith(
+        " · 10 查看 · 2 点赞"
     )
-    assert build_metadata_line(published_at=at, view_count=10, like_count=2, lang="en-us") == (
-        "09:37 · 2026-10-04 · 10 views · 2 likes"
+    assert build_metadata_line(published_at=at, view_count=10, like_count=2, lang="en-us").endswith(
+        " · 10 views · 2 likes"
     )
-    assert build_metadata_line(published_at=at, view_count=10, like_count=2, lang="ja-jp") == (
-        "09:37 · 2026年10月4日 · 10 表示 · 2 いいね"
+    assert build_metadata_line(published_at=at, view_count=10, like_count=2, lang="ja-jp").endswith(
+        " · 10 表示 · 2 いいね"
     )
 
 

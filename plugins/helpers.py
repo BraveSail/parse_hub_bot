@@ -112,7 +112,9 @@ def build_metadata_line(
     view_label: str = "",
     like_label: str = "",
 ) -> str:
-    """把发布时间/浏览量/点赞渲染成一行, 例如「19:00 · 2026年10月3日 · 1,455 查看 · 158 点赞」。
+    """把发布时间/浏览量/点赞渲染成一行, 例如「2026年10月3日 19:00 · 1,455 查看 · 158 点赞」。
+
+    时间那段是个时间戳实体 (客户端会按本地时区重新渲染并本地化)。
 
     平台不提供的项直接跳过, 不会留下空占位符。
     view_label / like_label 由调用方用 ``t_[lang]("查看")`` / ``t_[lang]("点赞")`` 提供;
@@ -131,7 +133,18 @@ def build_metadata_line(
 
 
 def _format_published(value: datetime, lang: str) -> list[str]:
-    """返回 [时间, 日期] 两段 (一律 24 小时制, 中文用中文日期)。"""
+    """发布时间 —— 走 Telegram 的时间戳实体, 由**客户端按本地时区**渲染。
+
+    服务端只发一个 UTC unix 时间戳 (``<tg-time unix=...>``), 显示交给客户端:
+    于是每个用户看到的时间都与自己的时区相符, 而不是消息里写死的那一刻。
+    (以前固定按 ``Asia/Shanghai`` 算好再发出去 —— 人在别的时区看到的就是"北京时间"。)
+
+    ``format="Dt"`` = 长日期 + 短时间, 即「2026年10月4日 12:34」; 短时间 ``t`` 是
+    24 小时制 (``16:20``)。实际呈现仍由客户端本地化, 12/24 小时制跟随用户设备设置。
+
+    标签里的文字是**兜底**: 老客户端不认 ``tg-time`` 时照常显示, 所以内容与
+    客户端渲染的形态保持一致。
+    """
     local = value
     try:
         local = value.astimezone(ZoneInfo(_METADATA_TIMEZONE))
@@ -139,10 +152,13 @@ def _format_published(value: datetime, lang: str) -> list[str]:
         pass
 
     clock = f"{local.hour:02d}:{local.minute:02d}"
-    # 中日都用「年月日」书写 (日语也一样); 其余语言用 ISO 日期
+    # 兜底文字: 中日用「年月日」书写 (日语也一样); 其余语言用 ISO 日期
     if lang.startswith(("zh", "ja")):
-        return [clock, f"{local.year}年{local.month}月{local.day}日"]
-    return [clock, local.strftime("%Y-%m-%d")]
+        fallback = f"{local.year}年{local.month}月{local.day}日 {clock}"
+    else:
+        fallback = f"{local.strftime('%Y-%m-%d')} {clock}"
+    # unix 取自归一到 _METADATA_TIMEZONE 后的 local (aware), 与原来的日期算法同源
+    return [f'<tg-time unix="{int(local.timestamp())}" format="Dt">{fallback}</tg-time>']
 
 
 def build_caption_by_str(

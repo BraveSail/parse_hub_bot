@@ -11,6 +11,11 @@ from plugins.helpers import build_caption_by_str, build_metadata_line, build_ric
 from services.cache import CacheEntry, CacheParseResult, PersistentCache
 
 
+def _time_tag(ts: int, text: str) -> str:
+    """页脚时间那段是个 tg-time 实体 (客户端按本地时区渲染), 标签内文字是兜底。"""
+    return f'<tg-time unix="{ts}" format="Dt">{text}</tg-time>'
+
+
 @pytest.mark.parametrize(
     ("author", "versioned", "hit"),
     [("", False, False), ("Author", False, True), ("", True, True), ("Author", True, True)],
@@ -97,7 +102,7 @@ def test_metadata_line_includes_like_count():
         view_label="查看",
         like_label="点赞",
     )
-    assert line == "19:00 · 2026年10月3日 · 4,984 查看 · 158 点赞"
+    assert line == f"{_time_tag(1791025200, '2026年10月3日 19:00')} · 4,984 查看 · 158 点赞"
 
 
 def test_metadata_line_with_like_only():
@@ -158,22 +163,25 @@ def test_metadata_line_zh_format():
         lang="zh-hans",
         view_label="查看",
     )
-    assert line == "19:00 · 2026年10月3日 · 1,455 查看"
+    assert line == f"{_time_tag(1791025200, '2026年10月3日 19:00')} · 1,455 查看"
 
 
 def test_metadata_line_uses_24_hour_clock():
-    """一律 24 小时制: 凌晨与下午都不带 上午/下午"""
+    """24 小时制: 兜底文字与 API 的短时间格式 (``t``) 都不带 上午/下午
+
+    真正呈现由客户端本地化 —— 12/24 小时制跟随用户设备设置。
+    """
     import datetime
 
     morning = build_metadata_line(
         published_at=datetime.datetime(2026, 10, 3, 3, 45, tzinfo=datetime.UTC), lang="zh-hans"
     )
-    assert morning == "11:45 · 2026年10月3日"
+    assert morning == _time_tag(1790999100, "2026年10月3日 11:45")
 
     midnight = build_metadata_line(
         published_at=datetime.datetime(2026, 10, 3, 16, 5, tzinfo=datetime.UTC), lang="zh-hans"
     )
-    assert midnight == "00:05 · 2026年10月4日"
+    assert midnight == _time_tag(1791043500, "2026年10月4日 00:05")
     assert "上午" not in morning + midnight
     assert "下午" not in morning + midnight
 
@@ -187,7 +195,7 @@ def test_metadata_line_other_language_uses_numeric_datetime():
         lang="en-us",
         view_label="views",
     )
-    assert line == "19:00 · 2026-10-03 · 1,455 views"
+    assert line == f"{_time_tag(1791025200, '2026-10-03 19:00')} · 1,455 views"
 
 
 def test_metadata_line_without_views():
@@ -197,7 +205,7 @@ def test_metadata_line_without_views():
     line = build_metadata_line(
         published_at=datetime.datetime(2026, 10, 3, 11, 0, tzinfo=datetime.UTC), view_count=None, lang="zh-hans"
     )
-    assert line == "19:00 · 2026年10月3日"
+    assert line == _time_tag(1791025200, "2026年10月3日 19:00")
     assert " ·  · " not in line
 
 
@@ -241,7 +249,8 @@ def test_rich_markdown_puts_metadata_and_source_in_footer():
     assert "---" in markdown
     # 统计与来源在 footer, 且位于正文之后
     footer = markdown.split("<footer>")[1]
-    assert "19:00 · 2026年10月3日 · 1,455 查看" in footer
+    assert _time_tag(1791025200, "2026年10月3日 19:00") in footer
+    assert "1,455 查看" in footer
     # footer 里 markdown 链接语法不生效, 必须用 HTML 的 a href
     assert '<a href="https://x.com/u/status/1">来源（Twitter）</a>' in footer
     assert markdown.index("- 列表项") < markdown.index("<footer>")
