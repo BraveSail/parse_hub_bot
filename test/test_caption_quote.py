@@ -72,37 +72,61 @@ def test_multiple_quote_blocks():
 def test_format_text_folds_long_quote_without_nesting():
     """超长引用块自行折叠, 但不外包第二层 blockquote (TG 不支持嵌套)."""
     out = format_text("> \u56de\u590d @user\uff1a\n> " + "x" * 600)
-    assert out.count("<blockquote") == 1
-    assert "<blockquote expandable>" in out
+    assert out.count("<blockquote") == 0        # 折叠容器是 <details>, 不再是 blockquote
+    assert out.count("<details>") == 1
+    assert out.count("</details>") == 1
 
 
 def test_format_text_keeps_short_quote_unfolded():
     """短引用块保持展开 (与正文同一阈值)."""
     out = format_text("> \u56de\u590d @u\uff1a\n> hi\n\nbody")
     assert out.startswith("<blockquote>")
-    assert "expandable" not in out
+    assert "<details>" not in out
 
 
 def test_quote_and_body_fold_independently():
     """引用块与正文各自按同一阈值折叠, 互不外包 (总长控制在截断线内)."""
     out = format_text("> \u56de\u590d @u\uff1a\n> " + "q" * 400 + "\n\n" + "b" * 400)
-    assert out.count("<blockquote") == 2
-    assert out.count("<blockquote expandable>") == 2
-    assert "......" not in out  # 未触发 1000 字符截断
+    assert out.count("<details>") == 2          # 引用块与正文各折一层
+    assert out.count("</details>") == 2
+    assert "......" not in out  # 未触发截断
 
 
 def test_quote_not_folded_when_expandable_disabled():
     out = format_text("> " + "x" * 600, allow_expandable=False)
-    assert "<blockquote expandable>" not in out
+    assert "<details>" not in out
     assert "<blockquote>" in out
 
 
 def test_format_text_folds_long_plain_text():
-    assert format_text("y" * 600) == "<blockquote expandable>" + "y" * 600 + "</blockquote>"
+    out = format_text("y" * 600)
+    assert out == "<details><summary>\u5c55\u5f00\u5168\u6587</summary>\n\n" + "y" * 600 + "\n\n</details>"
 
 
 def test_format_text_keeps_short_text_plain():
     assert format_text("short") == "short"
+
+
+def test_folded_body_keeps_paragraph_breaks():
+    """折叠块内**必须保留段落空行**。
+
+    这是换掉 <blockquote expandable> 的原因: 它一遇到块内空行就被 Telegram
+    退化成普通引用块 (完全不折叠), 而推文正文天然多段落 —— 长正文于是永远折
+    不起来; 而且引用块内的换行会被并成空格, 段落结构全丢。<details> 两者都没
+    这个问题。
+    """
+    body = "\n\n".join(f"第{i}段内容" * 20 for i in range(4))
+    out = format_text(body)
+    assert out.startswith("<details>")
+    assert out.endswith("</details>")
+    assert "\n\n第1段" in out        # 段落空行原样保留
+    assert out.count("\n\n") >= 4
+
+
+def test_fold_summary_follows_locale():
+    """摘要文案由调用方按 locale 传入, 不写死在渲染层"""
+    out = format_text("y" * 600, fold_summary="Show full text")
+    assert "<summary>Show full text</summary>" in out
 
 
 def test_build_rich_markdown_folds_a_long_body():
@@ -127,7 +151,7 @@ def test_build_rich_markdown_folds_a_long_body():
     )
     config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
     md = build_rich_markdown(result, config=config, lang="zh-hans")
-    assert "<blockquote expandable>" in md
+    assert "<details>" in md
     assert "很长的正文" in md
 
 
@@ -156,7 +180,7 @@ def test_build_rich_markdown_does_not_truncate_a_very_long_body():
     )
     config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
     md = build_rich_markdown(result, config=config, lang="zh-hans")
-    assert "<blockquote expandable>" in md
+    assert "<details>" in md
     assert "......" not in md
     assert "长" * 1500 in md
 
@@ -206,8 +230,9 @@ def test_build_rich_markdown_keeps_a_short_body_plain():
 def test_truncation_happens_before_html_conversion():
     """要求截断时, 截断发生在 HTML 转换之前 —— 否则会切断 blockquote 闭合标签"""
     out = format_text("> " + "z" * 1500, max_length=1000)
-    assert out.endswith("......</blockquote>")
-    assert out.count("<blockquote") == 1
+    assert "......" in out
+    assert out.endswith("</details>")       # 截断没有切断闭合标签
+    assert out.count("<details>") == 1
 
 
 def test_format_text_without_expandable_does_not_wrap_long_text():

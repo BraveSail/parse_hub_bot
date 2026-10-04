@@ -88,6 +88,7 @@ def build_caption(
             like_label=t_("点赞") if view_label else "",
         ),
         max_length=max_length,
+        fold_summary=t_[lang]("展开全文") if lang else "",
     )
 
 
@@ -155,6 +156,7 @@ def build_caption_by_str(
     allow_expandable: bool = True,
     metadata_line: str = "",
     max_length: int | None = None,
+    fold_summary: str = "",
 ) -> str:
     """构建消息正文：标题 + 内容 + 统计行 + 来源链接"""
     title, content = title or "", content or ""
@@ -172,6 +174,7 @@ def build_caption_by_str(
             allow_blockquote=allow_blockquote,
             allow_expandable=allow_expandable,
             max_length=max_length,
+            fold_summary=fold_summary,
         )
 
     if author_name:
@@ -238,7 +241,7 @@ def build_rich_markdown(
     if body_text and not config.hide_desc:
         # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
         # 截断会把长正文变成省略号, 折叠也就轮不上了
-        parts.append(format_text(body_text))
+        parts.append(format_text(body_text, fold_summary=t_[lang]("展开全文") if lang else ""))
     if custom_content:
         parts.append(custom_content)
 
@@ -671,13 +674,23 @@ def _split_quote_segments(text: str) -> list[tuple[bool, str]]:
     return segments
 
 
-def _render_foldable(content: str) -> str:
-    """包成可折叠 blockquote (长内容展示用)。"""
-    return f"<blockquote expandable>{content}</blockquote>"
+#: 折叠块的默认摘要文案 (源码语言), 调用方按 locale 传译文进来
+_DEFAULT_FOLD_SUMMARY = "展开全文"
+
+
+def _render_foldable(content: str, *, summary: str = "") -> str:
+    """包成可折叠块 (长内容展示用)。
+
+    **用 <details> 而不是 <blockquote expandable>**: 后者一旦块内含空行,
+    Telegram 就把它退化成普通引用块 (完全不折叠) —— 而推文正文天然是多段落,
+    于是长正文永远折不起来; 而且引用块内的换行会被并成空格, 段落结构全丢。
+    <details> 保留完整段落, 是富文本 markdown 里唯一能折叠多段落的容器。
+    """
+    return f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{content}\n\n</details>"
 
 
 def convert_markdown_quote(
-    text: str, *, allow_blockquote: bool = True, allow_expandable: bool = True
+    text: str, *, allow_blockquote: bool = True, allow_expandable: bool = True, fold_summary: str = ""
 ) -> str:
     """把 Markdown 引用行 (以 '>' 开头) 转成 Telegram 的 <blockquote>。
 
@@ -695,7 +708,7 @@ def convert_markdown_quote(
     def _replace(match: re.Match) -> str:
         body = _strip_quote_markers(match.group(0))
         if allow_expandable and _should_fold(body):
-            return _render_foldable(body)
+            return _render_foldable(body, summary=fold_summary)
         return f"<blockquote>{body}</blockquote>"
 
     return _QUOTE_BLOCK_RE.sub(_replace, text)
@@ -707,6 +720,7 @@ def format_text(
     allow_blockquote: bool = True,
     allow_expandable: bool = True,
     max_length: int | None = None,
+    fold_summary: str = "",
 ) -> str:
     """格式化输出内容, 按需限制长度, 添加折叠块样式。
 
@@ -727,20 +741,22 @@ def format_text(
         # 该通道不支持引用块: 剥掉前缀后按普通文本处理
         text = _QUOTE_BLOCK_RE.sub(_strip_quote_prefix, text)
         if allow_expandable and _should_fold(text):
-            return _render_foldable(text)
+            return _render_foldable(text, summary=fold_summary)
         return text
 
     out: list[str] = []
     for is_quote, segment in _split_quote_segments(text):
         if is_quote:
-            out.append(convert_markdown_quote(segment, allow_expandable=allow_expandable))
+            out.append(
+                convert_markdown_quote(segment, allow_expandable=allow_expandable, fold_summary=fold_summary)
+            )
             continue
         core = segment.strip()
         if allow_expandable and core and _should_fold(core):
             # 保留片段两侧空白 (块间分隔), 只折叠核心内容
             lead = segment[: len(segment) - len(segment.lstrip())]
             trail = segment[len(segment.rstrip()) :]
-            out.append(f"{lead}{_render_foldable(core)}{trail}")
+            out.append(f"{lead}{_render_foldable(core, summary=fold_summary)}{trail}")
         else:
             out.append(segment)
     return "".join(out)
