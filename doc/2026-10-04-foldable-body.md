@@ -58,32 +58,41 @@ When you realize the reason Blue Archive is a normie repellent isn't because of 
 
 细节：整条正文挤在一行时行切不出来，会**永远折不起来** —— 这种情况按字符切出预览。
 
-## 引用块的折叠形态不同
+## 引用块的折叠形态：整块一个 expandable
 
 被回复/被引用的卡片**原先根本没走折叠**：它们在 `build_rich_markdown` 里直接拼进 `parts`，
 只有正文经过 `format_text` —— 于是 1294 字的回复块整屏铺开（用户报「回复没折叠」）。
 
-引用块折叠不能用正文那套 `<details>` 包纯文本，也不能用 `<blockquote expandable>`。真机四种形态实测：
+第一次修用了 details + 预览，用户反馈「**引用块被按钮分割, 割裂感太强了**」——
+预览行 / 按钮 / 折起部分被切成三段。**引用块改回老的 `<blockquote expandable>`**（整块一起折，
+客户端自己显示开头几行），`fold_quote_block()` 即此形态。
 
-| 形态 | 服务端结果 |
+### `<br>` 是让 expandable 可用的关键
+
+`<blockquote expandable>` 直接放真换行有两个死穴，实测：
+
+| 块内内容 | 结果 |
 | --- | --- |
-| `<details>` 包 `>` 行 | `RichBlockDetails` 内含 `RichBlockBlockQuotation` ✓ |
-| 预览 `>` 行在外 + 其余进 `<details>` | 引用块 + `RichBlockDetails` ✓ **采用** |
-| `>` 行里嵌 `<details>` | details 被忽略 ✗ |
-| `<blockquote expandable>` | 所有行**并成一行**、`>` 变字面量 ✗ |
+| 真换行 | 换行被**并成空格**（所有行挤成一行） |
+| 真空行 | **退化成普通引用块**，完全不折叠 |
+| 无空行 + `<br>` | `RichBlockExpandableBlockQuotation`，换行**保留** ✓ |
+| 含空行 + `<br><br>` | `RichBlockExpandableBlockQuotation`，空行**也保留** ✓ |
 
-`fold_quote_block(quote, *, summary)` 即上面的形态二。预览**强制先取 2 行**再按字符上限收敛 ——
-引用块首行是作者行，只看作者行等于没预览。
+所以块内换行一律写成 `<br>`（`use_br_linebreaks()`）—— 两个死穴一起解决。
 
-真机块序列：
+另两个细节：
+- 折叠时**只剥 `>` 前缀，不做 markdown 中和**（区别于 `convert_markdown_quote`）：
+  引用块内容本身就是 `*斜体*` 和 `<a href>`，中和会渲染成字面实体（`&#42;`）。
+- 引用块里嵌 `<details>` 会被服务端忽略；`<details>` 包住引用块虽然有效，但形态就是上面被否掉的割裂感。
+
+真机块序列（不含 details）：
 
 ```
-块0 Paragraph                作者行
-块1 RichBlockBlockQuotation  预览 (作者行 + 内容首行)
-块2 RichBlockDetails         收起, 内为 RichBlockBlockQuotation (其余 16 行)
-块3 Paragraph                正文
-块4 Divider
-块5 Footer
+块0 Paragraph                        作者行
+块1 RichBlockExpandableBlockQuotation  整块折叠 (内部换行保留)
+块2 Paragraph                        正文
+块3 Divider
+块4 Footer
 ```
 
 ## 顺带修掉的两处
@@ -100,7 +109,7 @@ When you realize the reason Blue Archive is a normie repellent isn't because of 
 - 本地：三种 locale 摘要正确（`展开全文` / `全文を表示` / `Show full text`），多段落长正文生成 details 结构。
 - 生产容器真机发送真实推文：
   - 正文折叠：`Paragraph`(预览) + `RichBlockDetails`(收起, 内 5 段) + `Footer`。
-  - 引用块折叠：`RichBlockBlockQuotation`(预览 2 行) + `RichBlockDetails`(收起, 内含引用块)。
+  - 引用块折叠：整块 `RichBlockExpandableBlockQuotation`（换行以 `<br>` 写入，服务端保留 `\n`/`\n\n`）。
 - bot 262 passed。
 
 ## 教训
