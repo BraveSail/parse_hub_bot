@@ -127,7 +127,17 @@ curl_cffi 拿到 200。
   facebook `watch/?v=` 与 `v` 参数保留、bilibili `view/detail` 需 cookie、
   yt-dlp 条目缺 `thumbnail`/`description` 时不再 KeyError、保留原语言音轨。
 
-## 8. i18n
+## 8. 平台配置的容错（本地修改）
+
+`core/platform_config.py`，两处与原版不同：
+
+- 列表字段（`cookies` / `parser_proxies` / `downloader_proxies`）里的**空条目归一化为 `None`**。
+  删掉 cookie 值只留一个 `-` 是常见写法，YAML 解析成 `[None]` —— 留空应视为"该平台退化为匿名"，
+  而不是配置错误（2026-10-04 用户就这么把 bot 搞下线过一次）。
+- 单个平台**校验失败或平台名不存在**时，跳过该平台并记 `error` 日志，**不再 `raise SystemExit(1)`**。
+  服务着 22 个平台，一处笔误不该让整体下线。真错误（未知字段 / 类型不对）仍会被拦下。
+
+## 9. i18n
 
 新增文案（「查看」、「上 传 中...」等）补齐 16 种语言：de / en / es /
 fr / id / it / ja / ko / nl / pl / pt-br / ru / th / tr / vi / zh-hant。
