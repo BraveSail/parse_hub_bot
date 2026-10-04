@@ -152,6 +152,16 @@ class MessageSender:
         link_preview_options: LinkPreviewOptions | None = None,
         reply_markup: Ikm | None = None,
     ) -> Message:
+        """发一条文本消息。**默认关闭链接预览**。
+
+        文本里带链接时 Telegram 会挂一张 link preview 卡片, 而卡片在正文之外 ——
+        内容即使被折叠遮住, 卡片上的封面图照样看得见 (用户报「不然还是能看到图」)。
+        这个项目的文本消息要么是提示、要么是解析结果, **没有一处需要预览**,
+        所以默认值取安全的一侧: 忘了传也不会泄露。要预览得显式传 options。
+        """
+        # 显式判 None (不用 `or`): 调用方传什么都不该被覆盖
+        if link_preview_options is None:
+            link_preview_options = LinkPreviewOptions(is_disabled=True)
         return cast(
             Message,
             await self._send_and_schedule_delete(

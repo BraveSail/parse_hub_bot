@@ -20,6 +20,7 @@ class _Msg:
         self.id = msg_id
         self.edit_text = AsyncMock()
         self.delete = AsyncMock()
+        self.answer = AsyncMock()
 
 
 def _reporter(msg=None, *, config=None) -> MessageStatusReporter:
@@ -40,11 +41,18 @@ def test_done_text_is_a_real_visible_character():
     assert not any(ch in STATUS_DONE_TEXT for ch in ("\u200b", "\u200d"))
 
 
+def _no_preview(kwargs) -> bool:
+    """这些调用是否带了「关掉链接预览」的参数"""
+    opts = kwargs.get("link_preview_options")
+    return opts is not None and getattr(opts, "is_disabled", False) is True
+
+
 def test_dismiss_edits_instead_of_deleting():
     """核心契约: 收尾是编辑, 不是删除"""
     msg = _Msg()
     asyncio.run(_reporter(msg).dismiss())
-    msg.edit_text.assert_awaited_once_with(STATUS_DONE_TEXT)
+    msg.edit_text.assert_awaited_once()
+    assert msg.edit_text.await_args.args[0] == STATUS_DONE_TEXT
     msg.delete.assert_not_awaited()
 
 
@@ -84,7 +92,9 @@ def test_finalize_edits_the_status_message():
     msg = _Msg()
     rich = InputRichMessage(markdown="结果")
     edited = asyncio.run(_reporter(msg).finalize(rich))
-    msg.edit_text.assert_awaited_once_with(rich_message=rich)
+    msg.edit_text.assert_awaited_once()
+    assert msg.edit_text.await_args.kwargs["rich_message"] is rich
+    assert _no_preview(msg.edit_text.await_args.kwargs)
     msg.delete.assert_not_awaited()
     assert edited is not None
 
@@ -111,6 +121,59 @@ def test_finalize_text_edits_plain_caption():
     msg = _Msg()
     asyncio.run(_reporter(msg).finalize_text("<b>文字结果</b>", reply_markup=None))
     msg.edit_text.assert_awaited_once()
+
+
+# ── 链接预览一律关掉 ───────────────────────────────────────────────────
+#
+# 回归: 文本结果里带来源链接时, Telegram 会在消息下挂一张 link preview 卡片。
+# 卡片在正文之外, **折叠块盖不住它** —— 内容遮住了, 封面图还露着
+# (用户报「处理过程占位消息把preview关了, 不然还是能看到图」)。
+
+
+def test_progress_updates_disable_the_link_preview():
+    msg = _Msg(text="解 析 中...")
+    asyncio.run(_reporter(msg).report("下 载 中..."))
+    assert _no_preview(msg.edit_text.await_args.kwargs)
+
+
+def test_dismiss_disables_the_link_preview():
+    msg = _Msg()
+    asyncio.run(_reporter(msg).dismiss())
+    assert _no_preview(msg.edit_text.await_args.kwargs)
+
+
+def test_finalize_text_disables_the_link_preview():
+    """这条最容易漏: 文本结果里的来源链接就是预览卡片的来源"""
+    msg = _Msg()
+    asyncio.run(
+        _reporter(msg).finalize_text('<b>正文</b> · <a href="https://x.com/a/status/1">来源</a>')
+    )
+    assert _no_preview(msg.edit_text.await_args.kwargs)
+
+
+def test_sending_a_text_message_disables_the_preview_by_default():
+    """首次状态消息是**发送**而不是编辑 —— ``MessageSender.text`` 的默认值也要安全
+
+    这个默认值就是接口: 忘了传参数的调用点 (提示语、GIF 提示) 不该泄露预览。
+    """
+    from plugins.parse.sender import MessageSender
+
+    msg = _Msg()
+    sender = MessageSender(
+        cli=SimpleNamespace(), msg=msg, config=SimpleNamespace(reply_msg=False)
+    )
+    asyncio.run(sender.text("解 析 中..."))
+    assert _no_preview(msg.answer.await_args.kwargs)
+
+
+def test_an_explicit_preview_option_is_not_overridden():
+    """调用方显式传了的就用调用方的 —— 默认值只补缺, 不覆盖"""
+    from pyrogram.types import LinkPreviewOptions
+
+    msg = _Msg()
+    allow = LinkPreviewOptions(is_disabled=False)
+    asyncio.run(_reporter(msg).finalize_text("正文", link_preview_options=allow))
+    assert msg.edit_text.await_args.kwargs["link_preview_options"] is allow
 
 
 def test_report_survives_a_manually_deleted_status_message():

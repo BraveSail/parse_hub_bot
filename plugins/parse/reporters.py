@@ -25,6 +25,16 @@ logger = logger.bind(name="ParseReporter")
 #: (U+200B、U+200D、空格、空串都试过), 所以只能用最小的可见字符。
 STATUS_DONE_TEXT = "·"
 
+#: 状态/占位消息一律关掉链接预览。
+#:
+#: 不关的话, 只要消息文本里带链接 (文本结果、GIF 提示、错误信息里的 URL), Telegram
+#: 就会在消息下面挂一张 **link preview 卡片** —— 卡片在正文之外, 折叠块盖不住它,
+#: 于是"内容已经遮住了但封面图还露在外面" (用户报「不然还是能看到图」)。
+#:
+#: 实测: 含链接的文本消息不传该参数 -> ``web_page`` 有值; 传 ``is_disabled=True`` -> 无。
+#: 富文本消息本身不生成预览 (实测), 但这里一并传, 免得编辑时把旧预览留下来。
+_NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
+
 
 async def disable_progress_on_report_forbidden(msg: Message, config: SettingsConfig) -> None:
     """状态消息无权限时自动关闭解析进度。"""
@@ -98,7 +108,9 @@ class MessageStatusReporter(StatusReporter):
         if self._msg is None:
             return None
         logger.debug(f"编辑状态消息为最终结果: msg_id={self._msg.id}")
-        edited = await self._msg.edit_text(rich_message=rich_message)
+        # 富文本自身不生成预览 (实测), 但这里显式关掉 —— 免得把状态消息阶段可能留下的
+        # 预览保留下来 (编辑时不传该参数 = 保持原值)
+        edited = await self._msg.edit_text(rich_message=rich_message, link_preview_options=_NO_PREVIEW)
         return edited or self._msg
 
     async def finalize_text(self, text: str, **kwargs: Any) -> Message | None:
@@ -109,6 +121,8 @@ class MessageStatusReporter(StatusReporter):
         """
         if self._msg is None:
             return None
+        # 文本结果里常带来源链接 —— 不关预览就会挂出一张封面卡片 (折叠盖不到)
+        kwargs.setdefault("link_preview_options", _NO_PREVIEW)
         logger.debug(f"编辑状态消息为文本结果: msg_id={self._msg.id}")
         edited = await self._msg.edit_text(text, **kwargs)
         return edited or self._msg
@@ -129,6 +143,8 @@ class MessageStatusReporter(StatusReporter):
             logger.debug(f"状态消息收尾失败 (已忽略): {type(e).__name__}: {e}")
 
     async def _edit_text(self, text: str, **kwargs: Any) -> None:
+        # 状态/占位消息默认关预览: 文本里万一带链接, 预览卡片会把内容露在折叠之外
+        kwargs.setdefault("link_preview_options", _NO_PREVIEW)
         try:
             if self._msg is None:
                 self._msg = await MessageSender(self._cli, self._user_msg, self._config).text(text, **kwargs)
