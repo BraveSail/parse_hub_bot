@@ -2,7 +2,7 @@ import random
 from pathlib import Path
 
 from parsehub.types import Platform as PPlatform
-from pydantic import AnyUrl, BaseModel, ConfigDict, SecretStr, field_serializer
+from pydantic import AnyUrl, BaseModel, ConfigDict, SecretStr, field_serializer, field_validator
 from yaml import safe_load
 
 from log import logger
@@ -19,6 +19,24 @@ class MaskedSecretStr(SecretStr):
         return mask_secret(value)
 
 
+def _drop_blank_entries(value: object) -> object:
+    """列表字段里的空条目一律当作"没填", 全空则归一成 None。
+
+    用户改配置时留空是常见写法 —— 删掉值只留一个 ``-`` (YAML 解析成 ``[None]``)、
+    写成 ``[]``、或整行空着。这些**都是合法状态**(该平台退化为匿名访问),
+    以前却会让平台校验失败 → ``load_config`` 直接 ``raise SystemExit(1)``
+    → **整个 bot 起不来** (2026-10-04 用户删 facebook 的 cookie 时踩到)。
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, (list, tuple)):
+        kept = [v for v in value if v is not None and (not isinstance(v, str) or v.strip())]
+        return kept or None
+    return value
+
+
 class Platform(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -27,6 +45,12 @@ class Platform(BaseModel):
     parser_proxies: list[AnyUrl] | None = None
     downloader_proxies: list[AnyUrl] | None = None
     cookies: list[MaskedSecretStr] | None = None
+
+    @field_validator("cookies", "parser_proxies", "downloader_proxies", mode="before")
+    @classmethod
+    def _ignore_blank_entries(cls, value: object) -> object:
+        """留空 (``-`` / ``[]`` / 空串) 等同于"没有配置这一项", 而不是配置错误。"""
+        return _drop_blank_entries(value)
 
     @field_serializer("cookies")
     def serialize_cookies(self, cookies: list[SecretStr] | None) -> list[str] | None:
@@ -75,8 +99,9 @@ class PlatformsConfig(BaseModel):
             pid_list = [p.id for p in PPlatform]
             for name, pdata in data["platforms"].items():
                 if name not in pid_list:
-                    logger.error(f"平台 [{name}] 不存在, 支持的平台id: {pid_list}")
-                    exit(1)
+                    # 不 exit: 平台名写错只该让这一个失效, 不该让整个 bot 起不来
+                    logger.error(f"平台 [{name}] 不存在, 已跳过 (支持的平台id: {pid_list})")
+                    continue
 
                 if not pdata:
                     continue
@@ -84,8 +109,11 @@ class PlatformsConfig(BaseModel):
                 try:
                     platforms[name] = Platform(**pdata)
                 except Exception as e:
-                    logger.error(f"平台 [{name}] 配置错误:\n{e}")
-                    raise SystemExit(1) from e
+                    # 不 raise SystemExit: 单个平台的配置笔误不该让**整个 bot 下线**
+                    # (服务着 22 个平台, 一处写错就全挂的代价太大)。跳过它,
+                    # 该平台退化为无配置 (匿名) 运行, 日志里留下原因。
+                    logger.error(f"平台 [{name}] 配置错误, 已跳过:\n{e}")
+                    continue
 
         pc = cls(
             default_parser_proxies=cls._2l(data.get("default_parser_proxies", None)),
