@@ -663,15 +663,24 @@ def format_author_line(parse_result: AnyParseResult) -> str:
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
 
-# 折叠阈值: 超过 200 字 (或行数超限) 就折起来。
+# 折叠阈值: 超过 500 字 (或行数超限) 就折起来。
 # **正文与引用块共用这一套** —— 只写一份, 两处共用 (曾分别在两处硬编码, 改一处必漏另一处)。
-_FOLD_CHAR_THRESHOLD = 200
+# 200 对拉丁文字太紧: 英文 200 字符 ≈ 30 个词, 一个长句就顶到线 (实测一条三条短句的
+# 英文推文 289 字符就被折了), 而中文 200 字是实打实的两三大段。放宽到 500 后
+# 中英的信息量大致对齐。
+_FOLD_CHAR_THRESHOLD = 500
 _FOLD_LINE_THRESHOLD = 8
 
 
 def _should_fold(text: str) -> bool:
-    """文本是否超过折叠阈值 (字符数或行数任一超出)."""
-    return len(text) > _FOLD_CHAR_THRESHOLD or len(text.splitlines()) > _FOLD_LINE_THRESHOLD
+    """文本是否超过折叠阈值 (字符数或内容行数任一超出)。
+
+    **行数只数非空行**: 空行是段落排版, 不是内容量。若连空行一起数,
+    「五句话 + 中间四个空行」= 9 行, 总共才十几个字也会被折叠 —— 行数阈值
+    就成了比字符阈值更早触发的误判来源。
+    """
+    content_lines = sum(1 for line in text.splitlines() if line.strip())
+    return len(text) > _FOLD_CHAR_THRESHOLD or content_lines > _FOLD_LINE_THRESHOLD
 
 # pyrogram 的 Markdown 解析器 (client 默认 ParseMode.DEFAULT) 把成对的
 # __ ** -- ~~ || ` 当格式定界符, 定界符字符本身会被吃掉 —— 引用块里的推文 handle

@@ -11,6 +11,7 @@ Markdown 解析器会把 `__` 当斜体定界符并插 <i>，直接把 <a href> 
 import asyncio
 
 from plugins.helpers import (
+    _FOLD_CHAR_THRESHOLD,
     build_caption_by_str,
     convert_markdown_quote,
     format_text,
@@ -86,7 +87,8 @@ def test_format_text_keeps_short_quote_unfolded():
 
 def test_quote_and_body_fold_independently():
     """引用块与正文各自按同一阈值折叠, 互不外包 (总长控制在截断线内)."""
-    out = format_text("> \u56de\u590d @u\uff1a\n> " + "q" * 400 + "\n\n" + "b" * 400)
+    n = _FOLD_CHAR_THRESHOLD + 100   # 引用块与正文各自都超过阈值
+    out = format_text("> \u56de\u590d @u\uff1a\n> " + "q" * n + "\n\n" + "b" * n)
     assert out.count("<blockquote expandable>") == 1   # 引用块: 整块折
     assert out.count("<details>") == 1                 # 正文: 预览 + 折起
     assert "......" not in out  # 未触发截断
@@ -108,6 +110,22 @@ def test_format_text_folds_long_plain_text():
     assert "......" not in out
 
 
+def test_blank_lines_do_not_count_towards_the_line_threshold():
+    """行数只数内容行 —— 空行是排版, 不是内容量。
+
+    连空行一起数的话「五句话 + 四个空行」就是 9 行, 十几个字也会被折,
+    行数阈值反而比字符阈值更早误触发。
+    """
+    from plugins.helpers import _should_fold
+
+    spaced = "\n\n".join(["字"] * 5)          # 5 内容行 + 4 空行, 共 9 行, 13 字
+    assert len(spaced.splitlines()) == 9
+    assert _should_fold(spaced) is False
+
+    solid = "\n".join(["字"] * 9)              # 9 个内容行
+    assert _should_fold(solid) is True
+
+
 def test_format_text_keeps_short_text_plain():
     assert format_text("short") == "short"
 
@@ -120,7 +138,7 @@ def test_folded_body_keeps_paragraph_breaks():
     不起来; 而且引用块内的换行会被并成空格, 段落结构全丢。<details> 两者都没
     这个问题。
     """
-    body = "\n\n".join(f"第{i}段内容" * 20 for i in range(4))
+    body = "\n\n".join(f"第{i}段内容" * (_FOLD_CHAR_THRESHOLD // 5 + 10) for i in range(4))
     out = format_text(body)
     assert "<details>" in out
     assert out.endswith("</details>")
@@ -130,7 +148,8 @@ def test_folded_body_keeps_paragraph_breaks():
 
 def test_folded_body_leaves_a_visible_preview():
     """折叠块收起时只显示摘要, 所以开头必须留在外面 —— 否则一个字都看不到"""
-    body = "\n\n".join(["开头这一段要能看见", "中间内容" * 40, "结尾内容" * 40])
+    n = _FOLD_CHAR_THRESHOLD // 2 + 50
+    body = "\n\n".join(["开头这一段要能看见", "中间内容" * n, "结尾内容" * n])
     out = format_text(body)
     assert out.startswith("开头这一段要能看见")     # 预览在折叠块外
     assert "<details>" in out
@@ -278,7 +297,7 @@ def test_build_rich_markdown_folds_a_long_body():
 
     result = types.SimpleNamespace(
         title="",
-        content="很长的正文。" * 60,   # 远超 200 字阈值
+        content="很长的正文。" * (_FOLD_CHAR_THRESHOLD // 6 + 10),   # 远超折叠阈值
         raw_url="https://x.com/a/status/1",
         author_name="",
         author_handle="",
