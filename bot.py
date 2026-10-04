@@ -25,6 +25,9 @@ if bs.debug:
 setup_optimized_event_loop()
 loop = asyncio.new_event_loop()
 
+#: 并发处理 update 的槽位数 (见 Client 构造处的说明)
+BOT_WORKERS = 32
+
 
 class Bot(Client):
     def __init__(self) -> None:
@@ -39,6 +42,11 @@ class Bot(Client):
             proxy=self.cfg.bot_proxy,
             loop=loop,
             workdir=self.cfg.sessions_path,
+            # 并发处理 update 的槽位数。默认是 min(32, cpu+4) —— 4 核机器只有 8,
+            # 而一个解析任务会**占满一个槽位直到结束** (大视频下载可能几分钟到几十分钟),
+            # 连发几条就会把所有槽位占满, 后面的请求只能静默排队。
+            # 这些任务是 IO 密集 (网络下载/上传), 槽位开大不耗 CPU。
+            workers=BOT_WORKERS,
         )
 
     async def start(self, *args: Any, **kwargs: Any) -> "Bot":

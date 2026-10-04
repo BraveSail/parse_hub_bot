@@ -218,6 +218,7 @@ class ParsePipeline:
 
         # ── 2. 下载 ──
         await self._reporter.report(self._t("下 载 中..."))
+        logger.info(f"开始下载: media_count={len(to_list(parse_result.media))}, url={self._url}")
         p = ps.parser.get_platform(self._url)
         progress_cb = PipelineProgressCallback(self._reporter, _t=self._t)
 
@@ -236,7 +237,9 @@ class ParsePipeline:
         )
         if download_result is None:
             return None
-        logger.debug(f"下载完成: output_dir={download_result.output_dir}")
+        logger.info(
+            f"下载完成: files={len(to_list(download_result.media))}, dir={download_result.output_dir}"
+        )
 
         # ── 3. 媒体处理 ──
         await self._reporter.report(self._t("处 理 中..."))
@@ -255,7 +258,7 @@ class ParsePipeline:
             return None
         processed_list = maybe_processed_list
 
-        logger.debug(f"流水线完成: processed_count={len(processed_list)}")
+        logger.info(f"流水线完成: processed_count={len(processed_list)}, url={self._url}")
         return PipelineResult(
             parse_result=parse_result,
             processed_list=processed_list,
