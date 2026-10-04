@@ -45,7 +45,10 @@ class ParseService:
                 logger.warning(f"解析失败, attempt={attempt}/{max_retries}, err={e}")
                 if attempt >= max_retries:
                     raise Exception(e) from e
-        raise
+        # 理论上不可达 (最后一次迭代要么 return 要么在上面 raise), 但留着裸 raise
+        # 是危险的: 一旦 max_retries 被改成 0 或循环被重构, 就会抛
+        # `RuntimeError: No active exception to re-raise` 把真实原因盖掉 (pylint E0704)
+        raise Exception(f"解析失败: 已重试 {max_retries} 次, url={url}")
 
     async def get_raw_url(self, url: str, clean_all: bool = True) -> str:
         p = self.get_platform(url)
@@ -62,4 +65,5 @@ class ParseService:
                 logger.warning(f"获取原始 URL 失败, attempt={attempt}/{max_retries}, err={e}")
                 if attempt >= max_retries:
                     raise Exception(e) from e
-        raise
+        # 同上: 不用裸 raise, 它会盖掉真实原因
+        raise Exception(f"获取原始 URL 失败: 已重试 {max_retries} 次, url={url}")

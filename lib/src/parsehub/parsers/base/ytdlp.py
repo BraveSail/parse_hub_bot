@@ -102,7 +102,7 @@ def _subprocess_kwargs() -> dict[str, Any]:
     return {}
 
 
-async def _terminate_process(proc: asyncio.subprocess.Process) -> None:
+async def _terminate_process(proc: asyncio.subprocess.Process) -> None:  # pylint: disable=no-member  # asyncio.subprocess.Process 确实存在, pylint 解析不到
     if proc.returncode is not None:
         return
 

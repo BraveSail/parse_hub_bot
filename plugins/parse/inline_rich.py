@@ -249,8 +249,8 @@ def rich_cache_entry(
 
     放在这里而不是发送层: 私聊/群 (``sender``) 与 guest 都要写同一种条目。
     """
-    from parsehub.utils.helpers import get_parse_author_name
-
+    # 两个都是 bot 侧模块, 函数内延迟导入避免循环依赖 (与上面的 helper 同一手法)
+    from plugins.helpers import get_parse_author_name
     from services.cache import CacheEntry, CacheParseResult
 
     return CacheEntry(

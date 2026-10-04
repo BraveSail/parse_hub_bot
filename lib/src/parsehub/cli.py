@@ -637,7 +637,8 @@ def _print_cli_extra_hint() -> None:
 
 
 def _enable_completion(parser: argparse.ArgumentParser) -> None:
-    import argcomplete
+    # 可选依赖 (parsehub[cli]), 没装时上面已经打过提示; pylint 在没装的环境里报 import-error
+    import argcomplete  # pylint: disable=import-error
 
     argcomplete.autocomplete(parser)
 

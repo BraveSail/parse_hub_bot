@@ -60,7 +60,11 @@ class TieBa:
             result.raise_for_status()
             result = result.json()
         if result["error_code"]:
-            raise TieBaError(em if (em := result["error_msg"]) else "获取帖子内容失败")
+            # 原本写成 `em if (em := result["error_msg"]) else ...`, 海象运算符夹在
+            # 条件表达式里, 读起来费劲、pylint 也会报 used-before-assignment
+            if msg := result["error_msg"]:
+                raise TieBaError(msg)
+            raise TieBaError("获取帖子内容失败")
         return cast(dict[str, Any], result)
 
 

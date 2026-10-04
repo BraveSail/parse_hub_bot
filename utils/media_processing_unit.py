@@ -223,7 +223,8 @@ class MediaProcessingUnit:
     @staticmethod
     def _get_dominant_color(file_path: Path) -> tuple[int, ...]:
         haishoku = Haishoku.loadHaishoku(str(file_path))
-        return tuple(int(v * 0.8) for v in haishoku.palette[0][1])
+        # palette 是该库运行期挂上的属性 (形如 [(count, (r,g,b)), ...]), pylint 解析不到
+        return tuple(int(v * 0.8) for v in haishoku.palette[0][1])  # pylint: disable=unsubscriptable-object
 
     def _pad_image(
         self,

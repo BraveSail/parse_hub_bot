@@ -286,7 +286,9 @@ class XBogus:
             255,
             self.rc4_encrypt(
                 "ÿ".encode("ISO-8859-1"),
-                self.encoding_conversion(*merge_array).encode("ISO-8859-1"),
+                # merge_array 是跑出来的列表 (长度 19), 运行时展开正确;
+                # pylint 静态看不出列表长度, 报 no-value-for-parameter
+                self.encoding_conversion(*merge_array).encode("ISO-8859-1"),  # pylint: disable=no-value-for-parameter
             ).decode("ISO-8859-1"),
         )
         xb_ = ""
@@ -1209,6 +1211,7 @@ class DouyinMobileCrawler:
                     "content_length": content_length,
                     "bitrate_kbps": 0,
                 }
-                if best is None or candidate["content_length"] > best["content_length"]:
+                # `best is None` 短路保护了右边的下标; pylint 不认短路 (unsubscriptable-object)
+                if best is None or candidate["content_length"] > best["content_length"]:  # pylint: disable=unsubscriptable-object
                     best = candidate
         return best

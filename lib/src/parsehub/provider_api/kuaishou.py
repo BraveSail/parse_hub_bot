@@ -286,10 +286,9 @@ class KuaishouParser:
                 resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             return resp.text
+        # HTTPStatusError 是 RequestError 的子类, 单独列一个 except 永远执行不到
+        # (pylint E0701 抓到); 两者处理相同, 合并成一个即可
         except http.RequestError as e:
-            logger.error(f"Failed to get the page: {url}, Error: {e}")
-            return None
-        except http.HTTPStatusError as e:
             logger.error(f"Failed to get the page: {url}, Error: {e}")
             return None
         except Exception as e:

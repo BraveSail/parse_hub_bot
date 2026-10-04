@@ -43,9 +43,11 @@ class LinuxDoParser(BaseParser):
             raise ParseError(f"无法获取话题内容: {e}") from e
 
         media = [ImageRef(url=i.url, thumb_url=i.url, width=i.width, height=i.height) for i in topic.images]
+        # 媒体**不进 common**: 两个结果类的参数名不同 (RichText 是 ``media``,
+        # Image 是 ``photo``) —— 放进公共字典会让纯图话题那条分支直接 TypeError
+        # (既存 bug, pylint E1123 抓到)。
         common = {
             "title": topic.title,
-            "media": media,
             # 末尾这几张属于上下文引用块 (主楼/被回复楼层) -> 放进引用块内部
             "quoted_media_count": topic.quoted_media_count,
             "author_name": topic.author_name,
@@ -59,8 +61,12 @@ class LinuxDoParser(BaseParser):
         }
 
         if topic.markdown_content:
-            return LinuxDoRichTextParseResult(markdown_content=topic.markdown_content, **common)  # type: ignore[arg-type]
-        return LinuxDoImageParseResult(content=topic.text_content, **common)  # type: ignore[arg-type]
+            return LinuxDoRichTextParseResult(
+                markdown_content=topic.markdown_content,
+                media=media,
+                **common,  # type: ignore[arg-type]
+            )
+        return LinuxDoImageParseResult(content=topic.text_content, photo=media, **common)  # type: ignore[arg-type]
 
 
 __all__ = ["LinuxDoImageParseResult", "LinuxDoParser", "LinuxDoRichTextParseResult"]

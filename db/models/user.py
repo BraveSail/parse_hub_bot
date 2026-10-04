@@ -1,3 +1,5 @@
+# pylint: disable=not-callable
+# (SQLAlchemy 的 func.now() 是运行期动态属性, pylint 静态解析不到 -> 误报 not-callable)
 from __future__ import annotations
 
 from datetime import datetime

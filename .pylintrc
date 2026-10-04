@@ -1,0 +1,23 @@
+[MAIN]
+# 检查范围与 Python 版本由调用方命令行给出 (见 scripts/check.sh)
+jobs = 0
+
+[MESSAGES CONTROL]
+# 这里只关**框架动态属性**导致的误报; 抓真问题的那几类一律保留。
+#
+# 保留 (这些抓到过真 bug):
+#   E0611 no-name-in-module     —— 名字导错模块。2026-10-04 靠它抓到生产 ImportError:
+#                                  from parsehub.utils.helpers import get_parse_author_name
+#                                  (真名在 plugins.helpers), 延迟 import 只在执行时炸, 测试没覆盖就一路绿。
+#   E1123 unexpected-keyword-arg —— 调用签名不符。同日抓到 linux.do 纯图话题必崩 (传了 media, 参数名是 photo)。
+#   E0701 bad-except-order      —— 异常分支永远执行不到。同日抓到 kuaishou 的 HTTPStatusError 死分支。
+#   E0601/E0602 未定义名/使用未赋值变量
+#   E0401 import-error          —— 依赖缺失 (逐个行内豁免, 不在这里关)
+#
+# 关掉的这几类是 SQLAlchemy `func.now()` / pydantic `model_fields` 这类**运行期动态成员**,
+# pylint 静态解析不到 —— 不是代码错。逐个行内豁免会很啰嗦, 且新增模型/字段时会不断复发。
+disable=
+    not-callable,
+    unsubscriptable-object,
+    not-an-iterable,
+    no-member,

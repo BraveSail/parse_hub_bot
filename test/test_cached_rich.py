@@ -86,6 +86,78 @@ def test_cached_rich_content_without_media():
     assert "<tg-collage>" not in markdown
 
 
+# ── 写缓存: rich_cache_entry ────────────────────────────────────────────
+#
+# 这条路径原先**完全没有测试**, 于是一次"把函数挪个位置"的改动把里面的
+# `from parsehub.utils.helpers import get_parse_author_name` 写错了模块
+# (真名在 plugins.helpers), 延迟 import 只在真正写缓存时才炸 —— 测试全绿,
+# 生产每次上传后写缓存都失败 (用户报 ImportError)。
+
+
+def _any_result(**over):
+    base = {
+        "title": "标题",
+        "content": "正文",
+        "author_name": "作者名",
+        "author_handle": "handle",
+        "author_url": "https://example.com/u/handle",
+        "is_sensitive": True,
+        "published_at": None,
+        "view_count": 11,
+        "like_count": 22,
+        "tags": ["a", "b"],
+    }
+    base.update(over)
+    return types.SimpleNamespace(**base)
+
+
+def test_rich_cache_entry_copies_every_field():
+    """写缓存的字段搬运要完整 —— 少一个字段, 二次发送就丢一个信息"""
+    from plugins.parse.inline_rich import rich_cache_entry
+    from services.cache import CacheMediaType
+
+    media = [CacheMedia(type=CacheMediaType.PHOTO, file_id="f1")]
+    entry = rich_cache_entry(_any_result(), media, quoted_media_count=1, reply_media_count=0)
+
+    pr = entry.parse_result
+    assert pr.title == "标题"
+    assert pr.content == "正文"
+    assert pr.author_handle == "handle"
+    assert pr.author_url == "https://example.com/u/handle"
+    assert pr.is_sensitive is True
+    assert pr.view_count == 11
+    assert pr.like_count == 22
+    assert pr.tags == ["a", "b"]
+    assert pr.quoted_media_count == 1
+    assert pr.reply_media_count == 0
+    assert entry.media == media
+    assert entry.rich is True
+
+
+def test_rich_cache_entry_resolves_the_author_name():
+    """作者名要走 get_parse_author_name (它认 platform-specific 的作者字段)"""
+    from plugins.helpers import get_parse_author_name
+    from plugins.parse.inline_rich import rich_cache_entry
+
+    result = _any_result()
+    entry = rich_cache_entry(result, [])
+    assert entry.parse_result.author_name == get_parse_author_name(result)
+
+
+def test_rich_cache_entry_handles_missing_optional_fields():
+    """标签等可选字段缺失时不能炸"""
+    from plugins.parse.inline_rich import rich_cache_entry
+
+    bare = types.SimpleNamespace(
+        title="t", content="c", author_name="a", is_sensitive=False,
+        author_handle="", author_url="", published_at=None,
+        view_count=None, like_count=None, tags=None,
+    )
+    entry = rich_cache_entry(bare, [])
+    assert entry.parse_result.tags == []
+    assert entry.media is None
+
+
 def test_extract_cache_media_reads_file_ids_from_blocks():
     """发送后从服务端返回的块里取回 file_id (写缓存用)"""
 
