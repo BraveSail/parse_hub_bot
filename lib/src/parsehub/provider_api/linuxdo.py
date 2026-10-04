@@ -165,8 +165,17 @@ class LinuxDoTopic:
 
         tags = [str(t.get("name")) for t in (payload.get("tags") or []) if isinstance(t, dict) and t.get("name")]
         created_by = (payload.get("details") or {}).get("created_by") or {}
-        author_handle = str(first.get("username") or created_by.get("username") or "")
-        author_name = str(first.get("name") or created_by.get("name") or "")
+        # 作者只认**这一层**的字段; created_by 是主题创建者 (楼主), 指定楼层时用它
+        # 会把楼层的作者显示成楼主 (用户报过同类问题: 时间/点赞也踩过)。只有解析的
+        # 就是主楼时, 才允许回落到 created_by (楼层的 name 字段可能缺失)。
+        is_opening = first.get("post_number") == 1
+        author_handle = str(first.get("username") or (created_by.get("username") if is_opening else "") or "")
+        author_name = str(
+            first.get("name")
+            or first.get("username")          # 楼层可能没有 name, 用 username 而不是楼主名
+            or (created_by.get("name") if is_opening else "")
+            or ""
+        )
 
         return cls(
             topic_id=str(payload.get("id") or topic_id),

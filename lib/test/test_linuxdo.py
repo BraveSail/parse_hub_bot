@@ -187,6 +187,33 @@ def _topic_with(*floors):
 # ── 上下文引用块 (主楼 / 被回复楼层) ──────────────────────────
 
 
+def test_floor_author_is_not_replaced_by_the_opening_poster():
+    """楼层的 name 字段缺失时, 作者名要用这一层的 username —— 不能回落到楼主。
+
+    用户报过同类问题 (「指定楼层的数据是错的是楼主的」): 时间/点赞修过了,
+    作者名这里也踩同一个坑 —— ``created_by`` 是**主题创建者**, 指定楼层时
+    拿它会把 3 楼的作者显示成楼主。
+    """
+    payload = _topic_with(
+        _floor(1, "楼主", "<p>主楼</p>", name="楼主显示名"),
+        {"id": 99, "post_number": 3, "username": "apparition", "cooked": "<p>三层的话</p>"},  # 没有 name
+    )
+    topic = LinuxDoTopic._from_payload(payload, "1", post_number="3")
+    assert topic.author_handle == "apparition"
+    assert topic.author_name == "apparition"      # 不是 "楼主显示名"
+    assert topic.author_name != "楼主显示名"
+
+
+def test_opening_post_still_falls_back_to_created_by():
+    """解析主楼本身时, created_by 是合法的回落来源"""
+    payload = make_payload(
+        post_stream={"posts": [{"id": 1, "post_number": 1, "cooked": "<p>主楼</p>"}]}  # 楼里连 username 都没有
+    )
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    assert topic.author_name == "VerenOwO"        # created_by.name
+    assert topic.author_handle == "VerenQwQ"      # created_by.username
+
+
 def test_floor_reply_to_the_topic_quotes_the_opening_post():
     """分享楼层时, 主楼要作为引用块带上 —— 那一层常是在回应主楼
 
