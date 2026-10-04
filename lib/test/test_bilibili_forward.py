@@ -69,6 +69,30 @@ def test_forward_is_parsed():
     assert d.images is None
 
 
+def test_video_forward_keeps_its_bvid():
+    """被转发的视频: BV 号要留着, 引用块的标题才能链到视频"""
+    orig = _item({"major": _archive_major(bvid="BV1UqHi6uEie")}, item_type="DYNAMIC_TYPE_AV")
+    d = BiliDynamic.parse({"item": _item({"major": None, "desc": {"text": "转发"}}, orig=orig)})
+    assert d.forward.bvid == "BV1UqHi6uEie"
+    assert d.forward.video_url == "https://www.bilibili.com/video/BV1UqHi6uEie"
+
+
+def test_video_with_its_own_desc_keeps_title_and_bvid():
+    """动态自己带正文时, 视频的标题/封面/BV 号也不能丢 (以前一有 desc 就整条只剩正文)"""
+    major = _archive_major(bvid="BV1xx411c7mD")
+    d = BiliDynamic.parse({"item": _item({"major": major, "desc": {"text": "分享时写的话"}})})
+    assert d.content == "分享时写的话"
+    assert d.title == "「脑洞学生会！」第1话【中文字幕】"
+    assert d.bvid == "BV1xx411c7mD"
+    assert [i.url for i in (d.images or [])] == ["http://i2.hdslb.com/x.jpg"]
+
+
+def test_non_video_has_no_video_url():
+    d = BiliDynamic.parse({"item": _item({"desc": {"text": "图文动态"}, "major": None})})
+    assert d.bvid is None
+    assert d.video_url == ""
+
+
 def test_forward_carries_its_own_author():
     """被转发者的作者信息要单独留着 (引用块要署原作者的名)"""
     orig = _item({"major": _archive_major()}, author=_author(name="原作者", mid=999), item_type="DYNAMIC_TYPE_AV")

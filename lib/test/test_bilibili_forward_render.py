@@ -62,6 +62,29 @@ def test_render_forward_content_only():
     assert "只有正文" in quote
 
 
+def test_render_forward_links_the_video_title():
+    """被转发的是视频时, 标题要链到视频页 —— 引用块里只有封面, 没有视频本身"""
+    forward = _dyn(
+        author_name="夏日幻听MCE",
+        author_mid=224267770,
+        title="「脑洞学生会！」第1话【中文字幕】",
+        content="「脑洞学生会！」第1话",
+        bvid="BV1UqHi6uEie",
+    )
+    quote = BiliParse._render_forward(forward)
+    assert '<a href="https://www.bilibili.com/video/BV1UqHi6uEie">「脑洞学生会！」第1话【中文字幕】</a>' in quote
+    # 简介跟在后一行, 不带链接 (每行各自被 <i> 包住)
+    assert "> <i>「脑洞学生会！」第1话</i>" in quote
+    assert '<a href="https://www.bilibili.com/video/BV1UqHi6uEie">「脑洞学生会！」第1话</a>' not in quote
+
+
+def test_render_forward_without_bvid_keeps_the_title_plain():
+    """不是视频 (没有 BV 号) 时标题保持纯文本"""
+    quote = BiliParse._render_forward(_dyn(author_name="A", title="一条图文动态"))
+    assert "一条图文动态" in quote
+    assert "bilibili.com/video" not in quote
+
+
 def test_render_forward_without_author():
     forward = _dyn(title="匿名分享")
     quote = BiliParse._render_forward(forward)

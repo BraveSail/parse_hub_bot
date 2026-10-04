@@ -267,8 +267,15 @@ class BiliDynamic:
     published_at: int | None = None
     #: 点赞数 (module_stat.like.count)
     like_count: int | None = None
+    #: 视频动态的 BV 号 (``archive.bvid``); 用来把标题链到视频。非视频动态为 None。
+    bvid: str | None = None
     #: 转发的原动态 (``item["orig"]``); 不是转发时为 None。递归结构, 支持嵌套转发。
     forward: "BiliDynamic | None" = None
+
+    @property
+    def video_url(self) -> str:
+        """视频播放页地址; 没有 BV 号时返回空串。"""
+        return f"https://www.bilibili.com/video/{self.bvid}" if self.bvid else ""
 
     def has_content(self) -> bool:
         """是否拿到了可展示的内容 (标题/正文/媒体任一)。"""
@@ -391,13 +398,14 @@ class BiliDynamic:
 
     @classmethod
     def _parse_av(cls, module_dynamic: dict, major: dict) -> Self:
-        if content := cls._get_desc_text(module_dynamic):
-            return cls(content=content)
         archive = major.get("archive") or {}
         return cls(
             title=archive.get("title") or "",
-            content=archive.get("desc") or "",
+            # 动态自己的正文优先 (分享时写的话术), 其次用视频简介;
+            # 以前一有 desc 就**整条只返回 content**, 视频标题/封面/BV 号全丢
+            content=cls._get_desc_text(module_dynamic) or archive.get("desc") or "",
             images=cls._get_major_cover(archive),
+            bvid=archive.get("bvid") or None,
         )
 
     @classmethod

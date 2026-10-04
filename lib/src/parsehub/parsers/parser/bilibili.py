@@ -57,11 +57,20 @@ class BiliParse(BaseParser):
 
     @classmethod
     def _render_forward(cls, forward: BiliDynamic) -> str:
-        """把被转发的原动态渲染成引用块 (作者带主页链接, 内容取标题或正文)。"""
-        body = (forward.title or "").strip()
+        """把被转发的原动态渲染成引用块 (作者带主页链接, 内容取标题或正文)。
+
+        **被转发的是视频时, 标题链到视频页** —— 引用块里只有封面图, 没有视频本身,
+        标题不可点就等于看得到标题、进不去视频 (用户明确要求)。
+        """
+        raw_title = (forward.title or "").strip()
+        title = raw_title
+        if raw_title and (url := forward.video_url):
+            title = f'<a href="{url}">{raw_title}</a>'
         text = (forward.content or "").strip()
-        if text and text != body:
-            body = f"{body}\n{text}" if body else text
+        if title and text and text != raw_title:
+            body = f"{title}\n{text}"
+        else:
+            body = title or text
         if not body and not forward.images:
             return ""
         author = format_author_link(
