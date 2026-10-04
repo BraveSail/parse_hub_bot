@@ -4,7 +4,6 @@
   dem Kanal hinzu und konfigurieren Sie ihn dann.
 06778dbf05d5: Plattformverwaltung
 091d3a0665fa: Kanal-Konfiguration
-0b7a8465c5b6: Der Link ist abgelaufen, bitte senden Sie den Link direkt im Chat
 0d3d68e32996: Eine identische Aufgabe wird bereits analysiert, bitte warten Sie, bis
   die Analyse abgeschlossen ist...
 0f6c4353601e: Originaldatei senden, um Qualitätsverlust zu vermeiden
@@ -20,7 +19,6 @@
 2c055973c8bc: Bitte später erneut versuchen oder den Link im Chat senden
 30364e475d07: Das ist nicht Ihre Aktion
 3065ed13e5f9: Original-Link abrufen
-31936e26c173: Alle {media_count} Elemente abrufen
 33ccc7a4682a: Nicht unterstützte Plattform
 3795485677d6: Gruppenkonfiguration
 39b75e75d433: Video-Cover
@@ -70,7 +68,9 @@
 945599b91845: Parsing-Fortschritt deaktivieren
 9b3dbf3e3f85: Untere "Quelle" ausblenden
 a3e3b88377c8: Start
+a5eac262447d: Nur für Mitglieder der festgelegten Gruppe
 ab480060abb1: Fehlerprotokolle nicht anzeigen
+ad4fff48f141: Keine Berechtigung
 ad66098d7867: Fehlerprotokolle behalten
 b3bbb48dcb10: Zu häufige Analyse, bitte versuche es nach {e.retry_after:.1f} Sekunden
   erneut

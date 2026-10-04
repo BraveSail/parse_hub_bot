@@ -39,6 +39,14 @@ class BotSettings(BaseSettings):
 
     database_url: str = Field(default="sqlite+aiosqlite:///data/db/database.db")
 
+    guest_whitelist_group_id: int = Field(
+        default=0,
+        description=(
+            "白名单群 ID: 只有与 bot 同在**这一个**群的用户才能使用 inline 与 guest 查询; "
+            "0 表示不限制。只查这一个群 (不遍历 bot 所在的全部群), 所以不会因群多而 flood。"
+        ),
+    )
+
     debug: bool = Field(default=False)
     debug_skip_cleanup: bool = Field(default=False, description="跳过资源清理")
 

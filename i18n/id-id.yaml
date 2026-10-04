@@ -4,7 +4,6 @@
   terlebih dahulu sebelum mengonfigurasi
 06778dbf05d5: Manajemen Platform
 091d3a0665fa: Konfigurasi Saluran
-0b7a8465c5b6: Link sudah kadaluarsa, silahkan kirim link langsung di chat
 0d3d68e32996: Tugas yang sama sedang diproses, tunggu hingga selesai...
 0f6c4353601e: Kirim file asli, hindari kompresi kualitas gambar
 0f6cedccc5d3: GIF terlalu banyak, lewati pengunggahan, silakan unduh sendiri
@@ -19,7 +18,6 @@
 2c055973c8bc: Coba lagi nanti, atau kirim tautan di chat
 30364e475d07: Ini bukan tindakan Anda
 3065ed13e5f9: Dapatkan tautan asli
-31936e26c173: Dapatkan semua {media_count} item
 33ccc7a4682a: Platform tidak didukung
 3795485677d6: Konfigurasi grup
 39b75e75d433: Sampul video
@@ -68,7 +66,9 @@
 945599b91845: Nonaktifkan progres parsing
 9b3dbf3e3f85: Sembunyikan "Sumber" di bagian bawah
 a3e3b88377c8: Mulai
+a5eac262447d: Hanya untuk anggota grup yang ditentukan
 ab480060abb1: Jangan tampilkan log kesalahan
+ad4fff48f141: Tidak ada izin
 ad66098d7867: Simpan log kesalahan
 b3bbb48dcb10: Analisis terlalu sering, silakan coba lagi setelah {e.retry_after:.1f}
   detik

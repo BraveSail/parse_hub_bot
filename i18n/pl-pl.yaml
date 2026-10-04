@@ -4,7 +4,6 @@
   skonfiguruj
 06778dbf05d5: Zarządzanie platformą
 091d3a0665fa: Konfiguracja kanału
-0b7a8465c5b6: Link wygasł, prosimy o przesłanie linku bezpośrednio na czacie
 0d3d68e32996: Już trwa analiza tego samego zadania, czekaj na zakończenie analizy...
 0f6c4353601e: Wyślij oryginalny plik, aby uniknąć kompresji jakości obrazu
 0f6cedccc5d3: Zbyt wiele GIF-ów, pomijanie przesyłania, proszę pobrać samodzielnie
@@ -19,7 +18,6 @@
 2c055973c8bc: Spróbuj ponownie później lub wyślij link na czacie
 30364e475d07: To nie jest twoja operacja
 3065ed13e5f9: Pobierz oryginalny link
-31936e26c173: Pobierz wszystkie {media_count} elementy
 33ccc7a4682a: Nieobsługiwana platforma
 3795485677d6: Konfiguracja grupy
 39b75e75d433: Miniatura wideo
@@ -69,7 +67,9 @@
 945599b91845: Wyłącz postęp analizy
 9b3dbf3e3f85: Ukryj dolny „Źródło”
 a3e3b88377c8: Start
+a5eac262447d: Tylko dla członków wyznaczonej grupy
 ab480060abb1: Nie pokazuj dziennika błędów
+ad4fff48f141: Brak uprawnień
 ad66098d7867: Zachowaj dziennik błędów
 b3bbb48dcb10: Analiza zbyt częsta, spróbuj ponownie za {e.retry_after:.1f}s
 b6aaf8f2a2be: Konfiguracja osobista w grupie

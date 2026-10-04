@@ -4,7 +4,6 @@
   hình
 06778dbf05d5: Quản lý nền tảng
 091d3a0665fa: Cấu hình kênh
-0b7a8465c5b6: Link đã hết hạn, vui lòng gửi link trực tiếp trong phần chat
 0d3d68e32996: Đã có tác vụ giống đang được phân tích, vui lòng chờ hoàn thành...
 0f6c4353601e: Gửi tệp gốc, tránh nén chất lượng hình ảnh
 0f6cedccc5d3: Quá nhiều GIF, bỏ qua tải lên, vui lòng tải xuống thủ công
@@ -19,7 +18,6 @@
 2c055973c8bc: Vui lòng thử lại sau hoặc gửi liên kết vào cuộc trò chuyện
 30364e475d07: Đây không phải thao tác của bạn
 3065ed13e5f9: Lấy liên kết gốc
-31936e26c173: Nhận tất cả {media_count} mục
 33ccc7a4682a: Nền tảng không được hỗ trợ
 3795485677d6: Cấu hình nhóm
 39b75e75d433: Ảnh bìa video
@@ -66,7 +64,9 @@
 945599b91845: Vô hiệu hóa tiến trình phân tích
 9b3dbf3e3f85: Ẩn "Nguồn" ở dưới cùng
 a3e3b88377c8: Bắt đầu
+a5eac262447d: Chỉ dành cho thành viên của nhóm được chỉ định
 ab480060abb1: Không hiển thị nhật ký lỗi
+ad4fff48f141: Không có quyền
 ad66098d7867: Giữ lại nhật ký lỗi
 b3bbb48dcb10: Phân tích quá thường xuyên, vui lòng thử lại sau {e.retry_after:.1f}
   giây

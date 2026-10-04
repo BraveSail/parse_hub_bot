@@ -4,7 +4,6 @@
   configurar
 06778dbf05d5: Gerenciamento da plataforma
 091d3a0665fa: Configuração do canal
-0b7a8465c5b6: O link expirou, envie o link diretamente no chat
 0d3d68e32996: Já existe uma tarefa igual sendo processada, aguardando a conclusão...
 0f6c4353601e: Enviar arquivo original, evitar compressão de qualidade
 0f6cedccc5d3: Muitos GIFs, pulando upload, por favor baixe manualmente
@@ -19,7 +18,6 @@
 2c055973c8bc: Tente novamente mais tarde ou envie o link no chat
 30364e475d07: Esta não é a sua operação
 3065ed13e5f9: Obter link original
-31936e26c173: Obter todos os {media_count} itens
 33ccc7a4682a: Plataforma não suportada
 3795485677d6: Configuração do grupo
 39b75e75d433: Capa do vídeo
@@ -61,7 +59,9 @@
 945599b91845: Desativar progresso de análise
 9b3dbf3e3f85: Ocultar "Source" na parte inferior
 a3e3b88377c8: Iniciar
+a5eac262447d: Apenas para membros do grupo designado
 ab480060abb1: Não mostrar logs de erro
+ad4fff48f141: Sem permissão
 ad66098d7867: Manter registro de erros
 b3bbb48dcb10: Análise muito frequente, por favor tente novamente em {e.retry_after:.1f}s
 b6aaf8f2a2be: Configuração pessoal no grupo

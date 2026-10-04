@@ -4,7 +4,6 @@
   canale e poi configura
 06778dbf05d5: Gestione piattaforma
 091d3a0665fa: Configurazione canale
-0b7a8465c5b6: Il link è scaduto, invia il link direttamente nella chat
 0d3d68e32996: Un'attività identica è già in fase di analisi, attendere il completamento...
 0f6c4353601e: Invia il file originale per evitare la compressione della qualità
 0f6cedccc5d3: Troppi GIF, caricamento saltato, si prega di scaricare manualmente
@@ -19,7 +18,6 @@
 2c055973c8bc: Riprova più tardi o invia il link nella chat
 30364e475d07: Questa non è la tua operazione
 3065ed13e5f9: Ottieni link originale
-31936e26c173: Ottieni tutti i {media_count} elementi
 33ccc7a4682a: Piattaforma non supportata
 3795485677d6: Configurazione gruppo
 39b75e75d433: Copertina video
@@ -69,7 +67,9 @@
 945599b91845: Disabilita progresso analisi
 9b3dbf3e3f85: Nascondi "Fonte" in basso
 a3e3b88377c8: Inizia
+a5eac262447d: Solo per i membri del gruppo designato
 ab480060abb1: Non mostrare i log degli errori
+ad4fff48f141: Nessuna autorizzazione
 ad66098d7867: Conserva i log degli errori
 b3bbb48dcb10: Analisi troppo frequente, riprova tra {e.retry_after:.1f} secondi
 b6aaf8f2a2be: Configurazione personale nel gruppo

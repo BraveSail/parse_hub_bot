@@ -1,5 +1,6 @@
 import re
 
+from easy_ai18n import PreLocaleSelector
 from parsehub import AnyParseResult
 from parsehub.types import (
     AniRef,
@@ -7,6 +8,7 @@ from parsehub.types import (
     VideoRef,
 )
 from pyrogram import Client, raw, utils
+from pyrogram.enums import ChatType
 from pyrogram.errors import BadRequest
 from pyrogram.types import (
     ChosenInlineResult,
@@ -34,6 +36,7 @@ from plugins.helpers import (
     build_rich_markdown,
     build_start_text,
 )
+from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     RICH_RESULT_ID,
@@ -195,11 +198,34 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         await answer_inline(inline_query, [], lang=lang)
 
 
+def build_denied_result(_t: PreLocaleSelector) -> InlineQueryResult:
+    """门禁不通过时返回的结果项 (不解析, 只说明原因)。"""
+    return InlineQueryResultArticle(
+        title=_t("无权限"),
+        description=_t("仅限指定群的成员使用"),
+        input_message_content=InputTextMessageContent(
+            _t("无权限"), link_preview_options=LinkPreviewOptions(is_disabled=True)
+        ),
+    )
+
+
 async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
-    raw_url = await ParseService().get_raw_url(inline_query.query)
     async with get_session() as session:
         lang = await UserService(session).get_lang(inline_query.from_user.id)
         config = await SettingsService(session).get_config_by_user(inline_query.from_user.id)
+
+    # 门禁: 群/频道里的 inline 要求发起者与 bot 同在白名单群; 私聊里用户是主动找 bot, 不限制
+    if inline_query.chat_type != ChatType.PRIVATE and not await access_gate.is_allowed(
+        cli, inline_query.from_user.id
+    ):
+        _t = t_[lang]
+        logger.info(
+            f"inline 被门禁拦截: user_id={inline_query.from_user.id}, chat_type={inline_query.chat_type}"
+        )
+        await answer_inline(inline_query, [build_denied_result(_t)], lang=lang, cache_time=0)
+        return
+
+    raw_url = await ParseService().get_raw_url(inline_query.query)
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建富文本结果")
         # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。

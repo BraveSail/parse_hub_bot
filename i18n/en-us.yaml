@@ -4,7 +4,6 @@
   configuring
 06778dbf05d5: Platform Management
 091d3a0665fa: Channel Configuration
-0b7a8465c5b6: The link has expired, please send the link directly in the chat
 0d3d68e32996: A task with the same content is already being parsed, waiting for parsing
   to complete...
 0f6c4353601e: Send original file to avoid quality compression
@@ -20,7 +19,6 @@
 2c055973c8bc: Please try again later, or send the link in the chat
 30364e475d07: This is not your operation
 3065ed13e5f9: Get original link
-31936e26c173: Get all {media_count} items
 33ccc7a4682a: Unsupported platform
 3795485677d6: Group Configuration
 39b75e75d433: Video cover
@@ -66,7 +64,9 @@
 945599b91845: Disable parsing progress
 9b3dbf3e3f85: Hide bottom "Source"
 a3e3b88377c8: Start
+a5eac262447d: Available to members of the designated group only
 ab480060abb1: Do not display error logs
+ad4fff48f141: No permission
 ad66098d7867: Retain error logs
 b3bbb48dcb10: Parsing too frequently, please try again after {e.retry_after:.1f}s
 b6aaf8f2a2be: Individual configuration within group

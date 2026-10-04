@@ -3,7 +3,6 @@
 04f706887b08: Bot bu kanala katılmadı, lütfen önce Botu kanala ekleyin ve sonra yapılandırın
 06778dbf05d5: Platform yönetimi
 091d3a0665fa: Kanal Yapılandırması
-0b7a8465c5b6: Bağlantının süresi doldu, lütfen bağlantıyı doğrudan sohbetten gönderin
 0d3d68e32996: Aynı görev zaten çözülüyor, çözüm tamamlanana kadar bekleyin...
 0f6c4353601e: Orijinal dosyayı gönder, kalite sıkıştırmasını önle
 0f6cedccc5d3: GIF çok fazla, yükleme atlandı, lütfen kendiniz indirin
@@ -18,7 +17,6 @@
 2c055973c8bc: Daha sonra tekrar deneyin veya bağlantıyı sohbete gönderin
 30364e475d07: Bu senin işlemin değil
 3065ed13e5f9: Orijinal bağlantıyı al
-31936e26c173: Tüm {media_count} öğeyi al
 33ccc7a4682a: Desteklenmeyen platform
 3795485677d6: Grup yapılandırması
 39b75e75d433: Video kapağı
@@ -67,7 +65,9 @@
 945599b91845: Çözümleme ilerlemesini devre dışı bırak
 9b3dbf3e3f85: Alt "Kaynak"u gizle
 a3e3b88377c8: Başlat
+a5eac262447d: Yalnızca belirlenen grubun üyeleri için
 ab480060abb1: Hata günlüklerini gösterme
+ad4fff48f141: Yetki yok
 ad66098d7867: Hata günlüklerini sakla
 b3bbb48dcb10: Çözümleme çok sık yapılıyor, lütfen {e.retry_after:.1f} saniye sonra
   tekrar deneyin

@@ -4,7 +4,6 @@
   antes de configurar
 06778dbf05d5: Gestión de la plataforma
 091d3a0665fa: Configuración del canal
-0b7a8465c5b6: El enlace ha caducado, envíe el enlace directamente en el chat.
 0d3d68e32996: Ya hay una tarea igual en proceso de análisis, esperando a que termine...
 0f6c4353601e: Enviar archivo original para evitar compresión de calidad
 0f6cedccc5d3: Demasiados GIF, se omite la subida, por favor descarga manualmente
@@ -19,7 +18,6 @@
 2c055973c8bc: Vuelve a intentarlo más tarde o envía el enlace al chat
 30364e475d07: Esta no es tu acción
 3065ed13e5f9: Obtener enlace original
-31936e26c173: Obtener los {media_count} elementos
 33ccc7a4682a: Plataforma no soportada
 3795485677d6: Configuración del grupo
 39b75e75d433: Portada del vídeo
@@ -69,7 +67,9 @@
 945599b91845: Desactivar progreso de análisis
 9b3dbf3e3f85: Ocultar "Fuente" en la parte inferior
 a3e3b88377c8: Iniciar
+a5eac262447d: Solo para miembros del grupo designado
 ab480060abb1: No mostrar registros de errores
+ad4fff48f141: Sin permiso
 ad66098d7867: Conservar registros de errores
 b3bbb48dcb10: Análisis demasiado frecuente, por favor intenta de nuevo en {e.retry_after:.1f}s
 b6aaf8f2a2be: Configuración personal en el grupo

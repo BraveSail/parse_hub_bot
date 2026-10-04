@@ -4,7 +4,6 @@
   canal avant de configurer
 06778dbf05d5: Gestion de la plateforme
 091d3a0665fa: Configuration du canal
-0b7a8465c5b6: Le lien a expiré, veuillez envoyer le lien directement dans le chat
 0d3d68e32996: Une tâche identique est déjà en cours d'analyse, veuillez attendre la
   fin de l'analyse...
 0f6c4353601e: Envoyer le fichier original, éviter la compression de la qualité
@@ -20,7 +19,6 @@
 2c055973c8bc: Réessayez plus tard, ou envoyez le lien dans le chat
 30364e475d07: Ce n'est pas votre action
 3065ed13e5f9: Obtenir le lien original
-31936e26c173: Obtenir les {media_count} éléments
 33ccc7a4682a: Plateforme non supportée
 3795485677d6: Configuration du groupe
 39b75e75d433: Vignette vidéo
@@ -70,7 +68,9 @@
 945599b91845: Désactiver la progression de l'analyse
 9b3dbf3e3f85: Masquer le « Source » en bas
 a3e3b88377c8: Démarrer
+a5eac262447d: Réservé aux membres du groupe désigné
 ab480060abb1: Ne pas afficher les journaux d'erreurs
+ad4fff48f141: Aucune autorisation
 ad66098d7867: Conserver les journaux d'erreurs
 b3bbb48dcb10: Analyse trop fréquente, veuillez réessayer dans {e.retry_after:.1f}s
 b6aaf8f2a2be: Configuration personnelle dans le groupe

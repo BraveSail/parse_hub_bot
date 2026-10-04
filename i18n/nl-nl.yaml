@@ -4,7 +4,6 @@
   kanaal voordat je het configureert
 06778dbf05d5: Platformbeheer
 091d3a0665fa: Kanaalconfiguratie
-0b7a8465c5b6: De link is verlopen, stuur de link rechtstreeks in de chat
 0d3d68e32996: Er is al eenzelfde taak bezig met ontleden, wacht tot het ontleden is
   voltooid...
 0f6c4353601e: Stuur het originele bestand om kwaliteitscompressie te voorkomen
@@ -20,7 +19,6 @@
 2c055973c8bc: Probeer het later opnieuw of stuur de link in de chat
 30364e475d07: Dit is niet jouw actie
 3065ed13e5f9: Oorspronkelijke link ophalen
-31936e26c173: Alle {media_count} items ophalen
 33ccc7a4682a: Niet-ondersteund platform
 3795485677d6: Groepsconfiguratie
 39b75e75d433: Videominiatuur
@@ -70,7 +68,9 @@
 945599b91845: Parsing voortgang uitschakelen
 9b3dbf3e3f85: Verberg "Bron" onderaan
 a3e3b88377c8: Start
+a5eac262447d: Alleen voor leden van de aangewezen groep
 ab480060abb1: Foutlogboeken niet weergeven
+ad4fff48f141: Geen toestemming
 ad66098d7867: Foutlogboek bewaren
 b3bbb48dcb10: Te vaak geanalyseerd, probeer het opnieuw na {e.retry_after:.1f}s
 b6aaf8f2a2be: Persoonlijke configuratie binnen groep
