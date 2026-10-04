@@ -237,6 +237,15 @@ def build_rich_markdown(
     reply_quote, body_text, quote = split_quote_blocks(content) if content else ("", "", "")
     fold_summary = t_[lang]("展开全文") if lang else ""
     reply_media = list(reply_media_placeholders)
+    # 末尾引用块不存在时, 属于它的媒体要交回**头部**引用块 (反之亦然, 下面那段)。
+    # 平台产出"引用块在前"的结构时就会走到这里 (linux.do 把主楼做成引用块放最上面) ——
+    # 不兜的话媒体的归属块为空, render_quote_card 直接丢弃它们 (症状: 图不见了)。
+    if not config.hide_desc and quote_media_placeholders and not quote:
+        if reply_quote:
+            reply_media = [*reply_media, *quote_media_placeholders]
+        else:
+            media_placeholders = [*media_placeholders, *quote_media_placeholders]
+        quote_media_placeholders = ()
     if reply_quote and not config.hide_desc:
         # 被回复的卡片也要能折叠: 以前直接拼进 parts, 1294 字的回复块整屏铺开
         parts.extend(render_quote_card(reply_quote, reply_media, summary=fold_summary))

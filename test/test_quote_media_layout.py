@@ -114,6 +114,48 @@ def test_attach_keeps_every_line_inside_the_block():
 
 # ── build_rich_markdown 端到端 ──────────────────────────────────────────
 
+def test_quoted_media_falls_back_to_the_leading_quote_block():
+    """末尾引用块不存在时, 属于它的媒体要交回**头部**引用块。
+
+    平台可以产出"引用块在前"的结构 (linux.do 把主楼做成引用块放最上面),
+    这时 split_quote_blocks 把它归到 reply_quote, quote 为空 —— 媒体的归属块
+    为空就会被 render_quote_card 丢弃 (症状: 主楼的图不见了)。
+    """
+    content = "> <i>@楼主 · #1：</i>\n\n本层正文"
+    md = build_rich_markdown(
+        _result(content=content),
+        config=_Cfg(),
+        lang="zh-hans",
+        quote_media_placeholders=["![](tg://photo?id=q0)"],
+    )
+    assert "![](tg://photo?id=q0)" in md
+    # 落在头部引用块**内部** (占位符带 > 前缀)
+    assert "> ![](tg://photo?id=q0)" in md
+
+
+def test_quoted_media_falls_back_to_the_body_when_no_quote_block_at_all():
+    """两个引用块都没有时, 媒体也不能丢 —— 兜给正文媒体"""
+    md = build_rich_markdown(
+        _result(content="纯正文, 没有任何引用块"),
+        config=_Cfg(),
+        lang="zh-hans",
+        quote_media_placeholders=["![](tg://photo?id=q0)"],
+    )
+    assert "![](tg://photo?id=q0)" in md
+
+
+def test_quoted_media_stays_in_the_trailing_block_when_it_exists():
+    """末尾引用块存在时不做兜底 (回归)"""
+    content = "正文\n\n> <i>@被引用者：</i>\n> <i>引用内容</i>"
+    md = build_rich_markdown(
+        _result(content=content),
+        config=_Cfg(),
+        lang="zh-hans",
+        quote_media_placeholders=["![](tg://photo?id=q0)"],
+    )
+    assert md.index("被引用者") < md.index("![](tg://photo?id=q0)")
+
+
 def test_reply_and_quoted_media_land_in_their_blocks():
     content = "> <i>回复者 @a：</i>\n> <i>被回复的话</i>\n\n正文内容\n\n> <i>引用者 @b：</i>\n> <i>被引用的话</i>"
     md = build_rich_markdown(
