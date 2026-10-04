@@ -274,12 +274,22 @@ def rich_cache_entry(
 
 
 def build_cached_rich_content(
-    entry, raw_url: str, *, lang: str, config, view_label: str = "", custom_content: str = ""
+    entry,
+    raw_url: str,
+    *,
+    lang: str,
+    config,
+    view_label: str = "",
+    custom_content: str = "",
+    force_spoiler: bool = False,
 ) -> tuple[str, list[InputRichMessageMedia]]:
     """从缓存条目重建富文本正文与媒体块 (file_id 复用, 零上传)。
 
     **直发与 inline 共用这一条**, 免得两边各写一份排版:
     缓存里存的只有解析字段, 排版一律交给 ``build_rich_markdown_by_str``。
+
+    :param force_spoiler: 用户这次要求遮住内容 (``/s``)。缓存存的是**解析字段**
+        而非渲染结果, 所以遮与不遮在排版时决定 —— 命中缓存也必须照遮。
     """
     from plugins.helpers import build_rich_markdown_by_str, wrap_collage
 
@@ -302,6 +312,7 @@ def build_cached_rich_content(
         media_placeholders=wrap_collage(placeholders),
         quote_media_placeholders=quoted_placeholders,
         reply_media_placeholders=reply_placeholders,
+        hide_content=force_spoiler,
     )
     return markdown, media
 

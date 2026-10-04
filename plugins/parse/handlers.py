@@ -201,7 +201,14 @@ async def _try_send_cached(
     用户**什么都收不到**(只留一条日志)。清掉记录后正常流程会重新下载并重建缓存。
     """
     try:
-        await send_cached(sender, cached, raw_url, custom_content=req.custom_content, _t=req.t_)
+        await send_cached(
+            sender,
+            cached,
+            raw_url,
+            custom_content=req.custom_content,
+            _t=req.t_,
+            force_spoiler=req.force_spoiler,
+        )
     except Exception as e:
         logger.exception(e)
         logger.warning(f"从缓存发送失败 (file_id 可能已失效), 清除缓存并重新解析: url={raw_url}")
@@ -221,7 +228,10 @@ def _get_parse_user_id(req: ParseRequest) -> int | None:
 @parse_rate_limit(_get_parse_user_id)
 async def handle_parse(req: ParseRequest) -> bool:
     options = ParseOptions.from_mode(req.mode, bypass_cache=req.bypass_cache)
-    logger.info(f"收到解析请求: url={req.url}, chat_id={req.chat_id}, msg_id={req.msg.id}, mode={req.mode}")
+    logger.info(
+        f"收到解析请求: url={req.url}, chat_id={req.chat_id}, msg_id={req.msg.id}, "
+        f"mode={req.mode}, force_spoiler={req.force_spoiler}"
+    )
     if req.bypass_cache:
         logger.debug("bypass_cache=True 绕过缓存")
 

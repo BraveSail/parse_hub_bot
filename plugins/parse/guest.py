@@ -157,7 +157,12 @@ async def _answer(
     if cached := await persistent_cache.get(raw_url):
         logger.debug(f"guest: file_id 缓存命中, 直接发送 url={raw_url}")
         markdown, cached_media = build_cached_rich_content(
-            cached, raw_url, lang=locale, config=config, view_label=_t("查看")
+            cached,
+            raw_url,
+            lang=locale,
+            config=config,
+            view_label=_t("查看"),
+            force_spoiler=force_spoiler,
         )
         pr = cached.parse_result
         await _deliver(

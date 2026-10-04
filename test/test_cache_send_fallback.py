@@ -15,7 +15,7 @@ from plugins.parse import handlers
 def _run(cached, *, send_error: Exception | None):
     """跑 _try_send_cached, 返回 (是否发出, 是否清了缓存)。"""
     sender = SimpleNamespace()
-    req = SimpleNamespace(t_="t", custom_content="")
+    req = SimpleNamespace(t_="t", custom_content="", force_spoiler=False)
 
     removed: list[str] = []
 
@@ -44,10 +44,29 @@ def test_failed_cache_send_drops_the_entry_and_reports_not_sent():
     assert removed == ["https://x.com/a/status/1"]
 
 
+def test_try_send_cached_passes_the_spoiler_flag():
+    """缓存命中时也要把 /s 传下去 —— 这正是"发过 /s 不生效"的根因所在:
+
+    缓存路径原先直接发送、不带 force_spoiler, 于是先发普通链接建立缓存后,
+    再对同一链接加 /s 会从 file_id 缓存发出**没遮**的版本。
+    """
+    req = SimpleNamespace(t_="t", custom_content="", force_spoiler=True)
+    seen: dict = {}
+
+    async def fake_send(sender, cached, url, **kwargs):
+        seen.update(kwargs)
+
+    with patch.object(handlers, "send_cached", new=fake_send):
+        ok = asyncio.run(handlers._try_send_cached(SimpleNamespace(), object(), "https://x.com/a/status/1", req))
+
+    assert ok is True
+    assert seen["force_spoiler"] is True
+
+
 def test_cache_removal_failure_does_not_raise():
     """清缓存本身失败也不能把异常抛出去 —— 重新解析才是重点"""
     sender = SimpleNamespace()
-    req = SimpleNamespace(t_="t", custom_content="")
+    req = SimpleNamespace(t_="t", custom_content="", force_spoiler=False)
 
     async def boom(url: str) -> None:
         raise RuntimeError("db down")

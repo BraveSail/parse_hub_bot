@@ -239,7 +239,7 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         logger.debug("inline: 缓存命中, 构建富文本结果")
         # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
         # 没有 file_id 的旧缓存则给纯文字占位, 选中后由 inline_result_download 补齐媒体。
-        results = [build_cached_rich_result(cached, raw_url, lang, config)]
+        results = [build_cached_rich_result(cached, raw_url, lang, config, force_spoiler=force_spoiler)]
         await answer_inline(inline_query, results, lang=lang, cache_time=60)
         return
 
@@ -365,11 +365,23 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
 
 
 def build_cached_rich_result(
-    entry: CacheEntry, raw_url: str, lang: str, config: SettingsConfig
+    entry: CacheEntry,
+    raw_url: str,
+    lang: str,
+    config: SettingsConfig,
+    *,
+    force_spoiler: bool = False,
 ) -> InlineQueryResult:
     """缓存路径的富文本结果项 (带 file_id 媒体, 一项同时给图和页脚)。"""
     _t = t_[lang]
-    markdown, media = build_cached_rich_content(entry, raw_url, lang=lang, config=config, view_label=_t("查看"))
+    markdown, media = build_cached_rich_content(
+        entry,
+        raw_url,
+        lang=lang,
+        config=config,
+        view_label=_t("查看"),
+        force_spoiler=force_spoiler,
+    )
     # 没有 file_id 时挂键盘: 提示客户端保留句柄, 选中后可补上媒体
     reply_markup = None if media else Ikm([[Ikb("原链接", url=raw_url)]])
     return InlineQueryResultArticle(

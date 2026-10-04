@@ -482,15 +482,26 @@ async def send_cached(
     *,
     custom_content: str = "",
     _t: PreLocaleSelector | None = None,
+    force_spoiler: bool = False,
 ) -> None:
-    """从 file_id 缓存直接发送（富文本）: file_id 复用, 跳过解析/下载/转码/上传。"""
+    """从 file_id 缓存直接发送（富文本）: file_id 复用, 跳过解析/下载/转码/上传。
+
+    :param force_spoiler: 用户这次要求遮住内容 (``/s``) —— 缓存命中也得照遮,
+        否则第二次发同一链接时打码会失效 (缓存存的是解析字段, 排版现做)。
+    """
     logger.debug(f"缓存发送: media={entry.media}")
     lang = _t.locale if _t else ""
     view_label = _t("查看") if _t else ""
     # 缓存路径同样走富文本排版 (与直发共用 build_cached_rich_content):
     # 不再拼老 caption —— 否则同一链接第二次发送会变成另一种格式
     markdown, media = build_cached_rich_content(
-        entry, url, lang=lang, config=sender.config, view_label=view_label, custom_content=custom_content
+        entry,
+        url,
+        lang=lang,
+        config=sender.config,
+        view_label=view_label,
+        custom_content=custom_content,
+        force_spoiler=force_spoiler,
     )
     await sender.rich_message(rich_message=InputRichMessage(markdown=markdown, media=media or None))
 

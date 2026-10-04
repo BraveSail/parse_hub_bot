@@ -341,6 +341,7 @@ def build_rich_markdown_by_str(
     media_placeholders: Sequence[str] = (),
     quote_media_placeholders: Sequence[str] = (),
     reply_media_placeholders: Sequence[str] = (),
+    hide_content: bool = False,
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。"""
     return build_rich_markdown(
@@ -363,6 +364,7 @@ def build_rich_markdown_by_str(
         media_placeholders=media_placeholders,
         quote_media_placeholders=quote_media_placeholders,
         reply_media_placeholders=reply_media_placeholders,
+        hide_content=hide_content,
     )
 
 
