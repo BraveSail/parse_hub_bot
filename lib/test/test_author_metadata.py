@@ -298,6 +298,50 @@ def test_instagram_all_media_branches(media_type):
     assert result.author_name == AUTHOR
 
 
+@pytest.mark.parametrize("media_type", ["GraphImage", "GraphVideo", "GraphSidecar"])
+def test_instagram_keeps_published_at_and_counts(media_type):
+    """Instagram 的发布时间/点赞/播放要传进结果 —— 以前只传 title/content/author,
+    页脚就只剩来源 (用户报「页脚只有来源」)。拿不到的项保持 None, 页脚自动跳过。
+    """
+    post = InstagramPost(
+        {
+            "__typename": media_type,
+            "is_video": media_type == "GraphVideo",
+            "video_url": VIDEO,
+            "display_url": "https://cdn.example/image.jpg",
+            "owner": {"full_name": AUTHOR},
+            "edge_sidecar_to_children": {"edges": []},
+            "taken_at_timestamp": 1790949945,
+            "edge_media_preview_like": {"count": 348},
+            "video_view_count": 12345,
+        }
+    )
+    with patch.object(InstagramParser, "_parse", new=AsyncMock(return_value=post)):
+        result = asyncio.run(InstagramParser()._do_parse("https://instagram.com/p/123"))
+
+    assert result.like_count == 348
+    assert result.view_count == 12345
+    assert result.published_at is not None
+    assert result.published_at.year == 2026
+
+
+def test_instagram_without_stats_keeps_them_none():
+    """图文没有播放数 (reel 才有) —— 保持 None, 页脚不显示那段 (绝不留空占位)"""
+    post = InstagramPost(
+        {
+            "__typename": "GraphImage",
+            "is_video": False,
+            "display_url": "https://cdn.example/image.jpg",
+            "owner": {"full_name": AUTHOR},
+        }
+    )
+    with patch.object(InstagramParser, "_parse", new=AsyncMock(return_value=post)):
+        result = asyncio.run(InstagramParser()._do_parse("https://instagram.com/p/123"))
+    assert result.view_count is None
+    assert result.like_count is None
+    assert result.published_at is None
+
+
 @pytest.mark.parametrize("rich", [False, True])
 @pytest.mark.parametrize("gif", [False, True])
 def test_coolapk_all_result_types(rich, gif):

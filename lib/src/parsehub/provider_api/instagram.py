@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any, cast
 
 from ..utils import http
-from ..utils.helpers import get_author_name
+from ..utils.helpers import get_author_name, to_int
 
 
 class InstagramAPIError(RuntimeError):
@@ -96,6 +96,25 @@ class InstagramPost:
     def video_duration(self) -> float | None:
         value = self._node.get("video_duration")
         return float(value) if value is not None else None
+
+    @property
+    def published_at(self) -> int | None:
+        """发布时间的 unix 时间戳 (``taken_at_timestamp``)。"""
+        return to_int(self._node.get("taken_at_timestamp"))
+
+    @property
+    def like_count(self) -> int | None:
+        """点赞数 (``edge_media_preview_like.count``)。"""
+        return to_int((self._node.get("edge_media_preview_like") or {}).get("count"))
+
+    @property
+    def view_count(self) -> int | None:
+        """播放数。
+
+        **reel / 视频才有**, 图文没有 —— 拿不到就返回 None, 页脚不显示这一段
+        (绝不留空占位)。注意可能为 0 (没人看过), 0 是有效值不能当"没有"。
+        """
+        return to_int(self._node.get("video_view_count"))
 
     @property
     def width(self) -> int:

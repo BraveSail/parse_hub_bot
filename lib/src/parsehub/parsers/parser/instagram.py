@@ -1,4 +1,5 @@
 import re
+from typing import Any
 
 from ...provider_api.instagram import InstagramAPI, InstagramAPIError, InstagramMediaType, InstagramPost
 from ...types import ImageParseResult, ImageRef, MultimediaParseResult, ParseError, Platform, VideoParseResult, VideoRef
@@ -20,6 +21,13 @@ class InstagramParser(BaseParser):
         post = await self._parse(raw_url, shortcode)
 
         width, height = post.width, post.height
+        # 页脚要用的公共字段: 以前只传 title/content/author, 于是页脚只剩来源
+        # (用户报「页脚只有来源」); 拿不到的项保持 None, 页脚自动跳过那一段
+        stats: dict[str, Any] = {
+            "published_at": post.published_at,
+            "like_count": post.like_count,
+            "view_count": post.view_count,
+        }
 
         match post.typename:
             case InstagramMediaType.SIDECAR:
@@ -30,7 +38,11 @@ class InstagramParser(BaseParser):
                     for i in post.get_sidecar_nodes()
                 ]
                 return MultimediaParseResult(
-                    media=media, title=post.title, content=post.caption, author_name=post.author_name
+                    media=media,
+                    title=post.title,
+                    content=post.caption,
+                    author_name=post.author_name,
+                    **stats,
                 )
             case InstagramMediaType.IMAGE:
                 return ImageParseResult(
@@ -38,6 +50,7 @@ class InstagramParser(BaseParser):
                     title=post.title,
                     content=post.caption,
                     author_name=post.author_name,
+                    **stats,
                 )
             case InstagramMediaType.VIDEO:
                 return VideoParseResult(
@@ -51,6 +64,7 @@ class InstagramParser(BaseParser):
                     title=post.title,
                     author_name=post.author_name,
                     content=post.caption,
+                    **stats,
                 )
             case _:
                 raise ParseError("不支持的类型")
