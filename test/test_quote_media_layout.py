@@ -129,9 +129,9 @@ def test_reply_and_quoted_media_land_in_their_blocks():
     # 回复块(含其媒体) → 正文媒体 → 引用块(含其媒体)
     assert i_reply_media < i_body_media < i_quoted_media
     # 三个块各自的位置也要对
-    assert lines.index("> *被回复的话*") < i_reply_media
+    assert lines.index("> <i>被回复的话</i>") < i_reply_media
     assert lines.index("正文内容") < i_body_media
-    assert lines.index("> *被引用的话*") < i_quoted_media
+    assert lines.index("> <i>被引用的话</i>") < i_quoted_media
 
 
 def test_no_reply_media_keeps_the_body_where_it_was():
@@ -143,4 +143,4 @@ def test_no_reply_media_keeps_the_body_where_it_was():
         media_placeholders=["![](tg://photo?id=body)"],
     )
     lines = [line for line in md.split("\n") if line.strip()]
-    assert lines.index("正文") < lines.index("![](tg://photo?id=body)") < lines.index("> *引用*")
+    assert lines.index("正文") < lines.index("![](tg://photo?id=body)") < lines.index("> <i>引用</i>")

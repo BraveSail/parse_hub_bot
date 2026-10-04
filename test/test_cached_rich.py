@@ -63,7 +63,7 @@ def test_cached_rich_content_puts_quoted_media_in_the_quote_block():
     markdown, _ = build_cached_rich_content(
         entry, "https://www.pixiv.net/artworks/1", lang="zh-hans", config=_config(), view_label="查看"
     )
-    assert "> *被引用的文字*" in markdown
+    assert "> <i>被引用的文字</i>" in markdown
     assert "> ![](tg://video?id=m2)" in markdown
 
 

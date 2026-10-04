@@ -169,17 +169,40 @@ def test_long_quote_block_is_folded():
     assert out.startswith("<blockquote expandable>")
     assert out.endswith("</blockquote>")
     assert "<details>" not in out                       # 不用 details, 避免割裂
-    assert "*作者 @handle：*" in out                     # 斜体保留 (没被中和成 &#42;)
-    assert "*第19行内容*" in out
+    assert "<i>作者 @handle：</i>" in out                # 斜体走 HTML 标签 (块内 markdown 不解析)
+    assert "<i>第19行内容</i>" in out
+    assert "*" not in out                               # 不留字面星号
     assert out.count("<br>") == 19                      # 换行走 <br>
-    assert "> *" not in out                # '>' 前缀已剥掉 (剩下的 > 都属 <br>/标签)
+    assert "> " not in out                              # '>' 前缀已剥掉
 
 
-def test_short_quote_block_stays_untouched():
+def test_quote_italics_become_html_tags():
+    """引用块内 markdown 行内语法不解析 (星号会字面显示), 斜体必须走 <i>"""
+    from plugins.helpers import quote_italics_to_tags
+
+    assert quote_italics_to_tags("*斜体行*") == "<i>斜体行</i>"
+    assert quote_italics_to_tags("> *带前缀斜体*") == "> <i>带前缀斜体</i>"
+    assert quote_italics_to_tags("没有星号的行") == "没有星号的行"
+    assert "*" not in quote_italics_to_tags("> *作者 [@v](https://x.com/v)：*")
+
+
+def test_unfolded_quote_also_keeps_its_style():
+    """不折叠的引用块同样要转样式 —— 普通 blockquote 里 markdown 斜体也不解析"""
     from plugins.helpers import fold_quote_block
 
-    quote = "> *作者：*\n> 短内容"
-    assert fold_quote_block(quote, summary="展开全文") == quote
+    out = fold_quote_block("> *作者：*\n> 短内容", summary="展开全文")
+    assert out.startswith("> <i>作者：</i>")
+    assert "*" not in out
+
+
+def test_short_quote_block_is_not_folded():
+    """短引用块不折叠 (但仍要转样式, 见 test_unfolded_quote_also_keeps_its_style)"""
+    from plugins.helpers import fold_quote_block
+
+    out = fold_quote_block("> *作者：*\n> 短内容", summary="展开全文")
+    assert "<blockquote expandable>" not in out
+    assert "<details>" not in out
+    assert out.startswith("> ")
 
 
 def test_quote_media_stays_inside_the_folded_block():
@@ -211,7 +234,7 @@ def test_build_rich_markdown_folds_a_long_reply_block():
     md = build_rich_markdown(result, config=config, lang="zh-hans")
     assert "<blockquote expandable>" in md
     assert "<details>" not in md                 # 引用块不切成三段
-    assert "*第1行*" in md and "*第17行*" in md
+    assert "<i>第1行</i>" in md and "<i>第17行</i>" in md
 
 
 def test_fold_summary_follows_locale():

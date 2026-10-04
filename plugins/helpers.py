@@ -495,8 +495,11 @@ def fold_quote_block(quote: str, *, summary: str = "") -> str:
         return quote
     lines = quote.rstrip("\n").split("\n")
     body = "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
+    # 样式要转成 HTML: 引用块内 markdown 行内语法不解析 (斜体标记会变成字面星号)
+    body = quote_italics_to_tags(body)
     if not _should_fold(body):
-        return quote
+        # 不折叠时保留 '>' 行 (客户端渲染成普通引用块)
+        return quote_italics_to_tags(quote)
     return render_expandable_quote(body)
 
 
@@ -730,6 +733,29 @@ def split_fold_preview(content: str) -> tuple[str, str]:
     if not rest:
         return content, ""
     return preview, rest
+
+
+#: 引用块里整行的 *斜体* (来自 parsehub 的 format_quote_block), 可能带 '> ' 前缀
+_QUOTE_ITALIC_RE = re.compile(r"^(?P<prefix>>\s*)?\*(?P<body>.+)\*$")
+
+
+def quote_italics_to_tags(quote: str) -> str:
+    """把引用块里整行的 ``*斜体*`` 转成 ``<i>...</i>``。
+
+    **引用块内的 markdown 行内语法不解析**: 服务端对 ``<blockquote>`` /
+    ``<blockquote expandable>`` 里的 ``*`` 原样输出 (星号会直接显示出来,
+    斜体丢失)。而 HTML 标签有效 —— 实测块内 ``<i>`` / ``<b>`` 都解析成对应的
+    富文本实体 (``RichTextItalic`` / ``RichTextBold``), ``<a href>`` 一直是好的。
+    """
+    out: list[str] = []
+    for line in quote.split("\n"):
+        match = _QUOTE_ITALIC_RE.match(line.rstrip())
+        if match:
+            prefix = match.group("prefix") or ""
+            out.append(f"{prefix}<i>{match.group('body')}</i>")
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 def use_br_linebreaks(text: str) -> str:
