@@ -188,23 +188,23 @@ def test_extract_cache_media_on_empty_message():
 
 # ── /s 手动打码: 缓存命中也得照遮 ───────────────────────────────────────
 #
-# 回归: 缓存路径原先走 build_cached_rich_content 时不带 force_spoiler, 于是
+# 回归: 缓存路径原先走 build_cached_rich_content 时不带这个参数, 于是
 # "先发一次普通链接建立缓存, 再加 /s 发同一链接" 会直接从 file_id 缓存发出
 # 没遮的版本 —— 用户看到的表现就是"/s 不生效"。
 
 
 def test_cached_content_folds_when_spoiler_is_forced():
     markdown, _ = build_cached_rich_content(
-        _entry(), "https://x.com/a/status/1", lang="zh-hans", config=_config(), force_spoiler=True
+        _entry(), "https://x.com/a/status/1", lang="zh-hans", config=_config(), spoiler_tag="#nsfw"
     )
     assert "<details>" in markdown
-    assert "⚠️ 展开全文" in markdown
+    assert "⚠️ #nsfw" in markdown
 
 
 def test_cached_media_goes_inside_the_fold_too():
     """缓存路径的媒体同样要进折叠 —— 否则图露在外面等于没遮"""
     markdown, _ = build_cached_rich_content(
-        _entry(), "https://x.com/a/status/1", lang="zh-hans", config=_config(), force_spoiler=True
+        _entry(), "https://x.com/a/status/1", lang="zh-hans", config=_config(), spoiler_tag="#nsfw"
     )
     inner = markdown.split("<details>", 1)[1]
     outside = markdown.replace(inner, "")

@@ -233,13 +233,13 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         return
 
     # 手动打码开关: query 里那个独立的 /s 先剥掉, 否则会被当成 URL 的一部分
-    query, force_spoiler = strip_spoiler_flag(inline_query.query)
+    query, spoiler_tag = strip_spoiler_flag(inline_query.query)
     raw_url = await ParseService().get_raw_url(query)
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建富文本结果")
         # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
         # 没有 file_id 的旧缓存则给纯文字占位, 选中后由 inline_result_download 补齐媒体。
-        results = [build_cached_rich_result(cached, raw_url, lang, config, force_spoiler=force_spoiler)]
+        results = [build_cached_rich_result(cached, raw_url, lang, config, spoiler_tag=spoiler_tag)]
         await answer_inline(inline_query, results, lang=lang, cache_time=60)
         return
 
@@ -248,7 +248,7 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         parse_result = await ParseService().parse(query)
         await parse_cache.set(raw_url, parse_result)
 
-    results = await build_inline_results(parse_result, cli, lang, config, force_spoiler=force_spoiler)
+    results = await build_inline_results(parse_result, cli, lang, config, spoiler_tag=spoiler_tag)
     logger.debug(f"inline 查询完成, 返回 {len(results)} 个结果")
     await answer_inline(inline_query, results, lang=lang, cache_time=0)
 
@@ -288,7 +288,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         return
 
     # 选中回调带的是原始 query, 手动打码标记同样要剥掉 (否则 /s 会被拼进 URL)
-    _, force_spoiler = strip_spoiler_flag(chosen_result.query)
+    _, spoiler_tag = strip_spoiler_flag(chosen_result.query)
 
     inline_message_id = chosen_result.inline_message_id
     if inline_message_id is None:
@@ -344,7 +344,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 media_placeholders=placeholders,
                 quote_media_placeholders=quoted_placeholders,
                 reply_media_placeholders=reply_placeholders,
-                hide_content=force_spoiler,
+                hide_content=spoiler_tag,
             )
             logger.debug(
                 f"inline 编辑为富文本: media={len(media)}, blocks={len(media_blocks)}, "
@@ -370,7 +370,7 @@ def build_cached_rich_result(
     lang: str,
     config: SettingsConfig,
     *,
-    force_spoiler: bool = False,
+    spoiler_tag: str = "",
 ) -> InlineQueryResult:
     """缓存路径的富文本结果项 (带 file_id 媒体, 一项同时给图和页脚)。"""
     _t = t_[lang]
@@ -380,7 +380,7 @@ def build_cached_rich_result(
         lang=lang,
         config=config,
         view_label=_t("查看"),
-        force_spoiler=force_spoiler,
+        spoiler_tag=spoiler_tag,
     )
     # 没有 file_id 时挂键盘: 提示客户端保留句柄, 选中后可补上媒体
     reply_markup = None if media else Ikm([[Ikb("原链接", url=raw_url)]])
@@ -422,7 +422,7 @@ async def build_inline_results(
     lang: str,
     config: SettingsConfig,
     *,
-    force_spoiler: bool = False,
+    spoiler_tag: str = "",
 ) -> list[InlineQueryResult]:
     """根据解析结果构建内联查询结果列表"""
     logger.debug(f"构建 inline 结果: type={parse_result.type}, title={parse_result.title}")

@@ -85,8 +85,8 @@ async def parse(cli: Client, msg: Message) -> None:
     else:
         text = msg.text or msg.caption or ""
 
-    # 手动打码开关: 链接后跟独立的 /s —— 先剥掉, 免得它被当成不支持的平台
-    text, force_spoiler = strip_spoiler_flag(text)
+    # 手动打码开关: 链接后跟独立的 #nsfw / #spoiler —— 先剥掉, 免得它被当成不支持的平台
+    text, spoiler_tag = strip_spoiler_flag(text)
     lines = text.strip().split()
     urls = list({i for i in lines if ParseService().parser.get_platform(i)})[:10]
 
@@ -114,7 +114,7 @@ async def parse(cli: Client, msg: Message) -> None:
                 bypass_cache=bypass_cache,
                 delete_share_url_msg=config.auto_delete_url,
                 custom_content=custom_content,
-                force_spoiler=force_spoiler,
+                spoiler_tag=spoiler_tag,
             )
         )
         for url in urls
@@ -207,7 +207,7 @@ async def _try_send_cached(
             raw_url,
             custom_content=req.custom_content,
             _t=req.t_,
-            force_spoiler=req.force_spoiler,
+            spoiler_tag=req.spoiler_tag,
         )
     except Exception as e:
         logger.exception(e)
@@ -230,7 +230,7 @@ async def handle_parse(req: ParseRequest) -> bool:
     options = ParseOptions.from_mode(req.mode, bypass_cache=req.bypass_cache)
     logger.info(
         f"收到解析请求: url={req.url}, chat_id={req.chat_id}, msg_id={req.msg.id}, "
-        f"mode={req.mode}, force_spoiler={req.force_spoiler}"
+        f"mode={req.mode}, spoiler_tag={req.spoiler_tag!r}"
     )
     if req.bypass_cache:
         logger.debug("bypass_cache=True 绕过缓存")
@@ -291,7 +291,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 custom_content=req.custom_content,
                 raw_url=raw_url,
                 reporter=reporter,
-                force_spoiler=req.force_spoiler,
+                spoiler_tag=req.spoiler_tag,
             )
             return True
 
@@ -329,7 +329,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 custom_content=req.custom_content,
                 raw_url=raw_url,
                 reporter=reporter,
-                force_spoiler=req.force_spoiler,
+                spoiler_tag=req.spoiler_tag,
             )
             return True
 
@@ -354,7 +354,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 custom_content=req.custom_content,
                 raw_url=raw_url,
                 reporter=reporter,
-                force_spoiler=req.force_spoiler,
+                spoiler_tag=req.spoiler_tag,
             )
             return True
         except Exception as e:

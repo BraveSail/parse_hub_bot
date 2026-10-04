@@ -231,14 +231,15 @@ def build_rich_markdown(
     media_placeholders: Sequence[str] = (),
     quote_media_placeholders: Sequence[str] = (),
     reply_media_placeholders: Sequence[str] = (),
-    hide_content: bool = False,
+    hide_content: str = "",
 ) -> str:
     """构建富文本 (rich message) 正文: 标题 + 作者 + 原文格式正文 + 媒体 + 页尾。
 
-    :param hide_content: 用户手动要求遮住内容 (链接后跟 ``/s``)。把正文折成
-        ``<details><summary>⚠️</summary>`` —— **不留预览**, 与自动折叠不同:
-        那是为了别让长正文撑屏, 这是用户明确要藏起来。媒体照常显示 (要连图一起藏
-        就用平台的敏感标记走 spoiler, 那是另一套)。
+    :param hide_content: 用户手动要求遮住内容时**命中的标记** (``#nsfw`` /
+        ``#spoiler``, 空串=没要求)。非空即把内容折成
+        ``<details><summary>⚠️ <标记></summary>`` —— **不留预览**, 与自动折叠不同:
+        那是为了别让长正文撑屏, 这是用户明确要藏起来。
+        **除标题/作者外全部进折叠**(含图, 用户明确要求"所有东西都遮")。
 
     富文本由 Telegram 服务端解析 markdown, 所以正文直接沿用解析器给出的原文格式
     (标题/列表/引用/表格/加粗等都会被还原), 不像旧路径那样先转成 HTML 再拼 caption。
@@ -261,9 +262,10 @@ def build_rich_markdown(
     # 被回复的卡片在正文前、被引用的卡片在正文后, 各自的媒体留在自己的块里
     reply_quote, body_text, quote = split_quote_blocks(content) if content else ("", "", "")
     fold_summary = t_[lang]("展开全文") if lang else ""
-    # 手动遮住时的摘要: ⚠️ + **复用现成的折叠按钮文案** (与自动折叠同一个词条,
-    # 不新建翻译 —— 16 个语言的「展开全文」早就有了)
-    spoiler_summary = f"⚠️ {fold_summary}" if fold_summary else SPOILER_FOLD_SUMMARY
+    # 手动遮住时的摘要: ⚠️ + **用户自己写的那个标记** (#nsfw / #spoiler)。
+    # 不写「展开全文」—— 折叠按钮的文字对"被藏起来"这件事没有信息量, 而标记本身
+    # 说明了为什么藏 (不宜公开 / 剧透); 也不必翻译, 标记是用户输入。
+    spoiler_summary = f"⚠️ {hide_content}" if hide_content else SPOILER_FOLD_SUMMARY
     reply_media = list(reply_media_placeholders)
     # 末尾引用块不存在时, 属于它的媒体要交回**头部**引用块 (反之亦然, 下面那段)。
     # 平台产出"引用块在前"的结构时就会走到这里 (linux.do 把主楼做成引用块放最上面) ——
@@ -357,7 +359,7 @@ def build_rich_markdown_by_str(
     media_placeholders: Sequence[str] = (),
     quote_media_placeholders: Sequence[str] = (),
     reply_media_placeholders: Sequence[str] = (),
-    hide_content: bool = False,
+    hide_content: str = "",
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。"""
     return build_rich_markdown(

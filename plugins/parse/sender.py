@@ -482,11 +482,11 @@ async def send_cached(
     *,
     custom_content: str = "",
     _t: PreLocaleSelector | None = None,
-    force_spoiler: bool = False,
+    spoiler_tag: str = "",
 ) -> None:
     """从 file_id 缓存直接发送（富文本）: file_id 复用, 跳过解析/下载/转码/上传。
 
-    :param force_spoiler: 用户这次要求遮住内容 (``/s``) —— 缓存命中也得照遮,
+    :param spoiler_tag: 用户这次要求遮住内容 (``/s``) —— 缓存命中也得照遮,
         否则第二次发同一链接时打码会失效 (缓存存的是解析字段, 排版现做)。
     """
     logger.debug(f"缓存发送: media={entry.media}")
@@ -501,7 +501,7 @@ async def send_cached(
         config=sender.config,
         view_label=view_label,
         custom_content=custom_content,
-        force_spoiler=force_spoiler,
+        spoiler_tag=spoiler_tag,
     )
     await sender.rich_message(rich_message=InputRichMessage(markdown=markdown, media=media or None))
 
@@ -519,11 +519,11 @@ async def send_rich_media(
     custom_content: str = "",
     raw_url: str = "",
     reporter: "MessageStatusReporter | None" = None,
-    force_spoiler: bool = False,
+    spoiler_tag: str = "",
 ) -> bool:
     """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。
 
-    :param force_spoiler: 用户手动要求遮住内容 (链接后跟 ``/s``) —— 正文折成
+    :param spoiler_tag: 用户手动要求遮住内容 (链接后跟 ``/s``) —— 正文折成
         ``<details><summary>⚠️</summary>``, 不留预览。
 
     给了 ``reporter`` 且它已经发过状态消息时, 结果会**编辑进那条状态消息**
@@ -557,7 +557,7 @@ async def send_rich_media(
         media_placeholders=placeholders,
         quote_media_placeholders=quoted_placeholders,
         reply_media_placeholders=reply_placeholders,
-        hide_content=force_spoiler,
+        hide_content=spoiler_tag,
     )
     if parse_result.is_sensitive and media_blocks:
         # 敏感内容的媒体必须打码: 官方 API 的富文本媒体块没有 spoiler 字段,

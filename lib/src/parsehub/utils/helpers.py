@@ -163,28 +163,33 @@ _TRAILING_PUNCTUATION = "。，、！？；：,.!?;:"
 
 
 #: 手动开关标记 (独立 token): 让本次结果把正文折起来、摘要标 ⚠️
-SPOILER_FLAG = "/s"
-#: 手动开关的折叠摘要 —— ⚠️ 提示这条内容被主动藏起来了
+#: 手动开关: 让本条结果把内容折起来。**多个标记等价**, 用户按语义挑一个 ——
+#: ``#nsfw`` 用于不便公开的内容, ``#spoiler`` 用于剧透。
+SPOILER_FLAGS = ("#nsfw", "#spoiler")
+#: 无标记时的折叠摘要兜底 (正常总有一个标记, 摘要是 ``⚠️ <标记>``)
 SPOILER_FOLD_SUMMARY = "⚠️"
 
 
-def strip_spoiler_flag(text: str | None) -> tuple[str, bool]:
-    """剥掉独立的 ``/s`` 开关, 返回 (去掉标记后的文本, 是否要求折叠)。
+def strip_spoiler_flag(text: str | None) -> tuple[str, str]:
+    """剥掉独立的手动开关, 返回 (去掉标记后的文本, **命中的标记或空串**)。
 
-    **必须是独立 token**: ``/soccer``、URL 里的 ``/s`` 都不算 —— 用户在链接后面
+    **必须是独立 token**: ``#nsfwxxx``、URL 里的片段都不算 —— 用户在链接后面
     空一格再写, 这样 URL 本体完全不变 (往 URL 里塞参数会被参数清理逻辑摘掉,
     加路径后缀又会污染缓存 key 与 provider 的路径解析)。
+
+    返回命中的**标记本身**(而不是 bool) 是因为摘要要显示它: 用 ``#nsfw`` 触发就
+    显示 ``⚠️ #nsfw``, 让读者一眼知道是被标为不宜公开还是剧透。
     """
     if not text:
-        return "", False
-    flagged = False
+        return "", ""
+    hit = ""
     kept: list[str] = []
     for token in text.split():
-        if token == SPOILER_FLAG:
-            flagged = True
+        if token in SPOILER_FLAGS:
+            hit = hit or token
         else:
             kept.append(token)
-    return " ".join(kept), flagged
+    return " ".join(kept), hit
 
 
 def url_only_message_urls(text: str | None, *, ignore_mentions: Sequence[str] = ()) -> list[str]:

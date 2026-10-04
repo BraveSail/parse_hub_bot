@@ -132,7 +132,7 @@ async def _answer(
     user_id: int,
     locale: str,
     caller_msg: Message | None = None,
-    force_spoiler: bool = False,
+    spoiler_tag: str = "",
 ) -> bool:
     """解析一条链接并回答 guest 查询, 返回是否真的发出。
 
@@ -162,7 +162,7 @@ async def _answer(
             lang=locale,
             config=config,
             view_label=_t("查看"),
-            force_spoiler=force_spoiler,
+            spoiler_tag=spoiler_tag,
         )
         pr = cached.parse_result
         await _deliver(
@@ -206,7 +206,7 @@ async def _answer(
             media_placeholders=placeholders,
             quote_media_placeholders=quoted_ph,
             reply_media_placeholders=reply_ph,
-            hide_content=force_spoiler,
+            hide_content=spoiler_tag,
         )
         title = _clip(parse_result.title, 90) or _clip(parse_result.content, 90) or "-"
         description = _clip(parse_result.content, 200)
@@ -286,7 +286,7 @@ async def guest_parse(cli: Client, msg: Message) -> None:
 
     # 用召唤消息做进度载体: reply 它一条状态, 最后编辑成结果
     # 手动打码开关同样适用: 剥掉 /s 并传下去
-    _, force_spoiler = strip_spoiler_flag(msg.text or msg.caption)
+    _, spoiler_tag = strip_spoiler_flag(msg.text or msg.caption)
     await _answer(
-        cli, guest_query_id, urls[0], user_id or 0, locale, caller_msg=msg, force_spoiler=force_spoiler
+        cli, guest_query_id, urls[0], user_id or 0, locale, caller_msg=msg, spoiler_tag=spoiler_tag
     )
