@@ -108,6 +108,11 @@ _INLINE_PATTERNS: list[tuple[re.Pattern, type]] = [
     # footer 里的来源链接用的是 HTML (markdown 链接语法在 footer 块里不解析)
     (re.compile(r'<a\s+href="([^"]+)"\s*>(.*?)</a>', re.S), RichTextUrl),
     (_TIME_TAG_RE, RichTextDateTime),
+    # **footer 块里只有 HTML 标签解析, markdown 的 ** 会字面显示** (实测) ——
+    # 阶段标签 (▎上传中...) 与引用块的斜体都写在 footer/正文里用 HTML 标签,
+    # 所以 blocks 路径必须认它们 (不认就字面显示 "<b>"/"<i>")
+    (re.compile(r"<b>(.*?)</b>", re.S), RichTextBold),
+    (re.compile(r"<i>(.*?)</i>", re.S), RichTextItalic),
     (re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)"), RichTextUrl),  # [文字](链接)
     (re.compile(r"\*\*([^*\n]+)\*\*"), RichTextBold),
     (re.compile(r"`([^`\n]+)`"), RichTextCode),

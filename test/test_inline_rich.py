@@ -103,6 +103,25 @@ def test_media_inside_details_stays_inside_and_keeps_its_spoiler():
     assert not [b for b in blocks if isinstance(b, SpoilerPhotoBlock)], "折叠外不该再有媒体"
 
 
+def test_blocks_path_parses_html_bold_and_italic():
+    """footer 块只解析 HTML 标签, 所以阶段的 ``<b>▎…</b>`` 与引用块的 ``<i>``
+
+    blocks 路径必须自己认 (不认就字面显示 "<b>"), 与 <tg-time> 同一类。
+    """
+    from pyrogram.types.messages_and_media.rich_text import RichTextBold, RichTextItalic
+
+    from plugins.parse.rich_blocks import parse_inline
+
+    bold = parse_inline("<b>▎上 传 中...</b> · 来源")
+    assert any(isinstance(n, RichTextBold) for n in bold), "footer 里的 <b> 必须解析"
+
+    italic = parse_inline("<i>@某人：</i>")
+    assert any(isinstance(n, RichTextItalic) for n in italic), "<i> 必须解析"
+
+    # 不该把标签字面留在文本里
+    assert "<b>" not in str(bold) and "<i>" not in str(italic)
+
+
 def test_blocks_path_parses_expandable_quotation():
     from pyrogram.types import InputRichBlockExpandableBlockQuotation
 
@@ -113,7 +132,8 @@ def test_blocks_path_parses_expandable_quotation():
     assert len(blocks) == 1
     assert isinstance(blocks[0], InputRichBlockExpandableBlockQuotation)
     # 块内 <br> 要变成真换行, 否则内容会挤成一行
-    assert "\n" in str(blocks[0].text)
+    texts = [n for n in blocks[0].text if isinstance(n, str)]
+    assert any("\n" in t for t in texts), f"<br> 没有转成真换行: {texts!r}"
 
 
 def test_blocks_path_parses_the_time_entity():

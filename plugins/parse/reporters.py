@@ -12,7 +12,7 @@ from core import bs
 from db import get_session
 from log import logger
 from plugins.context import get_config_target
-from plugins.helpers import build_progress_markdown, format_label, format_label_md
+from plugins.helpers import build_progress_markdown, format_label
 from plugins.parse.inline_rich import edit_inline_rich_message
 from plugins.parse.sender import MessageSender
 from repo.settings import SettingsConfig
@@ -89,7 +89,7 @@ class MessageStatusReporter(StatusReporter):
         """把处理过程渲染成与最终结果**同一种排版**的富文本。"""
         return build_progress_markdown(
             parse_result,
-            progress=format_label_md(text),
+            progress=format_label(text),
             config=self._config,
             lang=self._t.locale,
             view_label=self._t("查看"),
@@ -280,7 +280,7 @@ class InlineStatusReporter(StatusReporter):
         """与最终结果**同一种排版**的处理过程 markdown。"""
         return build_progress_markdown(
             parse_result,
-            progress=format_label_md(text),
+            progress=format_label(text),
             config=self._user_config,
             lang=self._t.locale,
             view_label=self._t("查看"),
@@ -291,12 +291,12 @@ class InlineStatusReporter(StatusReporter):
 
     async def report(self, text: str) -> None:
         """**阶段切换**: 还没有解析结果 -> 同版式的骨架。必发。"""
-        self._last_text = format_label_md(text)
+        self._last_text = format_label(text)
         await self._edit_rich(self._render(None, text))
 
     async def report_progress(self, text: str) -> None:
         """进度刷新 (下载百分比等): 内容密集变化, 走节流 (复用最近的结果渲染)。"""
-        self._last_text = format_label_md(text)
+        self._last_text = format_label(text)
         await self._edit_rich(self._render(self._parse_result, text), throttle=True)
 
     async def report_result(self, parse_result: Any, text: str) -> None:

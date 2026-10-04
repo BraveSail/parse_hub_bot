@@ -123,24 +123,33 @@ def test_progress_is_sent_as_a_rich_message():
     assert msg.answer_rich.await_args.kwargs["rich_message"].markdown == "**▎解 析 中...**"
 
 
-def test_the_stage_label_uses_markdown_not_html():
-    """阶段标签必须用 **markdown** 粗体, 不能是 ``<b>``。
+def test_the_stage_label_stays_html_because_the_footer_needs_it():
+    """阶段标签在**页脚**里, 而 footer 块只解析 HTML 标签 —— **必须**是 ``<b>``。
 
-    处理过程走 markdown 正文, 而 ``<b>`` 只有 markdown 路径的服务端解析器认 ——
-    blocks 路径的 ``parse_inline`` **不认**, 会原样显示。两条路径都稳的写法是 ``**``。
-    (老 caption 路径仍用 HTML 的 ``format_label``, 那是 HTML parse mode, 需要 ``<b>``。)
+    实测 (真机, 四种组合):
+
+    | 位置 | 写法 | 结果 |
+    | --- | --- | --- |
+    | **footer** | ``**▎…**`` (markdown) | ✗ 字面显示, 用户看到多余的 ``**`` |
+    | **footer** | ``<b>▎…</b>`` | ✓ RichTextBold |
+    | 正文 | ``**▎…**`` | ✓ RichTextBold |
+    | 正文 | ``<b>▎…</b>`` | ✓ RichTextBold |
+
+    (与"footer 里 markdown 链接不解析"同一个坑。) 曾经为了迁就 blocks 路径
+    把它改成 ``**`` —— 那是**改错了方向**: 正确做法是让 blocks 的 ``parse_inline``
+    认 ``<b>``/``<i>``, 而不是改坏 markdown 路径。
     """
-    from plugins.helpers import format_label, format_label_md
+    from plugins.helpers import format_label
 
-    assert format_label_md("解 析 中...") == "**▎解 析 中...**"
-    assert format_label("解 析 中...") == "<b>▎解 析 中...</b>"   # 老路径不变
+    assert format_label("解 析 中...") == "<b>▎解 析 中...</b>"
 
     msg = _Msg()
     reporter = _reporter(None, user_msg=msg)
     reporter._raw_url = "https://x.com/a/status/1"
     asyncio.run(reporter.report("解 析 中..."))
     markdown = msg.answer_rich.await_args.kwargs["rich_message"].markdown
-    assert "<b>" not in markdown
+    assert "<b>▎解 析 中...</b>" in markdown
+    assert "**▎" not in markdown
 
 
 def test_a_stage_without_a_result_renders_a_skeleton():
