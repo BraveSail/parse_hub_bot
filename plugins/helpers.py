@@ -677,16 +677,56 @@ def _split_quote_segments(text: str) -> list[tuple[bool, str]]:
 #: 折叠块的默认摘要文案 (源码语言), 调用方按 locale 传译文进来
 _DEFAULT_FOLD_SUMMARY = "展开全文"
 
+#: 折叠前**留在外面**的预览: 折叠态只显示 summary, 不留预览的话正文一个字都看不到
+#: (用户原话「这个折叠看不到一点内容啊」)。行数与字符数任一触顶即停。
+_FOLD_PREVIEW_LINES = 2
+_FOLD_PREVIEW_CHARS = 100
+
+
+def split_fold_preview(content: str) -> tuple[str, str]:
+    """把内容拆成 (外面可见的预览, 折进 details 的剩余部分)。
+
+    预览取开头几行 (行数/字符数任一超限即停); 内容全挤在一行时按字符切,
+    否则整条正文只有一行就永远折不起来。剩余为空时返回 (content, "") = 不折。
+    """
+    lines = content.split("\n")
+    end = 0
+    chars = 0
+    for line in lines:
+        if end >= _FOLD_PREVIEW_LINES or (end and chars + len(line) > _FOLD_PREVIEW_CHARS):
+            break
+        chars += len(line)
+        end += 1
+
+    preview = "\n".join(lines[:end]).rstrip()
+    rest = "\n".join(lines[end:]).strip()
+
+    # 只有一行 (或首行就吃满): 按字符切出预览, 否则没有可折的剩余
+    if not rest and len(preview) > _FOLD_PREVIEW_CHARS:
+        rest = preview[_FOLD_PREVIEW_CHARS:].strip()
+        preview = preview[:_FOLD_PREVIEW_CHARS].rstrip()
+
+    if not rest:
+        return content, ""
+    return preview, rest
+
 
 def _render_foldable(content: str, *, summary: str = "") -> str:
-    """包成可折叠块 (长内容展示用)。
+    """包成可折叠块 (长内容展示用): 开头几行留外面当预览, 其余折进 details。
 
     **用 <details> 而不是 <blockquote expandable>**: 后者一旦块内含空行,
     Telegram 就把它退化成普通引用块 (完全不折叠) —— 而推文正文天然是多段落,
     于是长正文永远折不起来; 而且引用块内的换行会被并成空格, 段落结构全丢。
     <details> 保留完整段落, 是富文本 markdown 里唯一能折叠多段落的容器。
+
+    但 <details> 收起时**只显示 summary**, 所以正文得留一截在外面当预览,
+    否则用户看到的就是光秃秃一个「展开全文」。
     """
-    return f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{content}\n\n</details>"
+    preview, rest = split_fold_preview(content)
+    if not rest:
+        return content
+    folded = f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{rest}\n\n</details>"
+    return f"{preview}\n\n{folded}"
 
 
 def convert_markdown_quote(

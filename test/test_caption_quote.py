@@ -99,8 +99,13 @@ def test_quote_not_folded_when_expandable_disabled():
 
 
 def test_format_text_folds_long_plain_text():
+    """折叠 = 开头留预览 + 其余折进 details (收起时只显示摘要, 不留预览就看不到内容)"""
     out = format_text("y" * 600)
-    assert out == "<details><summary>\u5c55\u5f00\u5168\u6587</summary>\n\n" + "y" * 600 + "\n\n</details>"
+    assert out.startswith("y" * 100)                     # 预览在外
+    assert "<details><summary>\u5c55\u5f00\u5168\u6587</summary>" in out
+    assert out.endswith("</details>")
+    assert "y" * 500 in out                              # 折起的部分一个字没丢
+    assert "......" not in out
 
 
 def test_format_text_keeps_short_text_plain():
@@ -117,10 +122,36 @@ def test_folded_body_keeps_paragraph_breaks():
     """
     body = "\n\n".join(f"第{i}段内容" * 20 for i in range(4))
     out = format_text(body)
-    assert out.startswith("<details>")
+    assert "<details>" in out
     assert out.endswith("</details>")
     assert "\n\n第1段" in out        # 段落空行原样保留
     assert out.count("\n\n") >= 4
+
+
+def test_folded_body_leaves_a_visible_preview():
+    """折叠块收起时只显示摘要, 所以开头必须留在外面 —— 否则一个字都看不到"""
+    body = "\n\n".join(["开头这一段要能看见", "中间内容" * 40, "结尾内容" * 40])
+    out = format_text(body)
+    assert out.startswith("开头这一段要能看见")     # 预览在折叠块外
+    assert "<details>" in out
+    assert out.index("开头这一段要能看见") < out.index("<details>")
+
+
+def test_single_line_long_text_still_folds():
+    """整条正文只有一行时也要折: 行切不出来就按字符切, 否则永远折不起来"""
+    from plugins.helpers import split_fold_preview
+
+    preview, rest = split_fold_preview("z" * 500)
+    assert preview and rest
+    assert preview + rest == "z" * 500
+    assert "z" * 400 in rest                   # 剩余足够多, 折了才有意义
+
+
+def test_split_fold_preview_returns_unfolded_for_short_content():
+    """内容太短没有可折的剩余: 返回 (content, "") 让调用方跳过折叠"""
+    from plugins.helpers import split_fold_preview
+
+    assert split_fold_preview("很短") == ("很短", "")
 
 
 def test_fold_summary_follows_locale():
@@ -182,7 +213,7 @@ def test_build_rich_markdown_does_not_truncate_a_very_long_body():
     md = build_rich_markdown(result, config=config, lang="zh-hans")
     assert "<details>" in md
     assert "......" not in md
-    assert "长" * 1500 in md
+    assert "长" * 1400 in md             # 折起的部分完整 (预览 + 折起 = 全文)
 
 
 def test_format_text_does_not_truncate_by_default():
@@ -191,7 +222,7 @@ def test_format_text_does_not_truncate_by_default():
 
     out = format_text("x" * 1200)
     assert "......" not in out
-    assert "x" * 1200 in out
+    assert "x" * 1100 in out
 
 
 def test_caption_path_truncates_only_when_asked():
