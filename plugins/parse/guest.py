@@ -21,6 +21,8 @@ from pyrogram.types import (
     InlineQueryResultArticle,
     InputRichMessage,
     InputRichMessageContent,
+    InputTextMessageContent,
+    LinkPreviewOptions,
     Message,
 )
 
@@ -66,6 +68,16 @@ def _result(title: str, description: str, markdown: str, media: list | None = No
         title=title,
         description=description,
         input_message_content=InputRichMessageContent(InputRichMessage(markdown=markdown, media=media or None)),
+    )
+
+
+def _denied_result(text: str) -> InlineQueryResultArticle:
+    """门禁不通过时回一条说明, 而不是静默 —— 用户得知道为什么没反应。"""
+    return InlineQueryResultArticle(
+        id=GUEST_RESULT_ID,
+        title=text,
+        description=text,
+        input_message_content=InputTextMessageContent(text, link_preview_options=LinkPreviewOptions(is_disabled=True)),
     )
 
 
@@ -144,16 +156,19 @@ async def guest_parse(cli: Client, msg: Message) -> None:
         logger.warning("guest 查询缺少 guest_query_id, 无法回复")
         return
 
+    async with get_session() as session:
+        locale = await UserService(session).get_lang(user_id) if user_id else ""
+    _t = t_[locale]
+
     if not await access_gate.is_allowed(cli, user_id):
         logger.info(f"guest 查询被门禁拦截: from_user={user_id}")
+        # 明确回一条"无权限": 静默拒绝会让用户以为 bot 坏了
+        await cli.answer_guest_query(guest_query_id, _denied_result(_t("无权限")))
         return
 
     urls = url_only_message_urls(msg.text or msg.caption)
     if not urls:
         logger.debug("guest 查询不是纯链接消息, 跳过")
         return
-
-    async with get_session() as session:
-        locale = await UserService(session).get_lang(user_id) if user_id else ""
 
     await _answer(cli, guest_query_id, urls[0], user_id or 0, locale)
