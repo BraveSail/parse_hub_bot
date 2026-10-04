@@ -164,7 +164,7 @@ def test_long_quote_block_is_folded():
     """
     from plugins.helpers import fold_quote_block
 
-    quote = "\n".join(["> *作者 @handle：*", *[f"> *第{i}行内容*  " for i in range(1, 20)]])
+    quote = "\n".join(["> <i>作者 @handle：</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
     out = fold_quote_block(quote, summary="展开全文")
     assert out.startswith("<blockquote expandable>")
     assert out.endswith("</blockquote>")
@@ -176,30 +176,32 @@ def test_long_quote_block_is_folded():
     assert "> " not in out                              # '>' 前缀已剥掉
 
 
-def test_quote_italics_become_html_tags():
-    """引用块内 markdown 行内语法不解析 (星号会字面显示), 斜体必须走 <i>"""
-    from plugins.helpers import quote_italics_to_tags
+def test_quote_style_comes_from_the_source_not_a_conversion():
+    """斜体由 parsehub 的 format_quote_block 直接产出 <i> —— 渲染层不做 *→<i> 转换
 
-    assert quote_italics_to_tags("*斜体行*") == "<i>斜体行</i>"
-    assert quote_italics_to_tags("> *带前缀斜体*") == "> <i>带前缀斜体</i>"
-    assert quote_italics_to_tags("没有星号的行") == "没有星号的行"
-    assert "*" not in quote_italics_to_tags("> *作者 [@v](https://x.com/v)：*")
+    (块内 markdown 行内语法不解析, 写 * 会字面显示星号, 所以源头就得是 <i>)
+    """
+    from parsehub.utils.helpers import format_quote_block
+
+    assert format_quote_block("斜体行") == "> <i>斜体行</i>\n\n"
+    assert format_quote_block("两段\n\n二") == "> <i>两段</i>\n>\n> <i>二</i>\n\n"
+    # 作者行也在块内, 同样走 <i>
+    assert format_quote_block("正文", "作者") == "> <i>作者：</i>\n> <i>正文</i>\n\n"
 
 
-def test_unfolded_quote_also_keeps_its_style():
-    """不折叠的引用块同样要转样式 —— 普通 blockquote 里 markdown 斜体也不解析"""
+def test_unfolded_quote_passes_through_unchanged():
+    """不折叠的引用块原样透传 (样式已在源头写好, 渲染层不该再动它)"""
     from plugins.helpers import fold_quote_block
 
-    out = fold_quote_block("> *作者：*\n> 短内容", summary="展开全文")
-    assert out.startswith("> <i>作者：</i>")
-    assert "*" not in out
+    quote = "> <i>作者：</i>\n> 短内容"
+    assert fold_quote_block(quote, summary="展开全文") == quote
 
 
 def test_short_quote_block_is_not_folded():
-    """短引用块不折叠 (但仍要转样式, 见 test_unfolded_quote_also_keeps_its_style)"""
+    """短引用块不折叠"""
     from plugins.helpers import fold_quote_block
 
-    out = fold_quote_block("> *作者：*\n> 短内容", summary="展开全文")
+    out = fold_quote_block("> <i>作者：</i>\n> 短内容", summary="展开全文")
     assert "<blockquote expandable>" not in out
     assert "<details>" not in out
     assert out.startswith("> ")
@@ -209,7 +211,7 @@ def test_quote_media_stays_inside_the_folded_block():
     """引用块的媒体占位符要跟着一起折进 expandable 里 (不能掉到块外)"""
     from plugins.helpers import attach_quote_media, fold_quote_block
 
-    quote = "\n".join(["> *作者：*", *[f"> *第{i}行内容*  " for i in range(1, 20)]])
+    quote = "\n".join(["> <i>作者：</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
     with_media = attach_quote_media(quote, ["![](tg://photo?id=m0)"])
     out = fold_quote_block(with_media, summary="展开全文")
     assert "![](tg://photo?id=m0)" in out
@@ -222,7 +224,7 @@ def test_build_rich_markdown_folds_a_long_reply_block():
 
     from plugins.helpers import build_rich_markdown
 
-    reply = "\n".join(["> *Vincent @VincentBounce：*", *[f"> *第{i}行*  " for i in range(1, 18)]])
+    reply = "\n".join(["> <i>Vincent @VincentBounce：</i>", *[f"> <i>第{i}行</i>  " for i in range(1, 18)]])
     content = reply + "\n\n短正文"
     result = types.SimpleNamespace(
         title="", content=content, raw_url="https://x.com/a/status/1",

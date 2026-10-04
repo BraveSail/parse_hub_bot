@@ -186,13 +186,13 @@ def test_quote_reply_uses_the_shared_quote_renderer():
     body = topic.markdown_content
 
     # 作者在引用块内 (带主页链接), 不在块外裸着
-    assert '> *<a href="https://linux.do/u/paomian_1">@paomian_1</a>：*' in body
+    assert '> <i><a href="https://linux.do/u/paomian_1">@paomian_1</a>：</i>' in body
     # 引用内容整块斜体
-    assert "> *被引用的第一段*" in body
-    assert "> *被引用的第二段*" in body
+    assert "> <i>被引用的第一段</i>" in body
+    assert "> <i>被引用的第二段</i>" in body
     # 不写 "引用/回复" 标签字样 (引用内容本身可能含这些字)
-    assert "> *引用" not in body
-    assert "> *回复" not in body
+    assert "<i>引用" not in body
+    assert "<i>回复" not in body
     # 引用块之外的正文仍在, 且不在引用块里
     assert "我的回复" in body
     assert not any(line.startswith("> ") and "我的回复" in line for line in body.splitlines())

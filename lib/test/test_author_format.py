@@ -40,17 +40,17 @@ def test_format_author_link_collapses_same_name():
 def test_format_quote_block_is_italic_and_labelless():
     """引用块不写 引用/回复 字样, 整块斜体, 作者行在前"""
     block = format_quote_block("line1\nline2", 'Jason Lee <a href="u">@h</a>')
-    assert block == '> *Jason Lee <a href="u">@h</a>：*\n> *line1*\n> *line2*\n\n'
+    assert block == '> <i>Jason Lee <a href="u">@h</a>：</i>\n> <i>line1</i>\n> <i>line2</i>\n\n'
     assert "引用" not in block
     assert "回复" not in block
 
 
 def test_format_quote_block_keeps_blank_lines():
-    assert format_quote_block("a\n\nb") == "> *a*\n>\n> *b*\n\n"
+    assert format_quote_block("a\n\nb") == "> <i>a</i>\n>\n> <i>b</i>\n\n"
 
 
 def test_format_quote_block_without_author():
-    assert format_quote_block("x") == "> *x*\n\n"
+    assert format_quote_block("x") == "> <i>x</i>\n\n"
 
 
 def test_format_quote_block_empty_text():

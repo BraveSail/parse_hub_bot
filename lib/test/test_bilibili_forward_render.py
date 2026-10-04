@@ -42,7 +42,7 @@ def test_strip_forward_comment_empty():
 def test_render_forward_has_author_link_and_title():
     forward = _dyn(author_name="夏日幻听MCE", author_mid=224267770, title="「脑洞学生会！」第1话【中文字幕】")
     quote = BiliParse._render_forward(forward)
-    assert quote.startswith("> *")
+    assert quote.startswith("> <i>")
     assert '<a href="https://space.bilibili.com/224267770">夏日幻听MCE</a>' in quote
     assert "「脑洞学生会！」第1话【中文字幕】" in quote
     # 整块斜体

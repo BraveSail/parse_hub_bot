@@ -113,15 +113,20 @@ def format_author_link(name: str, handle: str = "", url: str = "") -> str:
 
 
 def format_quote_block(text: str, author: str = "") -> str:
-    """把一段文本渲染成斜体的 Markdown 引用块, 文本为空时返回空串。
+    """把一段文本渲染成斜体的引用块, 文本为空时返回空串。
 
     不写 "回复/引用" 字样: 引用块本身已经表明关系。整块斜体, 作者行在前。
+
+    **斜体用 ``<i>`` 而不是 markdown 的 ``*…*``**: 引用块所在的两条渲染路径
+    (富文本的 blockquote、caption 的 HTML parse mode) **都不解析块内的
+    markdown**, 写 ``*`` 会原样显示星号 —— 以前靠调用方事后把 ``*行*`` 转成
+    ``<i>行</i>`` 来补救, 现在在源头直接产出正确的标记, 不需要转换。
     """
     body = (text or "").strip()
     if not body:
         return ""
-    lines = "\n".join(f"> *{line}*" if line.strip() else ">" for line in body.splitlines())
-    head = f"> *{author}：*\n" if author else ""
+    lines = "\n".join(f"> <i>{line}</i>" if line.strip() else ">" for line in body.splitlines())
+    head = f"> <i>{author}：</i>\n" if author else ""
     return f"{head}{lines}\n\n"
 
 

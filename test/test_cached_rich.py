@@ -59,7 +59,7 @@ def test_cached_rich_content_puts_quoted_media_in_the_quote_block():
     """缓存路径同样要把引用媒体放进引用块内部 (每行带 > 前缀)"""
     entry = _entry()
     entry.parse_result.quoted_media_count = 1
-    entry.parse_result.content = "正文\n\n> *被引用的文字*"
+    entry.parse_result.content = "正文\n\n> <i>被引用的文字</i>"
     markdown, _ = build_cached_rich_content(
         entry, "https://www.pixiv.net/artworks/1", lang="zh-hans", config=_config(), view_label="查看"
     )
