@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse
+from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urlparse
 
 from loguru import logger
 
@@ -252,12 +252,25 @@ class BiliParse(BaseParser):
 
     @staticmethod
     def hashtag_handler(desc: str) -> str:
+        """把 ``#话题#`` 渲染成指向 B 站搜索页的超链接。
+
+        用 HTML ``<a>`` 而不是 markdown 链接: 这条正文既可能落在引用块里 (块内
+        markdown 行内语法不解析), 也可能落在正文, HTML 标签两处都有效。
+
+        不额外补空格 (旧实现会换成 `` #话题 ``): 补空格是为了防止行首 ``#`` 被当成
+        markdown 标题; 现在行首是 ``<a``, 不存在这个风险, 而补出来的空格会留在
+        「《 #话题 》」这种紧贴标点的位置里 (用户可见的瑕疵)。
+        """
         if not desc:
             return ""
-        hashtags = re.findall(r" ?#[^#]+# ?", desc)
-        for hashtag in hashtags:
-            desc = desc.replace(hashtag, f" {hashtag.strip().removesuffix('#')} ")
-        return desc.strip()
+
+        def _to_link(match: re.Match) -> str:
+            # B 站的话题是**左右都有 #** (#话题#), 显示时两侧都保留
+            topic = match.group(0).strip("#")
+            url = f"https://search.bilibili.com/all?keyword={quote(topic)}"
+            return f'<a href="{url}">#{topic}#</a>'
+
+        return re.sub(r"#[^#]+#", _to_link, desc)
 
 
 class BiliYtParse(YtParser, register=False):

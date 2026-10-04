@@ -133,6 +133,43 @@ def test_render_forward_empty_is_blank():
     assert BiliParse._render_forward(_dyn()) == ""
 
 
+# ── 话题 (#xxx#) 渲染成搜索链接 ───────────────────────────────────────────
+
+def test_hashtag_becomes_a_search_link():
+    """#话题# 要链到 B 站搜索页 (用户明确要求)"""
+    out = BiliParse.hashtag_handler("片头曲为#三月的Phantasia#演唱的")
+    assert (
+        '<a href="https://search.bilibili.com/all?keyword=%E4%B8%89%E6%9C%88%E7%9A%84Phantasia">'
+        "#三月的Phantasia#</a>"
+    ) in out
+    assert "片头曲为" in out and "演唱的" in out
+
+
+def test_hashtag_does_not_add_stray_spaces():
+    """不额外补空格 —— 旧实现会变成「《 #话题 》」, 空格留在标点里很难看"""
+    out = BiliParse.hashtag_handler("10月新番《#脑洞学生会！#》第1话")
+    assert "《<a" in out
+    assert "</a>》第1话" in out
+    assert " #" not in out and "# " not in out
+
+
+def test_hashtag_at_line_start_is_not_a_heading():
+    """行首话题要包在 <a> 里 —— 裸 # 会被 markdown 当成标题"""
+    out = BiliParse.hashtag_handler("#行首话题# 正文")
+    assert out.startswith("<a href=")
+
+
+def test_plain_text_without_hashtag_is_unchanged():
+    assert BiliParse.hashtag_handler("无话题的普通正文") == "无话题的普通正文"
+    assert BiliParse.hashtag_handler("") == ""
+
+
+def test_hashtag_keeps_surrounding_spaces():
+    assert BiliParse.hashtag_handler("A #话题# B") == (
+        'A <a href="https://search.bilibili.com/all?keyword=%E8%AF%9D%E9%A2%98">#话题#</a> B'
+    )
+
+
 # ── 媒体转换 ────────────────────────────────────────────────────────────
 
 def test_to_refs_handles_live_photo():
