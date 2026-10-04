@@ -370,7 +370,7 @@ async def send_raw(
 ) -> None:
     """Raw 模式：将文件以原始文档形式上传。"""
     logger.debug("Raw 模式, 直接上传文件")
-    await reporter.report_result(result.parse_result, _t("上 传 中..."))
+    await reporter.report(_t("上 传 中..."))
     try:
         caption = build_caption(
             result.parse_result,
@@ -446,7 +446,7 @@ async def send_zip(
     custom_content: str = "",
 ) -> None:
     logger.debug("Zip 模式, 开始打包")
-    await reporter.report_result(result.parse_result, _t("打 包 中..."))
+    await reporter.report(_t("打 包 中..."))
     try:
         caption = build_caption(
             result.parse_result,
@@ -468,7 +468,7 @@ async def send_zip(
     finally:
         result.cleanup()
 
-    await reporter.report_result(result.parse_result, _t("上 传 中..."))
+    await reporter.report(_t("上 传 中..."))
     try:
         await sender.upload_document()
         await sender.document(str(pack_path), caption=caption)

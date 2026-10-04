@@ -232,7 +232,6 @@ def build_rich_markdown(
     quote_media_placeholders: Sequence[str] = (),
     reply_media_placeholders: Sequence[str] = (),
     hide_content: str = "",
-    progress: str = "",
 ) -> str:
     """构建富文本 (rich message) 正文: 标题 + 作者 + 原文格式正文 + 媒体 + 页尾。
 
@@ -241,10 +240,6 @@ def build_rich_markdown(
         ``<details><summary>⚠️ <标记></summary>`` —— **不留预览**, 与自动折叠不同:
         那是为了别让长正文撑屏, 这是用户明确要藏起来。
         **除标题/作者外全部进折叠**(含图, 用户明确要求"所有东西都遮")。
-
-    :param progress: 处理过程的阶段文案 (如 ``▎下 载 中...``), 放在**页尾的第一段**。
-        处理过程用它渲染"最终排版的无媒体版": 主体 (标题/作者/正文/标签) 与结果
-        完全一致, 只有页尾那段从"进度"变成"时间 · 统计"—— 位置不动, 不跳版。
 
     富文本由 Telegram 服务端解析 markdown, 所以正文直接沿用解析器给出的原文格式
     (标题/列表/引用/表格/加粗等都会被还原), 不像旧路径那样先转成 HTML 再拼 caption。
@@ -320,9 +315,6 @@ def build_rich_markdown(
         body = "\n\n".join(part for part in [*meta_parts, *parts] if part)
 
     footer_parts: list[str] = []
-    # 处理过程的进度放页尾第一段: 与最终结果的"时间 · 统计"同一个位置, 主体不动
-    if progress:
-        footer_parts.append(progress)
     metadata = build_metadata_line(
         published_at=getattr(parse_result, "published_at", None),
         view_count=getattr(parse_result, "view_count", None),
@@ -346,60 +338,6 @@ def build_rich_markdown(
         return body
     footer = f"<footer>{_METADATA_SEPARATOR.join(footer_parts)}</footer>"
     return f"{body}\n\n---\n\n{footer}" if body else footer
-
-
-def build_progress_markdown(
-    parse_result: AnyParseResult | None = None,
-    *,
-    progress: str,
-    config: SettingsConfig,
-    lang: str = "",
-    view_label: str = "",
-    spoiler_tag: str = "",
-    custom_content: str = "",
-    raw_url: str = "",
-) -> str:
-    """处理过程的消息 —— 与最终结果**同一种排版**。
-
-    用户要求: 处理过程别再用老格式的小字, 要和结果一致 (原话「处理过程的消息能不能和最终
-    消息保持一致? 现在格式还是老格式, 只有最终消息是新的」)。
-
-    两个分支:
-
-    - **已有解析结果** → 直接走 ``build_rich_markdown`` (**不带媒体占位符**)。
-      标题/作者/正文/标签/页脚全部就位, 与结果唯一的差别是没有媒体 ——
-      视觉上就是"正文先出来, 图随后出现", 不再有格式跳变。
-    - **还没有结果** (解析阶段) → 骨架: 进度行作正文 + 页尾的来源链接。
-      结构与有结果时一致 (正文 + ``---`` + 页脚), 所以结果出来时不会跳版。
-
-    进度文案统一放在**页尾第一段**: 与结果里的"时间 · 统计"同一个位置, 主体位置完全不动。
-
-    :param spoiler_tag: 手动打码标记 —— **处理过程也必须遮**, 否则"下载中"那几秒
-        就把该藏的内容露出来了。
-    """
-    if parse_result is not None:
-        return build_rich_markdown(
-            parse_result,
-            config=config,
-            lang=lang,
-            view_label=view_label,
-            custom_content=custom_content,
-            hide_content=spoiler_tag,
-            progress=progress,
-        )
-
-    # 还没有解析结果: 骨架。正文放进度, 页尾放来源 —— 与有结果时的结构一致
-    href = html.escape(raw_url, quote=True) if raw_url else ""
-    platform = ParseHub().get_platform(raw_url) if raw_url else None
-    display = platform.display_name if platform else ""
-    if href and display and lang:
-        label = t_[lang](f"来源（{display}）")
-    elif lang:
-        label = t_[lang]("来源")
-    else:
-        label = "Source" if href else ""
-    footer = f'<footer><a href="{href}">{html.escape(label)}</a></footer>' if href else ""
-    return f"{progress}\n\n---\n\n{footer}" if footer else progress
 
 
 def build_rich_markdown_by_str(

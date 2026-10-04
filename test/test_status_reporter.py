@@ -21,44 +21,14 @@ class _Msg:
         self.edit_text = AsyncMock()
         self.delete = AsyncMock()
         self.answer = AsyncMock()
-        # 处理过程的富文本首次是**新建** (MessageSender.rich_message), 之后才编辑。
-        # 返回值必须是"这条消息"本身: 真实调用返回 Message, reporter 会拿它做后续编辑
-        self.answer_rich = AsyncMock(return_value=self)
-        self.reply_rich = AsyncMock(return_value=self)
 
 
-def _config(**kw):
-    """够用的假 SettingsConfig: 含渲染与发送路径会用到的字段。"""
-    base = {
-        "noprogress": False,
-        "hide_error": False,
-        "keep_error_log": False,
-        "reply_msg": False,
-        "hide_title": False,
-        "hide_desc": False,
-        "hide_source": False,
-        "video_cover": False,
-    }
-    base.update(kw)
-    return SimpleNamespace(**base)
-
-
-class _T:
-    """假的 t_ 选择器: 真实类型 (PreLocaleSelector) 同时可调用且有 .locale。"""
-
-    locale = "zh-hans"
-
-    def __call__(self, key, **kw):
-        return key
-
-
-def _reporter(msg=None, *, config=None, user_msg=None) -> MessageStatusReporter:
+def _reporter(msg=None, *, config=None) -> MessageStatusReporter:
     reporter = MessageStatusReporter(
         cli=SimpleNamespace(),
-        # 首次发富文本走它的 answer_rich; 测试可以注入同一个替身来断言
-        user_msg=user_msg if user_msg is not None else _Msg(),
-        t=_T(),
-        config=config or _config(keep_error_log=True),
+        user_msg=SimpleNamespace(),
+        t=lambda key, **kw: key,
+        config=config or SimpleNamespace(noprogress=False, hide_error=False, keep_error_log=True),
     )
     reporter._msg = msg
     return reporter
@@ -104,105 +74,13 @@ def test_report_edits_the_same_message():
     reporter = _reporter(msg)
     asyncio.run(reporter.report("下 载 中..."))
     msg.edit_text.assert_awaited_once()
-    assert "下 载 中..." in msg.edit_text.await_args.kwargs["rich_message"].markdown
+    assert "下 载 中..." in msg.edit_text.await_args.args[0]
     msg.delete.assert_not_awaited()
-
-
-# ── 处理过程与最终结果是同一种排版 ─────────────────────────────────────
-#
-# 用户要求: 处理过程别再用老格式的小字 ("群里自动触发的只有处理中这三个字"),
-# 要和最终结果一致 (原话「处理过程的消息能不能和最终消息保持一致」)。
-# 做法是处理过程也发**富文本**, 主体 (标题/作者/正文/标签) 与结果一致,
-# 只有页尾那段从"进度"变成"时间 · 统计"。
-
-
-def test_progress_is_sent_as_a_rich_message():
-    """处理过程必须是富文本, 不再是纯文本的 "▎解 析 中..." """
-    msg = _Msg()
-    asyncio.run(_reporter(None, user_msg=msg)._send_rich("**▎解 析 中...**"))
-    assert msg.answer_rich.await_args.kwargs["rich_message"].markdown == "**▎解 析 中...**"
-
-
-def test_a_stage_without_a_result_renders_a_skeleton():
-    """还没有结果时给骨架 —— 结构与有结果时一致 (正文 + 页脚来源), 不跳版"""
-    msg = _Msg()
-    reporter = _reporter(None, user_msg=msg)
-    reporter._raw_url = "https://x.com/a/status/1"
-    asyncio.run(reporter.report("解 析 中..."))
-    markdown = msg.answer_rich.await_args.kwargs["rich_message"].markdown
-    assert "解 析 中..." in markdown
-    assert "<footer>" in markdown  # 页脚的来源链接在, 与最终结果同结构
-
-
-def test_a_stage_with_a_result_uses_the_full_layout():
-    """有结果后: 标题/作者/正文/标签全部就位, 只差媒体 —— 与最终结果同版式"""
-    import types
-
-    msg = _Msg()
-    reporter = _reporter(None, user_msg=msg)
-    result = types.SimpleNamespace(
-        title="标题",
-        content="正文内容",
-        raw_url="https://x.com/a/status/1",
-        author_name="作者",
-        author_handle="",
-        author_url="",
-        published_at=None,
-        view_count=None,
-        like_count=None,
-        tags=None,
-        platform=None,
-        media=None,
-        markdown_content="正文内容",
-    )
-    asyncio.run(reporter.report_result(result, "下 载 中..."))
-    markdown = msg.answer_rich.await_args.kwargs["rich_message"].markdown
-    assert "### 标题" in markdown
-    assert "正文内容" in markdown
-    # 进度放在页尾第一段: 与最终结果的"时间 · 统计"同一个位置
-    footer = markdown.split("<footer>", 1)[1]
-    assert "下 载 中..." in footer
-
-
-def test_progress_refresh_reuses_the_last_result():
-    """进度刷新不能退回骨架 —— 否则每刷一次进度就跳一次版"""
-    import types
-
-    msg = _Msg()
-    reporter = _reporter(None, user_msg=msg)
-    result = types.SimpleNamespace(
-        title="标题", content="正文内容", raw_url="https://x.com/a/status/1", author_name="",
-        author_handle="", author_url="", published_at=None, view_count=None, like_count=None,
-        tags=None, platform=None, media=None, markdown_content="正文内容",
-    )
-    asyncio.run(reporter.report_result(result, "下 载 中..."))
-    reporter._last_rich_at = 0.0  # 绕过节流, 只看渲染
-    asyncio.run(reporter.report_progress("下载中 3/10"))
-    markdown = msg.edit_text.await_args.kwargs["rich_message"].markdown
-    assert "### 标题" in markdown, "进度刷新应保持完整排版"
-    assert "下载中 3/10" in markdown
-
-
-def test_progress_is_throttled_but_stages_are_not():
-    """进度刷新走节流 (下载回调很密集), 阶段切换必须能发出去"""
-    msg = _Msg(text="x")
-    reporter = _reporter(msg)
-    reporter._raw_url = "https://x.com/a/status/1"
-    asyncio.run(reporter.report("解 析 中..."))
-    # 紧接着的进度刷新被节流吞掉
-    before = msg.edit_text.await_count
-    reporter._raw_url = "https://x.com/a/status/1"
-    asyncio.run(reporter.report_progress("下载中 1/10"))
-    assert msg.edit_text.await_count == before, "间隔内的进度刷新应被丢弃"
-    # 但阶段切换不受节流影响
-    reporter._raw_url = "https://x.com/a/status/1"
-    asyncio.run(reporter.report("处 理 中..."))
-    assert msg.edit_text.await_count == before + 1, "阶段切换不该被节流吞掉"
 
 
 def test_report_is_skipped_when_noprogress():
     msg = _Msg()
-    reporter = _reporter(msg, config=_config(noprogress=True))
+    reporter = _reporter(msg, config=SimpleNamespace(noprogress=True))
     asyncio.run(reporter.report("下 载 中..."))
     msg.edit_text.assert_not_awaited()
 

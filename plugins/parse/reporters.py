@@ -1,6 +1,5 @@
 import asyncio
 from collections.abc import Awaitable, Callable
-from time import monotonic
 from typing import Any
 
 from easy_ai18n import PreLocaleSelector
@@ -12,8 +11,7 @@ from core import bs
 from db import get_session
 from log import logger
 from plugins.context import get_config_target
-from plugins.helpers import build_progress_markdown, format_label
-from plugins.parse.inline_rich import edit_inline_rich_message
+from plugins.helpers import format_label
 from plugins.parse.sender import MessageSender
 from repo.settings import SettingsConfig
 from services import SettingsService, StatusReporter
@@ -37,14 +35,6 @@ STATUS_DONE_TEXT = "·"
 #: 富文本消息本身不生成预览 (实测), 但这里一并传, 免得编辑时把旧预览留下来。
 _NO_PREVIEW = LinkPreviewOptions(is_disabled=True)
 
-#: 处理过程的富文本更新最小间隔 (秒)。
-#:
-#: 下载进度回调会**很密集**地调 ``report()``, 而富文本编辑比纯文本重得多
-#: (重渲染整篇 markdown + 更大 payload), 太密会被 Telegram 限流。
-#: 阶段切换之间的间隔通常远大于此值, 所以用户该看到的阶段提示不会丢;
-#: 丢掉的是阶段内部的百分比刷新 (末尾仍会停在最后一个能发出的值)。
-_MIN_PROGRESS_INTERVAL = 1.5
-
 
 async def disable_progress_on_report_forbidden(msg: Message, config: SettingsConfig) -> None:
     """状态消息无权限时自动关闭解析进度。"""
@@ -66,9 +56,6 @@ class MessageStatusReporter(StatusReporter):
         t: PreLocaleSelector,
         config: SettingsConfig,
         on_forbidden: Callable[[Message, SettingsConfig], Awaitable[None]] | None = None,
-        raw_url: str = "",
-        spoiler_tag: str = "",
-        custom_content: str = "",
     ):
         self._cli = cli
         self._user_msg = user_msg
@@ -76,84 +63,11 @@ class MessageStatusReporter(StatusReporter):
         self._t = t
         self._config = config
         self._on_forbidden = on_forbidden
-        # 渲染处理过程富文本要用的上下文 (骨架阶段的来源链接、打码标记、自定义内容)
-        self._raw_url = raw_url
-        self._spoiler_tag = spoiler_tag
-        self._custom_content = custom_content
-        self._last_markdown: str | None = None
-        self._last_rich_at = 0.0
-        # 最后一次拿到的解析结果 —— 进度刷新要用它渲染完整排版, 不能退回骨架
-        self._parse_result: Any = None
-
-    def _render(self, parse_result: Any, text: str) -> str:
-        """把处理过程渲染成与最终结果**同一种排版**的富文本。"""
-        return build_progress_markdown(
-            parse_result,
-            progress=format_label(text),
-            config=self._config,
-            lang=self._t.locale,
-            view_label=self._t("查看"),
-            spoiler_tag=self._spoiler_tag,
-            custom_content=self._custom_content,
-            raw_url=self._raw_url,
-        )
 
     async def report(self, text: str) -> None:
-        """**阶段切换**: 还没有解析结果 -> 同版式的骨架。必发 (不被节流)。"""
         if self._config.noprogress:
             return
-        await self._send_rich(self._render(None, text))
-
-    async def report_progress(self, text: str) -> None:
-        """进度刷新 (下载百分比等): 内容密集变化, 走节流。
-
-        复用**最近一次**的结果渲染: 下载阶段的进度刷新必须保持"完整排版",
-        退回骨架的话每刷一次进度就跳一次版。
-        """
-        if self._config.noprogress:
-            return
-        await self._send_rich(self._render(self._parse_result, text), throttle=True)
-
-    async def report_result(self, parse_result: Any, text: str) -> None:
-        """**已有解析结果** -> 完整排版 (标题/作者/正文/标签/页脚), 只差媒体。必发。"""
-        if self._config.noprogress:
-            return
-        self._parse_result = parse_result
-        await self._send_rich(self._render(parse_result, text))
-
-    async def _send_rich(self, markdown: str, *, throttle: bool = False) -> None:
-        """把处理过程作为**富文本**发送/编辑 (与最终结果同一种排版)。
-
-        判重靠自己记录的 markdown 而不是 ``msg.text`` —— 富文本消息的 ``text`` 是空的,
-        用它会每次都不相等、每次都编辑。
-
-        :param throttle: 进度刷新用 —— 距上次编辑不足 ``_MIN_PROGRESS_INTERVAL`` 就丢弃。
-            **阶段切换与结果不走节流**, 否则"解析中 → 下载中"这种快切换会被吞掉。
-        """
-        if not markdown or markdown == self._last_markdown:
-            return
-        if throttle and monotonic() - self._last_rich_at < _MIN_PROGRESS_INTERVAL:
-            return
-        self._last_markdown = markdown
-        self._last_rich_at = monotonic()
-        try:
-            if self._msg is None:
-                self._msg = await MessageSender(self._cli, self._user_msg, self._config).rich_message(
-                    rich_message=InputRichMessage(markdown=markdown)
-                )
-            else:
-                await self._msg.edit_text(
-                    rich_message=InputRichMessage(markdown=markdown), link_preview_options=_NO_PREVIEW
-                )
-        except (FloodWait, SlowmodeWait):
-            pass
-        except Forbidden as e:
-            logger.warning(f"状态消息发送失败, Bot 无权限: {e}")
-            if self._on_forbidden:
-                await self._on_forbidden(self._user_msg, self._config)
-        except Exception as e:  # noqa: BLE001
-            # 状态消息是尽力而为: 被用户删掉、或编辑被拒, 都不该打断解析本身
-            logger.debug(f"状态消息更新失败 (已忽略): {type(e).__name__}: {e}")
+        await self._edit_text(format_label(text))
 
     async def report_error(self, stage: str, error: Exception) -> None:
         if self._config.hide_error:
@@ -255,76 +169,25 @@ class InlineStatusReporter(StatusReporter):
         self,
         cli: Client,
         inline_message_id: str,
+        caption: str = "",
         *,
         t: PreLocaleSelector,
         user_config: SettingsConfig,
-        raw_url: str = "",
-        spoiler_tag: str = "",
-        custom_content: str = "",
     ):
         self._cli = cli
         self._mid = inline_message_id
+        self._caption = caption
+        self._last_text: str | None = None
         self._t = t
         self._user_config = user_config
-        self._raw_url = raw_url
-        self._spoiler_tag = spoiler_tag
-        self._custom_content = custom_content
-        self._last_markdown: str | None = None
-        self._last_rich_at = 0.0
-        # 最后一次拿到的解析结果 —— 进度刷新要用它渲染完整排版, 不能退回骨架
-        self._parse_result: Any = None
-        # 报错后要恢复的内容 (按下"回退"时的占位)
-        self._last_text: str | None = None
-
-    def _render(self, parse_result: Any, text: str) -> str:
-        """与最终结果**同一种排版**的处理过程 markdown。"""
-        return build_progress_markdown(
-            parse_result,
-            progress=format_label(text),
-            config=self._user_config,
-            lang=self._t.locale,
-            view_label=self._t("查看"),
-            spoiler_tag=self._spoiler_tag,
-            custom_content=self._custom_content,
-            raw_url=self._raw_url,
-        )
 
     async def report(self, text: str) -> None:
-        """**阶段切换**: 还没有解析结果 -> 同版式的骨架。必发。"""
-        self._last_text = format_label(text)
-        await self._edit_rich(self._render(None, text))
-
-    async def report_progress(self, text: str) -> None:
-        """进度刷新 (下载百分比等): 内容密集变化, 走节流 (复用最近的结果渲染)。"""
-        self._last_text = format_label(text)
-        await self._edit_rich(self._render(self._parse_result, text), throttle=True)
-
-    async def report_result(self, parse_result: Any, text: str) -> None:
-        """**已有解析结果** -> 完整排版 (标题/作者/正文/标签/页脚), 只差媒体。必发。"""
-        self._parse_result = parse_result
-        await self._edit_rich(self._render(parse_result, text))
-
-    async def _edit_rich(self, markdown: str, *, throttle: bool = False) -> None:
-        """把处理过程编辑成**富文本** (与最终结果同一种排版)。
-
-        顺带把结果项上的键盘摘掉 —— ``edit_inline_rich_message`` 内部就是
-        ``EditInlineBotMessage(..., reply_markup=ReplyKeyboardHide())``,
-        所以第一次进度更新时按钮就消失了 (比等结果出来再摘更早)。
-        """
-        if not markdown or markdown == self._last_markdown:
+        text = format_label(text)
+        full = f"{self._caption}\n{text}" if self._caption else text
+        if full == self._last_text:
             return
-        if throttle and monotonic() - self._last_rich_at < _MIN_PROGRESS_INTERVAL:
-            return
-        self._last_markdown = markdown
-        self._last_rich_at = monotonic()
-        try:
-            await edit_inline_rich_message(self._cli, self._mid, markdown=markdown)
-        except (FloodWait, SlowmodeWait):
-            pass
-        except Forbidden as e:
-            logger.warning(f"消息发送失败, Bot 无权限: {e}")
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"inline 处理过程更新失败 (已忽略): {type(e).__name__}: {e}")
+        self._last_text = full
+        await self._edit_inline_text(inline_message_id=self._mid, text=full)
 
     async def report_error(self, stage: str, error: Exception) -> None:
         if self._user_config.hide_error:
@@ -339,13 +202,12 @@ class InlineStatusReporter(StatusReporter):
             return
 
         async def fn() -> None:
-            # 报错提示挂 15 秒后回到报错前那条**富文本** (直接编辑, 绕过判重)
             await asyncio.sleep(15)
-            if self._last_markdown:
-                try:
-                    await edit_inline_rich_message(self._cli, self._mid, markdown=self._last_markdown)
-                except Exception as e:  # noqa: BLE001 - 恢复失败无所谓
-                    logger.debug(f"恢复处理过程富文本失败 (已忽略): {type(e).__name__}: {e}")
+            await self._edit_inline_text(
+                inline_message_id=self._mid,
+                text=self._caption,
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
 
         loop = asyncio.get_running_loop()
         loop.create_task(fn())
