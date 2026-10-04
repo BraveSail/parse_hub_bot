@@ -23,9 +23,23 @@ _inflight: dict[str, asyncio.Event] = {}
 
 
 class StatusReporter(Protocol):
-    """抽象状态通知，由调用方实现"""
+    """抽象状态通知，由调用方实现。
+
+    处理过程与最终结果是**同一种排版**（富文本），所以有三个入口：
+
+    - ``report``: 阶段切换（解析中/下载中/…），此时**还没有**解析结果 -> 同版式骨架
+    - ``report_progress``: 进度刷新（下载百分比），内容密集变化 -> 实现方可以节流
+    - ``report_result``: **已有**解析结果 -> 完整排版（标题/作者/正文/标签/页脚），只差媒体
+
+    ``report`` 与 ``report_result`` 不该被节流覆盖 —— "解析中 → 下载中"这种快速切换
+    被吞掉的话，用户就看不到阶段推进了。
+    """
 
     async def report(self, text: str) -> None: ...
+
+    async def report_progress(self, text: str) -> None: ...
+
+    async def report_result(self, parse_result: AnyParseResult, text: str) -> None: ...
 
     async def report_error(self, stage: str, error: Exception) -> None: ...
 
@@ -61,7 +75,8 @@ class PipelineProgressCallback:
         if not text or text == self._last_text:
             return
         self._last_text = text
-        await self._reporter.report(text)
+        # 进度刷新走 report_progress: 实现方会节流 (富文本编辑比纯文本重)
+        await self._reporter.report_progress(text)
 
 
 def should_skip_richtext_download(parse_result: AnyParseResult, *, richtext_skip_download: bool) -> bool:
@@ -217,7 +232,8 @@ class ParsePipeline:
             return PipelineResult(parse_result=parse_result)
 
         # ── 2. 下载 ──
-        await self._reporter.report(self._t("下 载 中..."))
+        # 已有解析结果 -> 用**完整排版**更新: 正文/标题/标签立刻可见, 只差媒体
+        await self._reporter.report_result(parse_result, self._t("下 载 中..."))
         logger.info(f"开始下载: media_count={len(to_list(parse_result.media))}, url={self._url}")
         p = ps.parser.get_platform(self._url)
         progress_cb = PipelineProgressCallback(self._reporter, _t=self._t)
@@ -242,7 +258,7 @@ class ParsePipeline:
         )
 
         # ── 3. 媒体处理 ──
-        await self._reporter.report(self._t("处 理 中..."))
+        await self._reporter.report_result(parse_result, self._t("处 理 中..."))
         if self._skip_media_processing:
             logger.debug(f"流水线完成: download_result={download_result}")
             processed_list = [ProcessedMedia(i, [Path(i.path)]) for i in to_list(download_result.media)]
