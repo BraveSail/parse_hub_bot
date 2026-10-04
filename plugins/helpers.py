@@ -482,48 +482,22 @@ def attach_quote_media(quote: str, placeholders: Sequence[str]) -> str:
 
 
 def fold_quote_block(quote: str, *, summary: str = "") -> str:
-    """把过长的引用块折起来: 开头几行留外面当预览, 其余折进 details。
+    """把过长的引用块折起来。
 
-    **引用块的折叠形态与正文不同**: 正文用 ``<details>`` 直接包文本, 引用块要
-    把 ``>`` 行原样放进 details 里 (真机返回 ``RichBlockDetails`` 内含
-    ``RichBlockBlockQuotation``)。实测 ``<blockquote expandable>`` 在这里会把
-    块内所有行**并成一行**、并把 ``>`` 变成字面量, 完全不能用。
+    引用块的老折叠形态是**整体一个 `<blockquote expandable>`**（客户端自己
+    显示开头几行），不像正文那样用 ``<details>`` 切成「预览 / 按钮 / 折起部分」
+    三段 —— 用户明确反馈后者「引用块被按钮分割, 割裂感太强了」。
 
-    媒体占位符行跟着所在位置走 (引用块的媒体本来就追加在末尾), 不特殊处理。
+    **这里只剥 ``>`` 前缀, 不做 markdown 中和** (区别于 ``convert_markdown_quote``):
+    引用块内容本身就是 ``*斜体*`` 和 ``<a href>``, 中和会把斜体变成字面实体。
     """
     if not quote:
         return quote
     lines = quote.rstrip("\n").split("\n")
-    if not _should_fold(_strip_quote_markers(quote)):
+    body = "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
+    if not _should_fold(body):
         return quote
-
-    preview_lines = quote_from_lines(
-        lines, limit=_FOLD_PREVIEW_LINES, char_limit=_FOLD_PREVIEW_CHARS, min_lines=2
-    )
-    rest = lines[len(preview_lines):]
-    if not rest:
-        return quote
-
-    preview = "\n".join(preview_lines).rstrip()
-    folded = "\n".join(rest)
-    body = f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{folded}\n\n</details>"
-    return f"{preview}\n\n{body}" if preview else body
-
-
-def quote_from_lines(lines: list[str], *, limit: int, char_limit: int, min_lines: int = 1) -> list[str]:
-    """取引用块的预览行: 不超过 limit 行, 且从第 min_lines 行起才受字符上限约束。
-
-    引用块首行是作者行, 只看作者行等于没预览 —— 所以强制先取够 min_lines 行,
-    之后再按字符上限收敛 (避免超长的第二行把预览撑满)。
-    """
-    out: list[str] = []
-    chars = 0
-    for line in lines:
-        if len(out) >= limit or (len(out) >= min_lines and chars + len(line) > char_limit):
-            break
-        chars += len(line)
-        out.append(line)
-    return out
+    return render_expandable_quote(body)
 
 
 def wrap_collage(placeholders: Sequence[str]) -> list[str]:
@@ -758,6 +732,27 @@ def split_fold_preview(content: str) -> tuple[str, str]:
     return preview, rest
 
 
+def use_br_linebreaks(text: str) -> str:
+    """把换行转成 ``<br>``。
+
+    ``<blockquote expandable>`` 里**真换行会被并成空格** (实测), 只有 ``<br>``
+    才保留换行; 而带真空行的内容会让它**退化成普通引用块、完全不折叠**。
+    把换行写成 ``<br>`` 两个问题一起解决。
+    """
+    lines = [line.rstrip() for line in text.split("\n")]
+    return "<br>".join(lines)
+
+
+def render_expandable_quote(content: str) -> str:
+    """引用块的老折叠形态: 整体一个 ``<blockquote expandable>``。
+
+    与正文的 ``<details>`` 不同 —— ``<details>`` 会把「预览 / 按钮 / 折起部分」
+    切成三段 (用户原话「引用块被按钮分割, 割裂感太强了」)。这里整块一起折,
+    客户端自己显示开头几行, 形态是一体的。
+    """
+    return f"<blockquote expandable>{use_br_linebreaks(content)}</blockquote>"
+
+
 def _render_foldable(content: str, *, summary: str = "") -> str:
     """包成可折叠块 (长内容展示用): 开头几行留外面当预览, 其余折进 details。
 
@@ -795,7 +790,7 @@ def convert_markdown_quote(
     def _replace(match: re.Match) -> str:
         body = _strip_quote_markers(match.group(0))
         if allow_expandable and _should_fold(body):
-            return _render_foldable(body, summary=fold_summary)
+            return render_expandable_quote(body)
         return f"<blockquote>{body}</blockquote>"
 
     return _QUOTE_BLOCK_RE.sub(_replace, text)

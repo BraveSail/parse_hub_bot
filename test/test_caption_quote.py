@@ -72,9 +72,9 @@ def test_multiple_quote_blocks():
 def test_format_text_folds_long_quote_without_nesting():
     """超长引用块自行折叠, 但不外包第二层 blockquote (TG 不支持嵌套)."""
     out = format_text("> \u56de\u590d @user\uff1a\n> " + "x" * 600)
-    assert out.count("<blockquote") == 0        # 折叠容器是 <details>, 不再是 blockquote
-    assert out.count("<details>") == 1
-    assert out.count("</details>") == 1
+    assert out.count("<blockquote expandable>") == 1   # 整块一起折叠, 不外包第二层
+    assert out.count("<blockquote") == 1
+    assert "<details>" not in out
 
 
 def test_format_text_keeps_short_quote_unfolded():
@@ -87,8 +87,8 @@ def test_format_text_keeps_short_quote_unfolded():
 def test_quote_and_body_fold_independently():
     """引用块与正文各自按同一阈值折叠, 互不外包 (总长控制在截断线内)."""
     out = format_text("> \u56de\u590d @u\uff1a\n> " + "q" * 400 + "\n\n" + "b" * 400)
-    assert out.count("<details>") == 2          # 引用块与正文各折一层
-    assert out.count("</details>") == 2
+    assert out.count("<blockquote expandable>") == 1   # 引用块: 整块折
+    assert out.count("<details>") == 1                 # 正文: 预览 + 折起
     assert "......" not in out  # 未触发截断
 
 
@@ -157,20 +157,22 @@ def test_split_fold_preview_returns_unfolded_for_short_content():
 def test_long_quote_block_is_folded():
     """被回复/被引用的长卡片也要折 —— 以前它们直接拼进 parts, 1294 字的回复块整屏铺开。
 
-    引用块的折叠形态与正文不同: `>` 行要原样进 details (服务端返回
-    RichBlockDetails 内含 RichBlockBlockQuotation)。实测 <blockquote expandable>
-    在这里会把所有行并成一行、并把 '>' 变成字面量。
+    引用块用**老折叠**（整体一个 <blockquote expandable>），不是正文那套 details：
+    后者会把「预览 / 按钮 / 折起部分」切成三段，用户反馈「引用块被按钮分割,
+    割裂感太强了」。块内换行必须写成 <br> —— 真换行会被并成空格，真空行则让
+    expandable 退化成普通引用块（完全不折叠）。
     """
     from plugins.helpers import fold_quote_block
 
     quote = "\n".join(["> *作者 @handle：*", *[f"> *第{i}行内容*  " for i in range(1, 20)]])
     out = fold_quote_block(quote, summary="展开全文")
-    assert "<details><summary>展开全文</summary>" in out
-    assert out.endswith("</details>")
-    assert out.index("> *作者 @handle：*") < out.index("<details>")   # 预览在折叠块外
-    assert "> *第1行内容*" in out
-    assert "> *第19行内容*" in out                                     # 折起的行仍带引用前缀
-    assert "\n> *第5行内容*" in out.split("<details>")[1]             # 剩余进 details
+    assert out.startswith("<blockquote expandable>")
+    assert out.endswith("</blockquote>")
+    assert "<details>" not in out                       # 不用 details, 避免割裂
+    assert "*作者 @handle：*" in out                     # 斜体保留 (没被中和成 &#42;)
+    assert "*第19行内容*" in out
+    assert out.count("<br>") == 19                      # 换行走 <br>
+    assert "> *" not in out                # '>' 前缀已剥掉 (剩下的 > 都属 <br>/标签)
 
 
 def test_short_quote_block_stays_untouched():
@@ -181,13 +183,14 @@ def test_short_quote_block_stays_untouched():
 
 
 def test_quote_media_stays_inside_the_folded_block():
-    """引用块的媒体占位符必须跟着 '>' 前缀走, 折进 details 也要在引用块内"""
+    """引用块的媒体占位符要跟着一起折进 expandable 里 (不能掉到块外)"""
     from plugins.helpers import attach_quote_media, fold_quote_block
 
     quote = "\n".join(["> *作者：*", *[f"> *第{i}行内容*  " for i in range(1, 20)]])
     with_media = attach_quote_media(quote, ["![](tg://photo?id=m0)"])
     out = fold_quote_block(with_media, summary="展开全文")
-    assert "> ![](tg://photo?id=m0)" in out          # 前缀没丢
+    assert "![](tg://photo?id=m0)" in out
+    assert out.index("![](tg://photo?id=m0)") < out.rindex("</blockquote>")   # 在折叠块内
 
 
 def test_build_rich_markdown_folds_a_long_reply_block():
@@ -206,9 +209,9 @@ def test_build_rich_markdown_folds_a_long_reply_block():
     )
     config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
     md = build_rich_markdown(result, config=config, lang="zh-hans")
-    assert "<details><summary>展开全文</summary>" in md
-    assert md.index("> *第1行*") < md.index("<details>")     # 预览可见
-    assert "> *第17行*" in md
+    assert "<blockquote expandable>" in md
+    assert "<details>" not in md                 # 引用块不切成三段
+    assert "*第1行*" in md and "*第17行*" in md
 
 
 def test_fold_summary_follows_locale():
@@ -319,8 +322,8 @@ def test_truncation_happens_before_html_conversion():
     """要求截断时, 截断发生在 HTML 转换之前 —— 否则会切断 blockquote 闭合标签"""
     out = format_text("> " + "z" * 1500, max_length=1000)
     assert "......" in out
-    assert out.endswith("</details>")       # 截断没有切断闭合标签
-    assert out.count("<details>") == 1
+    assert out.endswith("</blockquote>")    # 截断没有切断闭合标签
+    assert out.count("<blockquote expandable>") == 1
 
 
 def test_format_text_without_expandable_does_not_wrap_long_text():
