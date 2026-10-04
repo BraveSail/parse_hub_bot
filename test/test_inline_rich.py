@@ -66,6 +66,85 @@ def test_reply_markup_only_for_media():
     assert inline_reply_markup(make_result(media=[ImageRef(url="https://a/x.jpg")])) is not None
 
 
+# ── 选中后立刻摘掉键盘 ─────────────────────────────────────────────────
+#
+# 键盘是拿 inline_message_id 的**代价**: Telegram 只在消息带 inline keyboard
+# 时才回传句柄, 而用户并不需要那个"原链接"按钮。所以约定是"到手就摘"。
+#
+# 回归: 占位+编辑那次重构把摘键盘的调用**连同注释一起删掉了**, 变成死代码,
+# 于是按钮一直留在消息上 (用户报「inline最开始占位消息下面有个链接按钮」)。
+# 这里盯住"确实调了", 因为这是纯副作用, 删掉了没有任何测试会红。
+
+
+def test_the_keyboard_is_dropped_once_the_handle_is_available():
+    import types
+    from unittest.mock import AsyncMock, patch
+
+    from plugins.parse import inline as inline_mod
+    from plugins.parse.inline import inline_result_download
+
+    dropped = AsyncMock()
+    pipeline_cls = __import__("unittest.mock", fromlist=["MagicMock"]).MagicMock()
+    pipeline_cls.return_value.__enter__.return_value.run = AsyncMock(return_value=None)
+
+    chosen = types.SimpleNamespace(
+        result_id=inline_mod.RICH_RESULT_ID,
+        inline_message_id="BQAAAH8EAACb7f-02gbl1xUz2F4",
+        query="https://x.com/a/status/1",
+        from_user=types.SimpleNamespace(id=1, language_code="zh-hans"),
+    )
+
+    @__import__("contextlib").asynccontextmanager
+    async def fake_session():
+        yield None
+
+    with (
+        patch.object(inline_mod, "get_session", fake_session),
+        patch.object(
+            inline_mod,
+            "UserService",
+            return_value=types.SimpleNamespace(ensure_lang=AsyncMock(return_value="zh-hans")),
+        ),
+        patch.object(
+            inline_mod,
+            "SettingsService",
+            return_value=types.SimpleNamespace(get_config_by_user=AsyncMock(return_value=_config())),
+        ),
+        patch.object(
+            inline_mod,
+            "ParseService",
+            return_value=types.SimpleNamespace(get_raw_url=AsyncMock(return_value="https://x.com/a/status/1")),
+        ),
+        patch.object(inline_mod.parse_cache, "get", AsyncMock(return_value=None)),
+        patch.object(inline_mod, "_drop_inline_keyboard", dropped),
+        patch.object(inline_mod, "ParsePipeline", pipeline_cls),
+    ):
+        asyncio.run(inline_result_download(types.SimpleNamespace(), chosen))
+
+    dropped.assert_awaited_once()
+    assert dropped.await_args.args[1] == chosen.inline_message_id
+
+
+def test_no_handle_means_no_keyboard_to_drop():
+    """没有句柄 = 这条结果本来没挂键盘 (纯文字, 无需二次编辑)"""
+    import types
+    from unittest.mock import AsyncMock, patch
+
+    from plugins.parse import inline as inline_mod
+    from plugins.parse.inline import inline_result_download
+
+    dropped = AsyncMock()
+    chosen = types.SimpleNamespace(
+        result_id=inline_mod.RICH_RESULT_ID,
+        inline_message_id=None,
+        query="https://x.com/a/status/1",
+        from_user=types.SimpleNamespace(id=1, language_code="zh-hans"),
+    )
+    with patch.object(inline_mod, "_drop_inline_keyboard", dropped):
+        asyncio.run(inline_result_download(types.SimpleNamespace(), chosen))
+    dropped.assert_not_awaited()
+
+
 def test_rich_result_has_id_and_no_external_media_syntax():
     result = make_result(media=[VideoRef(url="https://a/v.mp4", width=8, height=6)])
     results = asyncio.run(build_inline_results(result, None, "zh-hans", _config()))

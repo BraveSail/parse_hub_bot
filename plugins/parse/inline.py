@@ -272,7 +272,9 @@ async def _drop_inline_keyboard(cli: Client, inline_message_id: str) -> None:
             )
         )
     except Exception as e:
-        logger.debug(f"摘除 inline 键盘失败: {e}")
+        # 用 warning 而不是 debug: 摘不掉 = 用户会一直看到那个按钮, 不算无关紧要的噪音
+        # (曾经在 debug 级吞掉过, 结果"按钮怎么还在"完全查不出原因)
+        logger.warning(f"摘除 inline 键盘失败: {type(e).__name__}: {e}")
 
 
 @Client.on_chosen_inline_result()
@@ -295,6 +297,10 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         # 没有键盘就不会有句柄: 说明这条结果本来没媒体, 无需二次编辑
         logger.info("inline 选中回调缺少 inline_message_id, 无需编辑")
         return
+
+    # 键盘只为换取 inline_message_id 而存在 (Telegram 只在消息带 inline keyboard 时
+    # 才回传句柄), 到手就立刻摘掉 —— 用户不该看到那个"原链接"按钮。
+    await _drop_inline_keyboard(cli, inline_message_id)
 
     async with get_session() as session:
         lang = await UserService(session).ensure_lang(
