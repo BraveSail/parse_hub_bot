@@ -66,6 +66,23 @@
 
 `_MIN_PROGRESS_INTERVAL = 1.5s`（`plugins/parse/reporters.py`）。
 
+## ⚠️ footer 里只有 HTML 标签解析（`**` 会字面显示）
+
+阶段标签放页脚，而**页脚块只解析 HTML 标签** —— 与"footer 里 markdown 链接不解析"
+同一个坑。真机四组对照：
+
+| 位置 | 写法 | 结果 |
+| --- | --- | --- |
+| **footer** | `**▎…**`（markdown） | ✗ 字面显示，用户看到多余的 `**` |
+| **footer** | `<b>▎…</b>` | ✓ `RichTextBold` |
+| 正文 | `**▎…**` | ✓ `RichTextBold` |
+| 正文 | `<b>▎…</b>` | ✓ `RichTextBold` |
+
+**这个来回值得记**：我曾为了"迁就 blocks 路径不认 `<b>`"把标签改成 `**` ——
+**方向搞反了**（用户当场指出"第一次改的时候是正常的"）。
+正确做法是**让 blocks 的 `parse_inline` 认 `<b>`/`<i>`**，而不是改坏 markdown 路径。
+现在两处都对：footer 用 `<b>`，`parse_inline` 也认 `<b>`/`<i>`。
+
 ## 三个实现要点（都是踩过的）
 
 1. **进度刷新必须复用最近的结果**：下载阶段的进度刷新若走骨架渲染，每刷一次就跳一次版。
