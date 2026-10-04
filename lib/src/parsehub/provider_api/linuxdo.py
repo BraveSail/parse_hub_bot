@@ -64,6 +64,9 @@ class LinuxDoTopic:
     reply_count: int | None = None
     tags: list[str] = field(default_factory=list)
     images: list[LinuxDoImage] = field(default_factory=list)
+    #: images 末尾有多少张属于**上下文引用块** (主楼/被回复楼层), bot 侧据此把它们
+    #: 放进引用块内部而不是正文媒体
+    quoted_media_count: int = 0
     is_sensitive: bool = False
 
     @staticmethod
@@ -145,6 +148,21 @@ class LinuxDoTopic:
         for placeholder, block in rendered_quotes:
             markdown_content = markdown_content.replace(placeholder, block)
 
+        # 上下文引用块放正文**之前**, 从远到近: 主楼 → 被回复的楼层 → 当前楼层正文
+        # (用户要求: 分享楼层时把主楼做成回复; 楼层互回时被回复的那层也要带上)
+        context_quotes, context_images = cls._context_quotes(posts, first)
+        # 上下文层的图片接在 media 末尾 —— bot 侧按"引用块媒体"放进引用块内部
+        quoted_media_count = len(context_images)
+        if context_images:
+            images = [*images, *context_images]
+        if context_quotes:
+            # strip 每个块: format_quote_block 末尾自带空行, 直接 join 会堆出多余空行
+            parts = [*[q.strip() for q in context_quotes], markdown_content.strip()]
+            markdown_content = "\n\n".join(p for p in parts if p)
+            # 纯图楼层走 text_content 兜底, 上下文同样要带上
+            plain_parts = [*[cls._quote_to_plain(q) for q in context_quotes], text_content.strip()]
+            text_content = "\n\n".join(p for p in plain_parts if p)
+
         tags = [str(t.get("name")) for t in (payload.get("tags") or []) if isinstance(t, dict) and t.get("name")]
         created_by = (payload.get("details") or {}).get("created_by") or {}
         author_handle = str(first.get("username") or created_by.get("username") or "")
@@ -169,12 +187,84 @@ class LinuxDoTopic:
             reply_count=to_int(payload.get("reply_count")),
             tags=tags,
             images=images,
+            quoted_media_count=quoted_media_count,
             # 只认平台自己的标记: 标签里的 NSFW
             is_sensitive=any(t.casefold() == "nsfw" for t in tags),
         )
 
     #: 引用块在正文里的占位标记 (转 markdown 后再替换成渲染结果)
     _QUOTE_PLACEHOLDER = "@@linuxdo-quote-{}@@"
+
+    @classmethod
+    def _post_to_quote(cls, post: dict[str, Any]) -> tuple[str, list[LinuxDoImage]]:
+        """把**另一层**的内容渲染成引用块 + 它自己的图片。
+
+        返回 ``(引用块 markdown, 该层的图片)``:
+
+        - 引用块**不内联图片** —— 只给作者行与文字, 图片由调用方按"引用块媒体"
+          的通道单独带过去 (与 twitter 的被引用帖媒体同一机制)。
+        - **纯图楼层也要返回引用块**(只有作者行): 这层确实在回应它, 直接把整层丢掉
+          是**有损**的 —— 用户看不到"在回复谁"。
+        """
+        cooked = post.get("cooked") or ""
+        username = str(post.get("username") or "")
+        author = format_author_link(
+            str(post.get("name") or ""), username, profile_url(Platform.LINUXDO, username)
+        )
+        floor = post.get("post_number")
+        head = f"{author} · #{floor}" if floor else author
+        if not cooked:
+            return "", []
+
+        soup = BeautifulSoup(cooked, "lxml")
+        images = cls._extract_images(soup)  # 图片先取出来 (下面会清理掉)
+        # 先摘掉引用块与媒体外壳, 只要这一层自己的文字
+        for aside in soup.find_all("aside", class_="quote"):
+            aside.decompose()
+        cls._simplify(soup)
+        text = soup.get_text("\n", strip=True)
+        # 没文字也出引用块 (sign_only) —— 纯图楼层只有署名, 图片按引用块媒体接进块内
+        return format_quote_block(text, head, sign_only=True), images
+
+    @staticmethod
+    def _quote_to_plain(block: str) -> str:
+        """引用块 markdown → 纯文本 (给 text_content 兜底路径用)。"""
+        text = re.sub(r"<[^>]+>", "", block or "")
+        lines = [re.sub(r"^>\s*", "", ln).strip() for ln in text.splitlines()]
+        return "\n".join(ln for ln in lines if ln)
+
+    @classmethod
+    def _context_quotes(
+        cls, posts: list[dict[str, Any]], current: dict[str, Any]
+    ) -> tuple[list[str], list[LinuxDoImage]]:
+        """当前楼层的上下文: 引用块 (**从远到近**) + 这些层的图片。
+
+        用户要求: 分享某一层时要把**主楼**也带上 (那一层常是在回应主楼/前文);
+        楼层回复了别的楼层时, 被回复的那层也要带上。
+
+        被带上的那些层自己的图片也一并返回 —— 由调用方按"引用块媒体"通道发送
+        (纯图楼层只有图片, 不带就等于把主楼丢了)。
+        """
+        wanted = current.get("post_number")
+        blocks: list[str] = []
+        images: list[LinuxDoImage] = []
+        targets: list[dict[str, Any]] = []
+        # ① 主楼: 当前就是主楼时不用带
+        if wanted != 1:
+            if op := next((p for p in posts if p.get("post_number") == 1), None):
+                targets.append(op)
+        # ② 被回复的楼层 (回复主楼时已在①里, 不重复)
+        reply_to = current.get("reply_to_post_number")
+        if reply_to and reply_to not in (1, wanted):
+            if rp := next((p for p in posts if p.get("post_number") == reply_to), None):
+                targets.append(rp)
+
+        for post in targets:
+            block, post_images = cls._post_to_quote(post)
+            if block:
+                blocks.append(block)
+            images.extend(post_images)
+        return blocks, images
 
     @classmethod
     def _extract_quotes(cls, soup: BeautifulSoup) -> list[tuple[str, str]]:

@@ -166,6 +166,97 @@ def test_floor_counts_come_from_the_floor_not_the_topic():
     assert topic.like_count == 17
 
 
+def _floor(post_number, username, cooked, *, name=None, reply_to=None, reply_to_user=None):
+    post = {
+        "id": 1000 + post_number,
+        "post_number": post_number,
+        "username": username,
+        "name": name or username,
+        "created_at": "2026-10-01T10:00:00.000Z",
+        "reply_to_post_number": reply_to,
+        "reply_to_user": {"username": reply_to_user, "name": reply_to_user} if reply_to_user else None,
+        "cooked": cooked,
+    }
+    return post
+
+
+def _topic_with(*floors):
+    return make_payload(post_stream={"posts": list(floors)})
+
+
+# ── 上下文引用块 (主楼 / 被回复楼层) ──────────────────────────
+
+
+def test_floor_reply_to_the_topic_quotes_the_opening_post():
+    """分享楼层时, 主楼要作为引用块带上 —— 那一层常是在回应主楼
+
+    所有楼层的 ``reply_to_post_number`` 都是 None 时, Discourse 的语义就是
+    "回复主题 (主楼)", 所以主楼必须在最上面。
+    """
+    payload = _topic_with(
+        _floor(1, "楼主", "<p>这是主楼的正文</p>"),
+        _floor(2, "二层", "<p>二楼说的话</p>"),
+        _floor(3, "三层", "<p>回复主题的话</p>"),
+    )
+    topic = LinuxDoTopic._from_payload(payload, "1", post_number="3")
+    md = topic.markdown_content
+
+    assert "这是主楼的正文" in md            # 主楼带上来了
+    assert "回复主题的话" in md              # 本层内容也在
+    assert md.index("这是主楼的正文") < md.index("回复主题的话")   # 主楼在前
+    assert md.count("<blockquote") == 1 or md.count("> <i>") >= 2  # 是引用块形态
+
+
+def test_floor_reply_to_another_floor_orders_op_then_replied_floor():
+    """楼层回复其他楼层: 主楼在最上、被回复的楼层在中间、本层在最后"""
+    payload = _topic_with(
+        _floor(1, "楼主", "<p>主楼正文</p>"),
+        _floor(2, "二层", "<p>二楼说的话</p>"),
+        _floor(3, "三层", "<p>回复二楼的话</p>", reply_to=2, reply_to_user="二层"),
+    )
+    md = LinuxDoTopic._from_payload(payload, "1", post_number="3").markdown_content
+
+    assert md.index("主楼正文") < md.index("二楼说的话") < md.index("回复二楼的话")
+
+
+def test_opening_post_gets_no_context_quote():
+    """解析主楼本身时不该自我引用"""
+    payload = _topic_with(_floor(1, "楼主", "<p>主楼正文</p>"), _floor(2, "二层", "<p>二楼</p>"))
+    md = LinuxDoTopic._from_payload(payload, "1", post_number="1").markdown_content
+    assert md.count("主楼正文") == 1
+    assert "二楼" not in md
+
+
+def test_floor_reply_to_a_floor_does_not_duplicate_the_opening_post():
+    """被回复的正是主楼时, 只出现一次 (不重复渲染)"""
+    payload = _topic_with(
+        _floor(1, "楼主", "<p>主楼正文</p>"),
+        _floor(2, "二层", "<p>回复主楼</p>", reply_to=1, reply_to_user="楼主"),
+    )
+    md = LinuxDoTopic._from_payload(payload, "1", post_number="2").markdown_content
+    assert md.count("主楼正文") == 1
+
+
+def test_image_only_opening_post_still_gets_a_quote_and_its_image():
+    """纯图主楼: 没有文字也要出引用块, 它的图片按"引用块媒体"带过去。
+
+    用户指出的: 不能因为"只有图片"就把整层丢掉 —— 那样连在回复谁都不知道。
+    """
+    payload = _topic_with(
+        _floor(1, "楼主", '<p><img src="https://cdn.ldstatic.com/op.png" width="400" height="300"></p>'),
+        _floor(3, "三层", "<p>本层的话</p>"),
+    )
+    topic = LinuxDoTopic._from_payload(payload, "1", post_number="3")
+
+    # 引用块在 (只有署名)
+    assert "楼主" in topic.markdown_content
+    assert topic.markdown_content.index("楼主") < topic.markdown_content.index("本层的话")
+    # 主楼的图被算进"引用块媒体", 不在正文媒体里
+    assert topic.quoted_media_count == 1
+    assert len(topic.images) == 1
+    assert topic.images[0].url == "https://cdn.ldstatic.com/op.png"
+
+
 def test_topic_level_like_is_used_when_the_floor_has_none():
     payload = make_payload(like_count=125, post_stream={"posts": [{"post_number": 1, "cooked": "<p>x</p>"}]})
     assert LinuxDoTopic._from_payload(payload, "1").like_count == 125

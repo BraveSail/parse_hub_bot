@@ -46,6 +46,8 @@ class LinuxDoParser(BaseParser):
         common = {
             "title": topic.title,
             "media": media,
+            # 末尾这几张属于上下文引用块 (主楼/被回复楼层) -> 放进引用块内部
+            "quoted_media_count": topic.quoted_media_count,
             "author_name": topic.author_name,
             "author_handle": topic.author_handle,
             "author_url": profile_url(Platform.LINUXDO, topic.author_handle),

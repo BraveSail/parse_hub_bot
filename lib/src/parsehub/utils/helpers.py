@@ -112,8 +112,14 @@ def format_author_link(name: str, handle: str = "", url: str = "") -> str:
     return label
 
 
-def format_quote_block(text: str, author: str = "") -> str:
+def format_quote_block(text: str, author: str = "", *, sign_only: bool = False) -> str:
     """把一段文本渲染成斜体的引用块, 文本为空时返回空串。
+
+    :param sign_only: 文本为空时**仍输出署名行**。给"被引用对象没有文字、但有媒体"
+        的场景用 (纯图楼层、纯图转发动态) —— 那种情况下引用块只有署名, 图片由调用
+        方按引用块媒体的通道接进块内 (``attach_quote_media``), 一块只有署名的引用块
+        照样能带图。**默认 False**: 没有媒体配套的调用方 (threads) 拿到的空引用块
+        是一行孤零零的署名, 不如不显示。
 
     不写 "回复/引用" 字样: 引用块本身已经表明关系。整块斜体, 作者行在前。
 
@@ -123,10 +129,10 @@ def format_quote_block(text: str, author: str = "") -> str:
     ``<i>行</i>`` 来补救, 现在在源头直接产出正确的标记, 不需要转换。
     """
     body = (text or "").strip()
-    if not body:
-        return ""
-    lines = "\n".join(f"> <i>{line}</i>" if line.strip() else ">" for line in body.splitlines())
     head = f"> <i>{author}：</i>\n" if author else ""
+    if not body:
+        return f"{head}\n" if (head and sign_only) else ""
+    lines = "\n".join(f"> <i>{line}</i>" if line.strip() else ">" for line in body.splitlines())
     return f"{head}{lines}\n\n"
 
 

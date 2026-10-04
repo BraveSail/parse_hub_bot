@@ -108,7 +108,9 @@ class BiliParse(BaseParser):
             "",
             profile_url(Platform.BILIBILI, user_id=forward.author_mid),
         )
-        return format_quote_block(body, author)
+        # sign_only: 转发的是纯视频/纯图 (无文字) 时也要出引用块 —— 否则
+        # quoted_media_count 仍算着它的媒体, 引用块却不存在, 图片会掉进正文
+        return format_quote_block(body, author, sign_only=True)
 
     async def _do_parse(self, raw_url: str) -> YtVideoParseResult | BiliVideoParseResult | ImageParseResult:
         if await self.is_dynamic(raw_url):

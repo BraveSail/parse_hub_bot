@@ -54,6 +54,16 @@ def test_format_quote_block_without_author():
 
 
 def test_format_quote_block_empty_text():
+    """默认: 没文字就不出块 —— 没有媒体配套的调用方 (threads) 拿到孤立署名行是噪音"""
     assert format_quote_block("") == ""
     assert format_quote_block("   ") == ""
     assert format_quote_block("", "author") == ""
+
+
+def test_format_quote_block_sign_only_keeps_the_author_line():
+    """sign_only: 只署名也出块 —— 给"被引用对象是纯图/无文字但有媒体"的调用方用"""
+    assert format_quote_block("", "author", sign_only=True) == "> <i>author：</i>\n\n"
+    # 有文字时与普通调用一致
+    assert format_quote_block("正文", "author", sign_only=True) == format_quote_block("正文", "author")
+    # 连作者都没有 -> 仍然是空串 (sign_only 也救不了)
+    assert format_quote_block("", "", sign_only=True) == ""
