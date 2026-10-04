@@ -131,6 +131,45 @@ def test_build_rich_markdown_folds_a_long_body():
     assert "很长的正文" in md
 
 
+def test_build_rich_markdown_does_not_truncate_a_very_long_body():
+    """富文本没有 caption 的 1024 限制: 超长正文只折叠、不截断。
+
+    以前格式化统一走 1000 字符截断, 长正文被砍成省略号 —— 折叠就轮不上了。
+    """
+    import types
+
+    from plugins.helpers import build_rich_markdown
+
+    result = types.SimpleNamespace(
+        title="",
+        content="长" * 1500,
+        raw_url="https://x.com/a/status/1",
+        author_name="",
+        author_handle="",
+        author_url="",
+        published_at=None,
+        view_count=None,
+        like_count=None,
+        tags=None,
+        platform=None,
+        media=None,
+    )
+    config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
+    md = build_rich_markdown(result, config=config, lang="zh-hans")
+    assert "<blockquote expandable>" in md
+    assert "......" not in md
+    assert "长" * 1500 in md
+
+
+def test_caption_path_still_truncates():
+    """对照: 旧 caption 路径受 Telegram 1024 上限约束, 该截还得截"""
+    from plugins.helpers import format_text
+
+    out = format_text("x" * 1200)
+    assert "......" in out
+    assert len(out) < 1000
+
+
 def test_build_rich_markdown_keeps_a_short_body_plain():
     import types
 
