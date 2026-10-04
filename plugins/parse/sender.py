@@ -508,8 +508,12 @@ async def send_rich_media(
     custom_content: str = "",
     raw_url: str = "",
     reporter: "MessageStatusReporter | None" = None,
+    force_spoiler: bool = False,
 ) -> bool:
     """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。
+
+    :param force_spoiler: 用户手动要求遮住内容 (链接后跟 ``/s``) —— 正文折成
+        ``<details><summary>⚠️</summary>``, 不留预览。
 
     给了 ``reporter`` 且它已经发过状态消息时, 结果会**编辑进那条状态消息**
     (整个流程只留一条消息, 没有删除记录、没有多余临时消息); 否则新建一条。
@@ -542,6 +546,7 @@ async def send_rich_media(
         media_placeholders=placeholders,
         quote_media_placeholders=quoted_placeholders,
         reply_media_placeholders=reply_placeholders,
+        hide_content=force_spoiler,
     )
     if parse_result.is_sensitive and media_blocks:
         # 敏感内容的媒体必须打码: 官方 API 的富文本媒体块没有 spoiler 字段,

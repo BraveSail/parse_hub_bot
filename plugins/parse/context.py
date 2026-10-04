@@ -26,6 +26,8 @@ class ParseRequest:
     bypass_cache: bool = False
     delete_share_url_msg: bool = False
     custom_content: str = ""
+    #: 用户手动要求打码 (链接后跟 ``/s``) —— 与平台的敏感标记取"或"
+    force_spoiler: bool = False
 
     @property
     def chat_id(self) -> int | None:

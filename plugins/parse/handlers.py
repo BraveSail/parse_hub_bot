@@ -4,6 +4,7 @@ from dataclasses import replace
 from typing import Any
 
 from parsehub.types import AniRef, RichTextParseResult
+from parsehub.utils.helpers import strip_spoiler_flag
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
@@ -84,6 +85,8 @@ async def parse(cli: Client, msg: Message) -> None:
     else:
         text = msg.text or msg.caption or ""
 
+    # 手动打码开关: 链接后跟独立的 /s —— 先剥掉, 免得它被当成不支持的平台
+    text, force_spoiler = strip_spoiler_flag(text)
     lines = text.strip().split()
     urls = list({i for i in lines if ParseService().parser.get_platform(i)})[:10]
 
@@ -111,6 +114,7 @@ async def parse(cli: Client, msg: Message) -> None:
                 bypass_cache=bypass_cache,
                 delete_share_url_msg=config.auto_delete_url,
                 custom_content=custom_content,
+                force_spoiler=force_spoiler,
             )
         )
         for url in urls
@@ -277,6 +281,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 custom_content=req.custom_content,
                 raw_url=raw_url,
                 reporter=reporter,
+                force_spoiler=req.force_spoiler,
             )
             return True
 
@@ -314,6 +319,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 custom_content=req.custom_content,
                 raw_url=raw_url,
                 reporter=reporter,
+                force_spoiler=req.force_spoiler,
             )
             return True
 
@@ -338,6 +344,7 @@ async def handle_parse(req: ParseRequest) -> bool:
                 custom_content=req.custom_content,
                 raw_url=raw_url,
                 reporter=reporter,
+                force_spoiler=req.force_spoiler,
             )
             return True
         except Exception as e:

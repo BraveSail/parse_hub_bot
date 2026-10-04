@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from easy_ai18n import LocaleContent
 from parsehub import ParseHub, Platform
 from parsehub.types import AnyParseResult, RichTextParseResult
-from parsehub.utils.helpers import format_author_label, format_author_link
+from parsehub.utils.helpers import SPOILER_FOLD_SUMMARY, format_author_label, format_author_link
 from pyrogram.types import Message
 
 from i18n import t_
@@ -215,8 +215,14 @@ def build_rich_markdown(
     media_placeholders: Sequence[str] = (),
     quote_media_placeholders: Sequence[str] = (),
     reply_media_placeholders: Sequence[str] = (),
+    hide_content: bool = False,
 ) -> str:
     """构建富文本 (rich message) 正文: 标题 + 作者 + 原文格式正文 + 媒体 + 页尾。
+
+    :param hide_content: 用户手动要求遮住内容 (链接后跟 ``/s``)。把正文折成
+        ``<details><summary>⚠️</summary>`` —— **不留预览**, 与自动折叠不同:
+        那是为了别让长正文撑屏, 这是用户明确要藏起来。媒体照常显示 (要连图一起藏
+        就用平台的敏感标记走 spoiler, 那是另一套)。
 
     富文本由 Telegram 服务端解析 markdown, 所以正文直接沿用解析器给出的原文格式
     (标题/列表/引用/表格/加粗等都会被还原), 不像旧路径那样先转成 HTML 再拼 caption。
@@ -258,9 +264,13 @@ def build_rich_markdown(
             media_placeholders = [*media_placeholders, *reply_media]
         reply_media = []
     if body_text and not config.hide_desc:
-        # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
-        # 截断会把长正文变成省略号, 折叠也就轮不上了
-        parts.append(format_text(body_text, fold_summary=fold_summary))
+        if hide_content:
+            # 手动要求遮住: 整个正文进 details, **不留预览** (与自动折叠相反)
+            parts.append(f"<details><summary>{SPOILER_FOLD_SUMMARY}</summary>\n\n{body_text}\n\n</details>")
+        else:
+            # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
+            # 截断会把长正文变成省略号, 折叠也就轮不上了
+            parts.append(format_text(body_text, fold_summary=fold_summary))
     if custom_content:
         parts.append(custom_content)
 

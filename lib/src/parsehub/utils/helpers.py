@@ -162,6 +162,31 @@ def match_url(text: str) -> str:
 _TRAILING_PUNCTUATION = "。，、！？；：,.!?;:"
 
 
+#: 手动开关标记 (独立 token): 让本次结果把正文折起来、摘要标 ⚠️
+SPOILER_FLAG = "/s"
+#: 手动开关的折叠摘要 —— ⚠️ 提示这条内容被主动藏起来了
+SPOILER_FOLD_SUMMARY = "⚠️"
+
+
+def strip_spoiler_flag(text: str | None) -> tuple[str, bool]:
+    """剥掉独立的 ``/s`` 开关, 返回 (去掉标记后的文本, 是否要求折叠)。
+
+    **必须是独立 token**: ``/soccer``、URL 里的 ``/s`` 都不算 —— 用户在链接后面
+    空一格再写, 这样 URL 本体完全不变 (往 URL 里塞参数会被参数清理逻辑摘掉,
+    加路径后缀又会污染缓存 key 与 provider 的路径解析)。
+    """
+    if not text:
+        return "", False
+    flagged = False
+    kept: list[str] = []
+    for token in text.split():
+        if token == SPOILER_FLAG:
+            flagged = True
+        else:
+            kept.append(token)
+    return " ".join(kept), flagged
+
+
 def url_only_message_urls(text: str | None, *, ignore_mentions: Sequence[str] = ()) -> list[str]:
     """消息**整条都是链接**时返回这些链接, 否则返回空列表。
 
@@ -179,6 +204,8 @@ def url_only_message_urls(text: str | None, *, ignore_mentions: Sequence[str] = 
         name = (mention or "").strip().lstrip("@").strip()
         if name:
             text = re.sub(rf"@{re.escape(name)}\b", " ", text)
+    # 手动开关 (/s) 也要先剔掉, 否则 "<链接> /s" 永远不算纯链接
+    text, _ = strip_spoiler_flag(text)
     tokens = [token.rstrip(_TRAILING_PUNCTUATION) for token in text.split()]
     if not tokens or any(not token for token in tokens):
         return []

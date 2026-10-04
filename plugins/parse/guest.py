@@ -15,7 +15,7 @@ guest 是 bot 自己在群里发一条 —— 后者要求"只能被允许的人
 
 from __future__ import annotations
 
-from parsehub.utils.helpers import url_only_message_urls
+from parsehub.utils.helpers import strip_spoiler_flag, url_only_message_urls
 from pyrogram import Client
 from pyrogram.types import (
     InlineQueryResultArticle,
@@ -126,7 +126,13 @@ async def _deliver(
 
 
 async def _answer(
-    cli: Client, guest_query_id: str, url: str, user_id: int, locale: str, caller_msg: Message | None = None
+    cli: Client,
+    guest_query_id: str,
+    url: str,
+    user_id: int,
+    locale: str,
+    caller_msg: Message | None = None,
+    force_spoiler: bool = False,
 ) -> bool:
     """解析一条链接并回答 guest 查询, 返回是否真的发出。
 
@@ -195,6 +201,7 @@ async def _answer(
             media_placeholders=placeholders,
             quote_media_placeholders=quoted_ph,
             reply_media_placeholders=reply_ph,
+            hide_content=force_spoiler,
         )
         title = _clip(parse_result.title, 90) or _clip(parse_result.content, 90) or "-"
         description = _clip(parse_result.content, 200)
@@ -273,4 +280,8 @@ async def guest_parse(cli: Client, msg: Message) -> None:
         return
 
     # 用召唤消息做进度载体: reply 它一条状态, 最后编辑成结果
-    await _answer(cli, guest_query_id, urls[0], user_id or 0, locale, caller_msg=msg)
+    # 手动打码开关同样适用: 剥掉 /s 并传下去
+    _, force_spoiler = strip_spoiler_flag(msg.text or msg.caption)
+    await _answer(
+        cli, guest_query_id, urls[0], user_id or 0, locale, caller_msg=msg, force_spoiler=force_spoiler
+    )

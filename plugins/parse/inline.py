@@ -7,6 +7,7 @@ from parsehub.types import (
     ImageRef,
     VideoRef,
 )
+from parsehub.utils.helpers import strip_spoiler_flag
 from pyrogram import Client, raw, utils
 from pyrogram.enums import ChatType
 from pyrogram.errors import BadRequest
@@ -231,7 +232,9 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         await answer_inline(inline_query, [build_denied_result(_t)], lang=lang, cache_time=0)
         return
 
-    raw_url = await ParseService().get_raw_url(inline_query.query)
+    # 手动打码开关: query 里那个独立的 /s 先剥掉, 否则会被当成 URL 的一部分
+    query, force_spoiler = strip_spoiler_flag(inline_query.query)
+    raw_url = await ParseService().get_raw_url(query)
     if cached := await persistent_cache.get(raw_url):
         logger.debug("inline: 缓存命中, 构建富文本结果")
         # 缓存里已有 file_id: 富文本项可以直接带上媒体, 无需二次编辑 (file_id 复用不上传)。
@@ -242,10 +245,10 @@ async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
 
     parse_result = await parse_cache.get(raw_url)
     if parse_result is None:
-        parse_result = await ParseService().parse(inline_query.query)
+        parse_result = await ParseService().parse(query)
         await parse_cache.set(raw_url, parse_result)
 
-    results = await build_inline_results(parse_result, cli, lang, config)
+    results = await build_inline_results(parse_result, cli, lang, config, force_spoiler=force_spoiler)
     logger.debug(f"inline 查询完成, 返回 {len(results)} 个结果")
     await answer_inline(inline_query, results, lang=lang, cache_time=0)
 
@@ -284,6 +287,9 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         logger.info(f"跳过: result_id={chosen_result.result_id!r} 非富文本结果")
         return
 
+    # 选中回调带的是原始 query, 手动打码标记同样要剥掉 (否则 /s 会被拼进 URL)
+    _, force_spoiler = strip_spoiler_flag(chosen_result.query)
+
     inline_message_id = chosen_result.inline_message_id
     if inline_message_id is None:
         # 没有键盘就不会有句柄: 说明这条结果本来没媒体, 无需二次编辑
@@ -297,7 +303,8 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         config = await SettingsService(session).get_config_by_user(chosen_result.from_user.id)
         _t = t_[lang]
 
-    query = chosen_result.query
+    # 用剥掉标记后的 query, 别把 /s 拼进 URL
+    query, _ = strip_spoiler_flag(chosen_result.query)
     raw_url = await ParseService().get_raw_url(query)
     cached_result = await parse_cache.get(raw_url)
     caption = (
@@ -337,6 +344,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 media_placeholders=placeholders,
                 quote_media_placeholders=quoted_placeholders,
                 reply_media_placeholders=reply_placeholders,
+                hide_content=force_spoiler,
             )
             logger.debug(
                 f"inline 编辑为富文本: media={len(media)}, blocks={len(media_blocks)}, "
@@ -397,7 +405,12 @@ def build_inline_rich_content(
 
 
 async def build_inline_results(
-    parse_result: AnyParseResult, cli: Client, lang: str, config: SettingsConfig
+    parse_result: AnyParseResult,
+    cli: Client,
+    lang: str,
+    config: SettingsConfig,
+    *,
+    force_spoiler: bool = False,
 ) -> list[InlineQueryResult]:
     """根据解析结果构建内联查询结果列表"""
     logger.debug(f"构建 inline 结果: type={parse_result.type}, title={parse_result.title}")
