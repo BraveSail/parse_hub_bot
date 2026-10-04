@@ -497,7 +497,9 @@ def fold_quote_block(quote: str, *, summary: str = "") -> str:
     if not _should_fold(_strip_quote_markers(quote)):
         return quote
 
-    preview_lines = quote_from_lines(lines, limit=_FOLD_PREVIEW_LINES, char_limit=_FOLD_PREVIEW_CHARS)
+    preview_lines = quote_from_lines(
+        lines, limit=_FOLD_PREVIEW_LINES, char_limit=_FOLD_PREVIEW_CHARS, min_lines=2
+    )
     rest = lines[len(preview_lines):]
     if not rest:
         return quote
@@ -508,12 +510,16 @@ def fold_quote_block(quote: str, *, summary: str = "") -> str:
     return f"{preview}\n\n{body}" if preview else body
 
 
-def quote_from_lines(lines: list[str], *, limit: int, char_limit: int) -> list[str]:
-    """按行数与字符数上限取预览行 (至少一行; 首行就超限时也保留)。"""
+def quote_from_lines(lines: list[str], *, limit: int, char_limit: int, min_lines: int = 1) -> list[str]:
+    """取引用块的预览行: 不超过 limit 行, 且从第 min_lines 行起才受字符上限约束。
+
+    引用块首行是作者行, 只看作者行等于没预览 —— 所以强制先取够 min_lines 行,
+    之后再按字符上限收敛 (避免超长的第二行把预览撑满)。
+    """
     out: list[str] = []
     chars = 0
     for line in lines:
-        if out and (len(out) >= limit or chars + len(line) > char_limit):
+        if len(out) >= limit or (len(out) >= min_lines and chars + len(line) > char_limit):
             break
         chars += len(line)
         out.append(line)
