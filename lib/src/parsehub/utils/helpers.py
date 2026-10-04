@@ -2,7 +2,7 @@ import asyncio
 import html
 import json
 import re
-from collections.abc import Coroutine, Mapping
+from collections.abc import Coroutine, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import quote
@@ -151,16 +151,23 @@ def match_url(text: str) -> str:
 _TRAILING_PUNCTUATION = "。，、！？；：,.!?;:"
 
 
-def url_only_message_urls(text: str | None) -> list[str]:
+def url_only_message_urls(text: str | None, *, ignore_mentions: Sequence[str] = ()) -> list[str]:
     """消息**整条都是链接**时返回这些链接, 否则返回空列表。
 
     用于"只解析纯链接消息"的场景 (群里有人随口提到链接不该被解析):
     按空白切分后要求每个片段**本身就是一个完整链接** —— 夹在文字里、被括号或
     表情包住、混在分享文案里的都不算。允许多个链接 (一行一个或空格分隔);
     链接末尾的句读会被去掉 (``https://x.com/...。`` 仍算纯链接)。
+
+    :param ignore_mentions: 先剔除的 @提及 —— guest 场景必须传 bot 自己的用户名:
+        guest 靠"消息里提到 bot"触发, 不剔掉的话 ``@bot <链接>`` 永远不算纯链接。
     """
     if not text:
         return []
+    for mention in ignore_mentions:
+        name = (mention or "").strip().lstrip("@").strip()
+        if name:
+            text = re.sub(rf"@{re.escape(name)}\b", " ", text)
     tokens = [token.rstrip(_TRAILING_PUNCTUATION) for token in text.split()]
     if not tokens or any(not token for token in tokens):
         return []

@@ -166,9 +166,12 @@ async def guest_parse(cli: Client, msg: Message) -> None:
         await cli.answer_guest_query(guest_query_id, _denied_result(_t("无权限")))
         return
 
-    urls = url_only_message_urls(msg.text or msg.caption)
+    # guest 靠"消息里提到 bot"触发, 所以判定纯链接前必须先把 bot 的 @username 剔掉,
+    # 否则 "@bot <链接>" 永远不算纯链接 (那 guest 就没法用了)
+    bot_username = getattr(getattr(cli, "me", None), "username", "") or ""
+    urls = url_only_message_urls(msg.text or msg.caption, ignore_mentions=(bot_username,))
     if not urls:
-        logger.debug("guest 查询不是纯链接消息, 跳过")
+        logger.debug(f"guest 查询不是纯链接消息, 跳过: text={(msg.text or msg.caption or '')[:80]!r}")
         return
 
     await _answer(cli, guest_query_id, urls[0], user_id or 0, locale)

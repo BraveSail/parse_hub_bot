@@ -31,7 +31,7 @@ def _run(msg, allowed=True, locale="zh-hans") -> tuple[AsyncMock, AsyncMock]:
 
     answer = AsyncMock(return_value=True)
     direct = AsyncMock(return_value=SimpleNamespace(inline_message_id="x"))
-    cli = SimpleNamespace(answer_guest_query=direct)
+    cli = SimpleNamespace(answer_guest_query=direct, me=SimpleNamespace(username="shirobakobot"))
     with (
         patch.object(guest_mod.access_gate, "is_allowed", AsyncMock(return_value=allowed)),
         patch.object(guest_mod, "_answer", answer),
@@ -57,6 +57,20 @@ def test_bare_link_in_caption_is_answered():
     """带说明的媒体消息 text 是 None"""
     answer, _ = _run(_msg(caption=LINK))
     answer.assert_awaited_once()
+
+
+def test_bot_mention_is_stripped_before_the_link_check():
+    """guest 靠提到 bot 触发, 所以 "@bot <链接>" 必须能过纯链接判定"""
+    answer, _ = _run(_msg(text=f"@shirobakobot {LINK}"))
+    answer.assert_awaited_once()
+    assert answer.await_args.args[2] == LINK
+
+
+def test_link_before_the_mention_is_answered():
+    """链接在前、@ 在后才是能正常发出的写法 (@ 在开头 Telegram 会进 inline 面板)"""
+    answer, _ = _run(_msg(text=f"{LINK} @shirobakobot"))
+    answer.assert_awaited_once()
+    assert answer.await_args.args[2] == LINK
 
 
 def test_chatter_around_the_link_is_ignored():
