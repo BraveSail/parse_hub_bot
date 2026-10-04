@@ -74,7 +74,7 @@ def test_cached_rich_content_keeps_layout_tags_and_collage():
     assert "正文" in markdown
     assert "#AI画像" in markdown
     assert "<tg-collage>" in markdown  # 多图要包成图集
-    assert "Source" in markdown
+    assert "来源" in markdown
     assert len(media) == 3
 
 

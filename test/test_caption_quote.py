@@ -394,7 +394,7 @@ def test_inline_caption_keeps_blockquote_and_source_link():
 
     types = _entity_types(parsed)
     assert "MessageEntityBlockquote" in types          # 引用块在
-    assert _text_urls(parsed) == [UNDERSCORE_URL]      # Source 链接完好
+    assert _text_urls(parsed) == [UNDERSCORE_URL]      # 来源 链接完好
     assert "MessageEntityItalic" not in types          # handle 下划线没被当斜体
     assert "@__yuuuumr__" in parsed["message"]
 
@@ -415,7 +415,7 @@ def test_dm_caption_keeps_blockquote_and_source_link():
 
 
 def test_inline_cached_rich_result_keeps_blockquote_and_link():
-    """缓存路径同样走富文本: 引用块与 Source 链接都不能丢"""
+    """缓存路径同样走富文本: 引用块与 来源 链接都不能丢"""
     from plugins.parse.inline import build_cached_rich_result
     from repo.settings import SettingsConfig
     from services.cache import CacheEntry, CacheParseResult
@@ -426,7 +426,7 @@ def test_inline_cached_rich_result_keeps_blockquote_and_link():
 
     assert "> " in markdown  # 引用块语法
     assert UNDERSCORE_URL in markdown
-    assert "Source" in markdown
+    assert "来源" in markdown
 
 
 # ── markdown 定界符中和 ─────────────────────────────────────────────────────

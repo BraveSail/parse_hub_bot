@@ -4,6 +4,7 @@
   kanaal voordat je het configureert
 06778dbf05d5: Platformbeheer
 091d3a0665fa: Kanaalconfiguratie
+0a87f26596ed: 'Bron ({display})'
 0d3d68e32996: Er is al eenzelfde taak bezig met ontleden, wacht tot het ontleden is
   voltooid...
 0f6c4353601e: Stuur het originele bestand om kwaliteitscompressie te voorkomen
@@ -13,6 +14,7 @@
 1d30c358e2a1: Standaard parseermodus
 1f3c920d087b: Bezig met verwerken...
 224e2ccda861: Configuratie
+26ca20b161c3: 'Bron'
 27350d00b70d: Bezig met uploaden...
 295bb704f520: Taal
 2bc28481a223: Automatisch verwijderde linkberichten

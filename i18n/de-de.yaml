@@ -4,6 +4,7 @@
   dem Kanal hinzu und konfigurieren Sie ihn dann.
 06778dbf05d5: Plattformverwaltung
 091d3a0665fa: Kanal-Konfiguration
+0a87f26596ed: 'Quelle ({display})'
 0d3d68e32996: Eine identische Aufgabe wird bereits analysiert, bitte warten Sie, bis
   die Analyse abgeschlossen ist...
 0f6c4353601e: Originaldatei senden, um Qualitätsverlust zu vermeiden
@@ -13,6 +14,7 @@
 1d30c358e2a1: Standard-Parsing-Modus
 1f3c920d087b: In Bearbeitung...
 224e2ccda861: Konfiguration
+26ca20b161c3: 'Quelle'
 27350d00b70d: Hochladen...
 295bb704f520: Sprache
 2bc28481a223: Automatisches Löschen von Linknachrichten

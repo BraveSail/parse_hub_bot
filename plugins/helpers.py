@@ -85,10 +85,11 @@ def build_caption(
             like_count=getattr(parse_result, "like_count", None),
             lang=lang,
             view_label=view_label,
-            like_label=t_("点赞") if view_label else "",
+            like_label=t_[lang]("点赞") if (view_label and lang) else "",
         ),
         max_length=max_length,
         fold_summary=t_[lang]("展开全文") if lang else "",
+        lang=lang,
     )
 
 
@@ -114,15 +115,18 @@ def build_metadata_line(
     """把发布时间/浏览量/点赞渲染成一行, 例如「19:00 · 2026年10月3日 · 1,455 查看 · 158 点赞」。
 
     平台不提供的项直接跳过, 不会留下空占位符。
-    view_label / like_label 由调用方用 ``t_("查看")`` / ``t_("点赞")`` 提供以获得正确语言。
+    view_label / like_label 由调用方用 ``t_[lang]("查看")`` / ``t_[lang]("点赞")`` 提供;
+    不传时按 ``lang`` 兜底 (以前兜底走模块级 ``t_`` = 默认语言, 与用户语言不一致)。
     """
     parts: list[str] = []
     if published_at:
         parts.extend(_format_published(published_at, lang))
     if view_count is not None:
-        parts.append(f"{view_count:,} {view_label or t_('查看')}".strip())
+        fallback = t_[lang]("查看") if lang else t_("查看")
+        parts.append(f"{view_count:,} {view_label or fallback}".strip())
     if like_count is not None:
-        parts.append(f"{like_count:,} {like_label or t_('点赞')}".strip())
+        like_fallback = t_[lang]("点赞") if lang else t_("点赞")
+        parts.append(f"{like_count:,} {like_label or like_fallback}".strip())
     return _METADATA_SEPARATOR.join(part for part in parts if part)
 
 
@@ -135,7 +139,8 @@ def _format_published(value: datetime, lang: str) -> list[str]:
         pass
 
     clock = f"{local.hour:02d}:{local.minute:02d}"
-    if lang.startswith("zh"):
+    # 中日都用「年月日」书写 (日语也一样); 其余语言用 ISO 日期
+    if lang.startswith(("zh", "ja")):
         return [clock, f"{local.year}年{local.month}月{local.day}日"]
     return [clock, local.strftime("%Y-%m-%d")]
 
@@ -157,6 +162,7 @@ def build_caption_by_str(
     metadata_line: str = "",
     max_length: int | None = None,
     fold_summary: str = "",
+    lang: str = "",
 ) -> str:
     """构建消息正文：标题 + 内容 + 统计行 + 来源链接"""
     title, content = title or "", content or ""
@@ -191,7 +197,9 @@ def build_caption_by_str(
         return body
     platform = platform or ParseHub().get_platform(raw_url)
     display = neutralize_markdown(html.escape(platform.display_name)) if platform else ""
-    source = f"Source（{display}）" if platform else "Source"
+    # 来源标签要跟随用户语言 (以前硬编码英文 "Source（…）", 任何语言都显示英文)
+    _t = t_[lang] if lang else t_
+    source = _t(f"来源（{display}）") if display else _t("来源")
     # href 里的 URL 必须中和: 否则 pyrogram 会把 URL 中的 '__' 解析成 <i> 塞进 href
     safe_url = neutralize_markdown(raw_url)
     return f"{body}\n\n{format_label(f"<a href='{safe_url}'>{source}</a>")}"
@@ -266,14 +274,15 @@ def build_rich_markdown(
         like_count=getattr(parse_result, "like_count", None),
         lang=lang,
         view_label=view_label,
-        like_label=t_("点赞") if view_label else "",
+        like_label=t_[lang]("点赞") if (view_label and lang) else "",
     )
     if metadata:
         footer_parts.append(metadata)
     if not config.hide_source:
         platform = parse_result.platform or ParseHub().get_platform(parse_result.raw_url)
         display = platform.display_name if platform else ""
-        label = f"Source（{display}）" if display else "Source"
+        # 来源标签跟随用户语言 (以前硬编码英文 "Source", 任何语言都显示英文)
+        label = t_[lang](f"来源（{display}）") if (display and lang) else (t_[lang]("来源") if lang else "Source")
         # footer 里 markdown 链接语法不生效 (会原样显示成 "[文字](url)"), 必须用 HTML
         href = html.escape(parse_result.raw_url, quote=True)
         footer_parts.append(f'<a href="{href}">{html.escape(label)}</a>')

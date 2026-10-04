@@ -210,7 +210,7 @@ def test_caption_places_metadata_before_source():
         "Title", "Body", "https://x.com/u/status/1", author_name="Author", metadata_line="19:00 · 2026年10月3日"
     )
     assert "Body" in caption
-    assert caption.index("2026年10月3日") < caption.index("Source")
+    assert caption.index("2026年10月3日") < caption.index("来源")
     assert caption.index("Author") < caption.index("2026年10月3日")
 
 
@@ -243,7 +243,7 @@ def test_rich_markdown_puts_metadata_and_source_in_footer():
     footer = markdown.split("<footer>")[1]
     assert "19:00 · 2026年10月3日 · 1,455 查看" in footer
     # footer 里 markdown 链接语法不生效, 必须用 HTML 的 a href
-    assert '<a href="https://x.com/u/status/1">Source（Twitter）</a>' in footer
+    assert '<a href="https://x.com/u/status/1">来源（Twitter）</a>' in footer
     assert markdown.index("- 列表项") < markdown.index("<footer>")
 
 
@@ -477,7 +477,7 @@ def test_rich_markdown_respects_hide_source():
     markdown = build_rich_markdown(
         result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
     )
-    assert "Source" not in markdown
+    assert "来源" not in markdown
 
 
 def test_caption_without_metadata_is_unchanged():

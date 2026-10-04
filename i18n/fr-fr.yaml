@@ -4,6 +4,7 @@
   canal avant de configurer
 06778dbf05d5: Gestion de la plateforme
 091d3a0665fa: Configuration du canal
+0a87f26596ed: 'Source ({display})'
 0d3d68e32996: Une tâche identique est déjà en cours d'analyse, veuillez attendre la
   fin de l'analyse...
 0f6c4353601e: Envoyer le fichier original, éviter la compression de la qualité
@@ -13,6 +14,7 @@
 1d30c358e2a1: Mode d'analyse par défaut
 1f3c920d087b: En cours de traitement...
 224e2ccda861: Configuration
+26ca20b161c3: 'Source'
 27350d00b70d: Téléchargement en cours...
 295bb704f520: Langue
 2bc28481a223: Suppression automatique des messages contenant des liens
