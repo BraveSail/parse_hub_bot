@@ -60,6 +60,39 @@ def make_result(media=None, **kwargs):
     return result
 
 
+def test_blocks_path_parses_the_time_entity():
+    """blocks 的转换器必须认 ``<tg-time>`` —— markdown 路径由服务端解析它,
+
+    blocks 路径得自己认。不认的话 footer 里那段会**原样**送出去, 用户看到字面的
+    ``<tg-time unix=…>`` (敏感内容走 blocks, 所以只有敏感推文的页脚会这样)。
+    """
+    from pyrogram.types.messages_and_media.rich_text import RichTextDateTime
+
+    from plugins.parse.rich_blocks import parse_inline
+
+    tag = '<tg-time unix="1790855311" format="Dt">2026年10月1日 19:48</tg-time>'
+    parts = parse_inline(f"{tag} · 138,460 查看")
+    assert isinstance(parts, list), "应该解析出实体, 而不是原样返回字符串"
+    node = parts[0]
+    assert isinstance(node, RichTextDateTime)
+    assert node.date_time_format == "Dt"
+    assert node.date.timestamp() == 1790855311
+
+
+def test_blocks_path_still_parses_html_links_afterwards():
+    """时间戳实体会把后面的链接一起吃掉吗 —— 两者要各自独立解析"""
+
+    from plugins.parse.rich_blocks import parse_inline
+
+    parts = parse_inline(
+        '<tg-time unix="1790855311" format="Dt">10月1日</tg-time> · '
+        '<a href="https://x.com/a/status/1">来源</a>'
+    )
+    kinds = [type(n).__name__ for n in parts if not isinstance(n, str)]
+    assert "RichTextDateTime" in kinds
+    assert "RichTextUrl" in kinds
+
+
 def test_inline_result_folds_when_a_spoiler_tag_is_given():
     """inline 的**现场解析**结果项也要打码 —— 以前这条路径漏传了标记,
 

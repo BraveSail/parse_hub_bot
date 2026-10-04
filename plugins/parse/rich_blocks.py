@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import html
 import re
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pyrogram import raw
@@ -35,6 +36,7 @@ from pyrogram.types.input_content.input_rich_block import (
 from pyrogram.types.messages_and_media.rich_text import (
     RichTextBold,
     RichTextCode,
+    RichTextDateTime,
     RichTextItalic,
     RichTextStrikethrough,
     RichTextUrl,
@@ -93,9 +95,17 @@ class SpoilerVideoBlock(InputRichBlock):
 
 # ── 行内格式 ──────────────────────────────────────────────────
 
+#: 时间戳实体: ``<tg-time unix="…" format="…">显示文字</tg-time>``。
+#:
+#: **markdown 路径由服务端解析这个标签, blocks 路径必须自己认** —— 不认的话它会
+#: 原样进 ``InputRichBlockFooter``, 用户看到的是字面的 ``<tg-time unix=…>``
+#: (敏感内容走 blocks, 所以只有敏感推文的页脚会这样)。
+_TIME_TAG_RE = re.compile(r'<tg-time\s+unix="(\d+)"(?:\s+format="([^"]*)")?\s*>(.*?)</tg-time>', re.S)
+
 _INLINE_PATTERNS: list[tuple[re.Pattern, type]] = [
     # footer 里的来源链接用的是 HTML (markdown 链接语法在 footer 块里不解析)
     (re.compile(r'<a\s+href="([^"]+)"\s*>(.*?)</a>', re.S), RichTextUrl),
+    (_TIME_TAG_RE, RichTextDateTime),
     (re.compile(r"\[([^\]\n]+)\]\(([^)\s]+)\)"), RichTextUrl),  # [文字](链接)
     (re.compile(r"\*\*([^*\n]+)\*\*"), RichTextBold),
     (re.compile(r"`([^`\n]+)`"), RichTextCode),
@@ -125,7 +135,13 @@ def parse_inline(text: str) -> str | list:
         m, cls = best
         if m.start() > pos:
             parts.append(text[pos : m.start()])
-        if cls is RichTextUrl:
+        if cls is RichTextDateTime:
+            # 组: 1=unix, 2=format(可缺), 3=显示文字。format 缺省时传 None
+            # (服务端会按默认形态渲染)
+            label = html.unescape(m.group(3))
+            stamp = datetime.fromtimestamp(int(m.group(1)), tz=UTC)
+            parts.append(RichTextDateTime(parse_inline(label), stamp, m.group(2) or None))
+        elif cls is RichTextUrl:
             if m.re.pattern.startswith("<a"):
                 url, label = m.group(1), m.group(2)  # <a href="url">label</a>
             else:
