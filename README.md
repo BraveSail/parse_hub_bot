@@ -133,7 +133,27 @@ BOT_TOKEN=     # Bot token; create one via @BotFather
 
 # 🔲 Optional
 BOT_PROXY=     # Proxy for the bot's Telegram connection, e.g. http://127.0.0.1:7890
+
+# Restrict inline and guest queries to members of ONE group (0 = no restriction).
+# The bot checks membership in this group only, so more groups never mean more API calls.
+GUEST_WHITELIST_GROUP_ID=0
 ```
+
+### 🔒 Access control (inline & guest queries)
+
+Inline queries (`@yourbot <link>`) and guest queries (mentioning the bot in a group it
+has not joined) both pipe user input into the parser, so they are gated:
+
+- Set `GUEST_WHITELIST_GROUP_ID` to a group the bot is in. Only **members of that group**
+  may then use inline or guest queries.
+- The check is a single `getChatMember` call against that one group, cached per user
+  (10 minutes when allowed, 1 minute when denied) — it does not scan every group the bot
+  belongs to, so the API is never flooded no matter how many groups the bot is in.
+- Private-chat inline queries stay open: the user came to the bot on purpose.
+- `0` (the default) disables the gate entirely.
+
+Guest mode itself must be enabled in @BotFather (Bot Settings → Guest Mode); the bot
+posts its reply straight into the group via `answer_guest_query`.
 
 ### 🌐 Platform Configuration
 

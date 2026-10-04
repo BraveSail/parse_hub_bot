@@ -128,8 +128,25 @@ API_HASH=      # Telegram API Hash，同上获取
 BOT_TOKEN=     # 机器人 Token，向 @BotFather 申请
 
 # 🔲 可选
-BOT_PROXY=     # Bot 连接 TG 使用的代理，例：http://127.0.0.1:7890
+BOT_PROXY=     # Bot 连接 Telegram 的代理, 如 http://127.0.0.1:7890
+
+# 只允许**一个群**的成员使用 inline 与 guest 查询 (0 = 不限制)
+GUEST_WHITELIST_GROUP_ID=0
 ```
+
+### 🔒 访问控制（inline 与 guest 查询）
+
+inline（`@你的bot 链接`）和 guest（在 bot 未加入的群里 @它）都会把用户输入送进解析链路，
+所以加了门禁：
+
+- 把 `GUEST_WHITELIST_GROUP_ID` 设为一个 bot 所在的群，则**只有该群成员**能用 inline / guest。
+- 判定只查这一个群（一次 `getChatMember`），并按用户缓存（放行 10 分钟、拒绝 1 分钟）
+  —— 不遍历 bot 所在的所有群，群再多也不会 flood。
+- 私聊里的 inline 不限制：用户是主动来找 bot 的。
+- `0`（默认）表示完全不限制。
+
+guest 模式本身要在 @BotFather 里开启（Bot Settings → Guest Mode）；bot 用
+`answer_guest_query` 把结果直接贴进该群。
 
 ### 🌐 平台配置
 
