@@ -60,6 +60,28 @@ def make_result(media=None, **kwargs):
     return result
 
 
+def test_inline_result_folds_when_a_spoiler_tag_is_given():
+    """inline 的**现场解析**结果项也要打码 —— 以前这条路径漏传了标记,
+
+    表现: 缓存命中的结果项有折叠、现场解析的没有 —— 用户选中哪个全看运气。
+    """
+    from plugins.parse.inline import build_inline_rich_content
+
+    content = build_inline_rich_content(
+        make_result(), lang="zh-hans", config=_config(), spoiler_tag="#不可以色色"
+    )
+    markdown = content.rich_message.markdown
+    assert "<details>" in markdown
+    assert "⚠️ #不可以色色" in markdown
+
+
+def test_inline_result_without_a_tag_is_not_folded():
+    from plugins.parse.inline import build_inline_rich_content
+
+    content = build_inline_rich_content(make_result(), lang="zh-hans", config=_config())
+    assert "<details>" not in content.rich_message.markdown
+
+
 def test_reply_markup_only_for_media():
     """键盘是用来换 inline_message_id 的, 只有需要二次编辑 (补媒体) 时才挂"""
     assert inline_reply_markup(make_result()) is None

@@ -417,11 +417,19 @@ def strip_media_markdown(markdown: str) -> str:
 
 
 def build_inline_rich_content(
-    parse_result: AnyParseResult, *, lang: str, config: SettingsConfig
+    parse_result: AnyParseResult, *, lang: str, config: SettingsConfig, spoiler_tag: str = ""
 ) -> InputRichMessageContent:
-    """inline 结果的富文本内容 (纯文字排版 + 页尾, 不带任何媒体)。"""
+    """inline 结果的富文本内容 (纯文字排版 + 页尾, 不带任何媒体)。
+
+    :param spoiler_tag: 手动打码标记 (``#nsfw`` 等)。**必须传** —— 这条是"现场解析"
+        路径的结果项, 漏传的话用户在 inline 列表里选中的就是没遮的版本
+        (缓存命中的那条路径 ``build_cached_rich_content`` 一直是收这个参数的,
+        两条路径行为必须一致)。
+    """
     _t = t_[lang]
-    markdown = build_rich_markdown(parse_result, config=config, lang=lang, view_label=_t("查看"))
+    markdown = build_rich_markdown(
+        parse_result, config=config, lang=lang, view_label=_t("查看"), hide_content=spoiler_tag
+    )
     return InputRichMessageContent(InputRichMessage(markdown=strip_media_markdown(markdown)))
 
 
@@ -469,7 +477,9 @@ async def build_inline_results(
             thumb_url=cover or None,
             thumb_width=320 if cover else None,
             thumb_height=320 if cover else None,
-            input_message_content=build_inline_rich_content(parse_result, lang=lang, config=config),
+            input_message_content=build_inline_rich_content(
+                parse_result, lang=lang, config=config, spoiler_tag=spoiler_tag
+            ),
             reply_markup=inline_reply_markup(parse_result),
         )
     )
