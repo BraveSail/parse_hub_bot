@@ -232,7 +232,8 @@ def build_rich_markdown(
             media_placeholders = [*media_placeholders, *reply_media]
         reply_media = []
     if body_text and not config.hide_desc:
-        parts.append(body_text)
+        # 长正文要能折叠: 以前直接拼进 parts, 长文本会把消息撑得很长且无法收起
+        parts.append(format_text(body_text))
     if custom_content:
         parts.append(custom_content)
 
@@ -596,9 +597,9 @@ def format_author_line(parse_result: AnyParseResult) -> str:
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
 
-# 折叠阈值按实际观感定: 中文一行约 30 字符, 350 字符已是十来行, 再长就该折起来。
-# 正文与引用块共用同一套阈值, 保证折叠规则统一。
-_FOLD_CHAR_THRESHOLD = 350
+# 折叠阈值: 超过 200 字 (或行数超限) 就折起来。
+# **正文与引用块共用这一套** —— 只写一份, 两处共用 (曾分别在两处硬编码, 改一处必漏另一处)。
+_FOLD_CHAR_THRESHOLD = 200
 _FOLD_LINE_THRESHOLD = 8
 
 

@@ -105,6 +105,56 @@ def test_format_text_keeps_short_text_plain():
     assert format_text("short") == "short"
 
 
+def test_build_rich_markdown_folds_a_long_body():
+    """富文本正文也要折叠 —— 以前只折引用块, 长正文会被撑满整屏且收不起来"""
+    import types
+
+    from plugins.helpers import build_rich_markdown
+
+    result = types.SimpleNamespace(
+        title="",
+        content="很长的正文。" * 60,   # 远超 200 字阈值
+        raw_url="https://x.com/a/status/1",
+        author_name="",
+        author_handle="",
+        author_url="",
+        published_at=None,
+        view_count=None,
+        like_count=None,
+        tags=None,
+        platform=None,
+        media=None,
+    )
+    config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
+    md = build_rich_markdown(result, config=config, lang="zh-hans")
+    assert "<blockquote expandable>" in md
+    assert "很长的正文" in md
+
+
+def test_build_rich_markdown_keeps_a_short_body_plain():
+    import types
+
+    from plugins.helpers import build_rich_markdown
+
+    result = types.SimpleNamespace(
+        title="",
+        content="短正文",
+        raw_url="https://x.com/a/status/1",
+        author_name="",
+        author_handle="",
+        author_url="",
+        published_at=None,
+        view_count=None,
+        like_count=None,
+        tags=None,
+        platform=None,
+        media=None,
+    )
+    config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
+    md = build_rich_markdown(result, config=config, lang="zh-hans")
+    assert "expandable" not in md
+
+
 def test_truncation_happens_before_html_conversion():
     out = format_text("> " + "z" * 1500)
     assert out.endswith("......</blockquote>")

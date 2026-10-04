@@ -33,6 +33,7 @@ from plugins.helpers import build_rich_markdown
 from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import build_rich_media
+from plugins.parse.reporters import MessageStatusReporter
 from services import ParsePipeline, ParseService, SettingsService, UserService
 from utils.helpers import to_list, with_request_id
 
@@ -42,18 +43,9 @@ logger = logger.bind(name="GuestMode")
 GUEST_RESULT_ID = "guest-rich"
 
 
-class _SilentReporter:
-    """guest 场景没有可编辑的状态消息（不能改用户的消息，也还没有结果消息），
-    所以进度一律丢弃 —— 只保证流水线接口齐全。"""
-
-    async def report(self, text: str) -> None:  # noqa: ARG002
-        return
-
-    async def report_error(self, stage: str, error: Exception) -> None:  # noqa: ARG002
-        logger.debug(f"guest 流水线错误: stage={stage} error={error}")
-
-    async def dismiss(self) -> None:
-        return
+# guest 的状态反馈走 MessageStatusReporter: 它 reply 那条召唤消息发一条进度,
+# 最后把同一条**编辑成结果** —— 与私聊/群自动解析的体验一致 (以前这里进度全丢,
+# 用户只看到"突然出现结果", 没有任何过程)。
 
 
 def _clip(text: str | None, limit: int) -> str:
@@ -71,6 +63,19 @@ def _result(title: str, description: str, markdown: str, media: list | None = No
     )
 
 
+class _NullReporter:
+    """拿不到召唤消息时的兜底: 没有可编辑的载体, 进度只能丢弃 (结果照发)。"""
+
+    async def report(self, text: str) -> None:  # noqa: ARG002
+        return
+
+    async def report_error(self, stage: str, error: Exception) -> None:  # noqa: ARG002
+        logger.debug(f"guest 流水线错误: stage={stage} error={error}")
+
+    async def dismiss(self) -> None:
+        return
+
+
 def _denied_result(text: str) -> InlineQueryResultArticle:
     """门禁不通过时回一条说明, 而不是静默 —— 用户得知道为什么没反应。"""
     return InlineQueryResultArticle(
@@ -81,8 +86,13 @@ def _denied_result(text: str) -> InlineQueryResultArticle:
     )
 
 
-async def _answer(cli: Client, guest_query_id: str, url: str, user_id: int, locale: str) -> bool:
+async def _answer(
+    cli: Client, guest_query_id: str, url: str, user_id: int, locale: str, caller_msg: Message | None = None
+) -> bool:
     """解析一条链接并回答 guest 查询, 返回是否真的发出。
+
+    **进度反馈**: 在召唤消息上 reply 一条状态消息, 跟着把**同一条**编辑成结果
+    (与私聊/群自动解析一致)。召唤消息拿不到时就退回静默 (只有结果)。
 
     **发送必须在 with 块内**: ParsePipeline 退出时会清掉下载目录,
     媒体路径带出去就是死链 (结果是消息里没有图)。
@@ -91,9 +101,13 @@ async def _answer(cli: Client, guest_query_id: str, url: str, user_id: int, loca
         config = await SettingsService(session).get_config_by_user(user_id)
     _t = t_[locale]
 
+    # 有召唤消息就用它做状态载体; 否则静默
+    reporter = MessageStatusReporter(cli, caller_msg, t=_t, config=config) if caller_msg is not None else None
+    reporter_impl = reporter or _NullReporter()
+
     service = ParseService()
     raw_url = await service.get_raw_url(url)
-    with ParsePipeline(url, raw_url, _SilentReporter(), singleflight=False, t=_t) as pipeline:
+    with ParsePipeline(url, raw_url, reporter_impl, singleflight=False, t=_t) as pipeline:
         result = await pipeline.run()
         if result is None:
             logger.warning(f"guest 解析失败: url={url}")
@@ -127,7 +141,17 @@ async def _answer(cli: Client, guest_query_id: str, url: str, user_id: int, loca
         title = _clip(parse_result.title, 90) or _clip(parse_result.content, 90) or "-"
         description = _clip(parse_result.content, 200)
 
-        # 带媒体一次到位; 媒体被拒时退回纯文字 (至少内容要看得到)
+        # ① 优先把结果**编辑进状态消息** (一条消息走完整个流程; 媒体此时才上传)
+        if reporter is not None and reporter.has_message:
+            try:
+                edited = await reporter.finalize(InputRichMessage(markdown=markdown, media=media or None))
+                if edited is not None:
+                    logger.info(f"guest 结果已编辑进状态消息: msg_id={edited.id}")
+                    return True
+            except Exception as e:
+                logger.warning(f"编辑状态消息失败, 退回 answer_guest_query: {type(e).__name__}: {str(e)[:120]}")
+
+        # ② 退回 guest 通道: 带媒体一次到位; 媒体被拒时退回纯文字 (至少内容要看得到)
         try:
             sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown, media))
         except Exception as e:
@@ -178,4 +202,5 @@ async def guest_parse(cli: Client, msg: Message) -> None:
         logger.debug(f"guest 查询不是纯链接消息, 跳过: text={(msg.text or msg.caption or '')[:80]!r}")
         return
 
-    await _answer(cli, guest_query_id, urls[0], user_id or 0, locale)
+    # 用召唤消息做进度载体: reply 它一条状态, 最后编辑成结果
+    await _answer(cli, guest_query_id, urls[0], user_id or 0, locale, caller_msg=msg)
