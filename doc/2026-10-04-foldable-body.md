@@ -58,6 +58,34 @@ When you realize the reason Blue Archive is a normie repellent isn't because of 
 
 细节：整条正文挤在一行时行切不出来，会**永远折不起来** —— 这种情况按字符切出预览。
 
+## 引用块的折叠形态不同
+
+被回复/被引用的卡片**原先根本没走折叠**：它们在 `build_rich_markdown` 里直接拼进 `parts`，
+只有正文经过 `format_text` —— 于是 1294 字的回复块整屏铺开（用户报「回复没折叠」）。
+
+引用块折叠不能用正文那套 `<details>` 包纯文本，也不能用 `<blockquote expandable>`。真机四种形态实测：
+
+| 形态 | 服务端结果 |
+| --- | --- |
+| `<details>` 包 `>` 行 | `RichBlockDetails` 内含 `RichBlockBlockQuotation` ✓ |
+| 预览 `>` 行在外 + 其余进 `<details>` | 引用块 + `RichBlockDetails` ✓ **采用** |
+| `>` 行里嵌 `<details>` | details 被忽略 ✗ |
+| `<blockquote expandable>` | 所有行**并成一行**、`>` 变字面量 ✗ |
+
+`fold_quote_block(quote, *, summary)` 即上面的形态二。预览**强制先取 2 行**再按字符上限收敛 ——
+引用块首行是作者行，只看作者行等于没预览。
+
+真机块序列：
+
+```
+块0 Paragraph                作者行
+块1 RichBlockBlockQuotation  预览 (作者行 + 内容首行)
+块2 RichBlockDetails         收起, 内为 RichBlockBlockQuotation (其余 16 行)
+块3 Paragraph                正文
+块4 Divider
+块5 Footer
+```
+
 ## 顺带修掉的两处
 
 1. **截断默认值反转**：`format_text` 的 `max_length` 默认由 `1000` 改为 `None`（不截断）。
@@ -70,7 +98,10 @@ When you realize the reason Blue Archive is a normie repellent isn't because of 
 
 - bot 255 passed / 库 403 passed；ruff 全过。
 - 本地：三种 locale 摘要正确（`展开全文` / `全文を表示` / `Show full text`），多段落长正文生成 details 结构。
-- 生产容器真机发送真实推文：`Paragraph`(预览) + `RichBlockDetails`(收起, 内 5 段) + `Footer`。
+- 生产容器真机发送真实推文：
+  - 正文折叠：`Paragraph`(预览) + `RichBlockDetails`(收起, 内 5 段) + `Footer`。
+  - 引用块折叠：`RichBlockBlockQuotation`(预览 2 行) + `RichBlockDetails`(收起, 内含引用块)。
+- bot 262 passed。
 
 ## 教训
 
