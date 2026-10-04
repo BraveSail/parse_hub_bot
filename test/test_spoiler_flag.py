@@ -27,7 +27,15 @@ LINK = "https://x.com/a/status/123"
 
 
 def test_every_flag_is_recognised():
-    assert SPOILER_FLAGS == ("#nsfw", "#spoiler", "#r18", "#劇透", "#剧透", "#色色")
+    assert SPOILER_FLAGS == (
+        "#nsfw",
+        "#spoiler",
+        "#r18",
+        "#劇透",
+        "#剧透",
+        "#色色",
+        "#不可以色色",
+    )
     for flag in SPOILER_FLAGS:
         assert strip_spoiler_flag(f"{LINK} {flag}") == (LINK, flag), flag
 
@@ -54,6 +62,9 @@ def test_flag_must_be_a_standalone_token():
     assert strip_spoiler_flag(f"{LINK} #nsfwxx") == (f"{LINK} #nsfwxx", "")
     assert strip_spoiler_flag("https://x.com/nsfw/status/1") == ("https://x.com/nsfw/status/1", "")
     assert strip_spoiler_flag(f"{LINK} #r18x") == (f"{LINK} #r18x", "")
+    # 短标记不会被长标记误伤, 反之亦然 (完全匹配, 不是子串)
+    assert strip_spoiler_flag(f"{LINK} #不可以色色") == (LINK, "#不可以色色")
+    assert strip_spoiler_flag(f"{LINK} #色色") == (LINK, "#色色")
 
 
 def test_first_flag_wins_when_both_are_given():
