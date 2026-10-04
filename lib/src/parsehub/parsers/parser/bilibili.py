@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse
 
 from loguru import logger
 
-from ...provider_api.bilibili import BiliAPI, BiliDynamic
+from ...provider_api.bilibili import BiliAPI, BiliDynamic, BiliImage
 from ...types import (
     DownloadResult,
     ImageParseResult,
@@ -19,7 +19,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import UA, get_author_name, profile_url
+from ...utils.helpers import UA, format_author_link, format_quote_block, get_author_name, profile_url
 from ..base.base import BaseParser
 from ..base.ytdlp import YtParser, YtVideoParseResult
 
@@ -31,17 +31,63 @@ class BiliParse(BaseParser):
     __reserved_parameters__ = ["p"]
     __redirect_keywords__ = ["b23.tv", "bili2233.cn"]
 
+    @staticmethod
+    def _to_refs(images: list[BiliImage] | None) -> list[LivePhotoRef | ImageRef]:
+        """BiliImage -> 下载用的 Ref (实况照片带视频)。"""
+        refs: list[LivePhotoRef | ImageRef] = []
+        for i in images or []:
+            if i.live_url:
+                refs.append(LivePhotoRef(url=i.url, video_url=i.live_url, width=i.width, height=i.height))
+            else:
+                refs.append(ImageRef(url=i.url, width=i.width, height=i.height))
+        return refs
+
+    @staticmethod
+    def _strip_forward_comment(content: str) -> str:
+        """去掉转发格式里 ``//@原作者:原文`` 那段。
+
+        转发动态的正文是「转发者的话 + ``//@原作者:被转发的原文``」; 原文会由引用块
+        重新渲染 (还带原作者署名), 留在正文里就是重复。
+        """
+        if not content:
+            return content
+        # 取第一个 //@ 之前的作为转发者自己的评论 (多层转发时同样只留最外层评论)
+        stripped = re.split(r"\s*\u200b?\s*//@", content, maxsplit=1)[0]
+        return stripped.strip()
+
+    @classmethod
+    def _render_forward(cls, forward: BiliDynamic) -> str:
+        """把被转发的原动态渲染成引用块 (作者带主页链接, 内容取标题或正文)。"""
+        body = (forward.title or "").strip()
+        text = (forward.content or "").strip()
+        if text and text != body:
+            body = f"{body}\n{text}" if body else text
+        if not body and not forward.images:
+            return ""
+        author = format_author_link(
+            forward.author_name or "",
+            "",
+            profile_url(Platform.BILIBILI, user_id=forward.author_mid),
+        )
+        return format_quote_block(body, author)
+
     async def _do_parse(self, raw_url: str) -> YtVideoParseResult | BiliVideoParseResult | ImageParseResult:
         if await self.is_dynamic(raw_url):
             dynamic = await self.get_dynamic_info(raw_url)
             content = self.hashtag_handler(dynamic.content or "")
             photos: list[LivePhotoRef | ImageRef] = []
-            if dynamic.images:
-                for i in dynamic.images:
-                    if i.live_url:
-                        photos.append(LivePhotoRef(url=i.url, video_url=i.live_url, width=i.width, height=i.height))
-                    else:
-                        photos.append(ImageRef(url=i.url, width=i.width, height=i.height))
+            photos.extend(BiliParse._to_refs(dynamic.images))
+
+            # 转发动态: 被转发的原动态渲染成引用块 (文字 + 它自己的媒体)
+            quoted_media_count = 0
+            if forward := dynamic.forward:
+                content = BiliParse._strip_forward_comment(content)
+                if quote := BiliParse._render_forward(forward):
+                    content = f"{content}\n\n{quote}" if content else quote
+                forward_refs = BiliParse._to_refs(forward.images)
+                quoted_media_count = len(forward_refs)
+                photos.extend(forward_refs)
+
             return ImageParseResult(
                 title=dynamic.title or "",
                 author_name=dynamic.author_name,
@@ -51,6 +97,7 @@ class BiliParse(BaseParser):
                 photo=photos,
                 published_at=dynamic.published_at,
                 like_count=dynamic.like_count,
+                quoted_media_count=quoted_media_count,
             )
         else:
             try:

@@ -10,6 +10,8 @@ from functools import reduce
 from hashlib import md5
 from typing import Any, Self, cast
 
+from loguru import logger
+
 from ..utils import http
 from ..utils.helpers import get_author_name, to_int
 
@@ -261,19 +263,37 @@ class BiliDynamic:
     published_at: int | None = None
     #: 点赞数 (module_stat.like.count)
     like_count: int | None = None
+    #: 转发的原动态 (``item["orig"]``); 不是转发时为 None。递归结构, 支持嵌套转发。
+    forward: "BiliDynamic | None" = None
 
     @classmethod
     def parse(cls, data: dict) -> Self:
-        module_dynamic: dict = data["item"]["modules"]["module_dynamic"]
+        return cls._from_item(data["item"])
+
+    @classmethod
+    def _from_item(cls, item: dict) -> Self:
+        """把一条动态 item 转成 BiliDynamic。
+
+        主动态与被转发的原动态 (``orig``) 结构相同, 所以两边走同一段逻辑,
+        转发的原动态递归挂到 ``forward`` 上。
+        """
+        modules = item.get("modules") or {}
+        module_dynamic: dict = modules.get("module_dynamic") or {}
         major: dict | None = module_dynamic.get("major", None)
         result = cls._parse_forward(module_dynamic) if not major else cls._parse_major(module_dynamic, major)
-        modules = data["item"]["modules"]
+
         author = modules.get("module_author") or {}
         result.author_name = get_author_name(author)
         result.author_mid = author.get("mid")
         result.published_at = to_int(author.get("pub_ts"))
         stat = (modules.get("module_stat") or {}).get("like") or {}
         result.like_count = to_int(stat.get("count"))
+
+        if orig := item.get("orig"):
+            try:
+                result.forward = cls._from_item(orig)
+            except Exception as e:  # 原动态结构不认识时不能拖垮主动态
+                logger.debug(f"被转发的动态解析失败, 忽略: {type(e).__name__}: {e}")
         return result
 
     @classmethod
@@ -309,8 +329,12 @@ class BiliDynamic:
     def _parse_av(cls, module_dynamic: dict, major: dict) -> Self:
         if content := cls._get_desc_text(module_dynamic):
             return cls(content=content)
-        archive = major["archive"]
-        return cls(title=archive["title"], content=archive["desc"], images=cls._get_major_cover(archive))
+        archive = major.get("archive") or {}
+        return cls(
+            title=archive.get("title") or "",
+            content=archive.get("desc") or "",
+            images=cls._get_major_cover(archive),
+        )
 
     @classmethod
     def _parse_music(cls, module_dynamic: dict, major: dict) -> Self:
@@ -321,13 +345,18 @@ class BiliDynamic:
 
     @classmethod
     def _parse_opus(cls, _: dict, major: dict) -> Self:
-        opus = major["opus"]
+        opus = major.get("opus") or {}
         images = None
-        if pics := opus["pics"]:
+        if pics := opus.get("pics"):
             images = [
-                BiliImage(url=p["url"], live_url=p["live_url"], width=p["width"], height=p["height"]) for p in pics
+                BiliImage(url=p["url"], live_url=p.get("live_url"), width=p.get("width"), height=p.get("height"))
+                for p in pics
             ]
-        return cls(title=opus["title"], content=opus["summary"]["text"], images=images)
+        return cls(
+            title=opus.get("title") or "",
+            content=(opus.get("summary") or {}).get("text") or "",
+            images=images,
+        )
 
     @classmethod
     def _parse_common(cls, module_dynamic: dict, major: dict) -> Self:
@@ -380,14 +409,15 @@ class BiliDynamic:
 
     @staticmethod
     def _get_desc_text(module_dynamic: dict) -> str:
-        if desc := module_dynamic["desc"]:
-            return str(desc["text"]).strip()
+        # 用 .get: 被转发的原动态可能缺 desc 键 (以前是硬索引, 缺失就 KeyError)
+        if desc := module_dynamic.get("desc"):
+            return str(desc.get("text") or "").strip()
         return ""
 
     @staticmethod
     def _get_major_cover(major_content: dict) -> list[BiliImage] | None:
-        if major_content["cover"]:
-            return [BiliImage(url=major_content["cover"])]
+        if cover := major_content.get("cover"):
+            return [BiliImage(url=cover)]
         return None
 
 
