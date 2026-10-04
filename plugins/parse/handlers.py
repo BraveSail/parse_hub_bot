@@ -184,6 +184,32 @@ async def _handle_parse_request(req: ParseRequest) -> None:
                 logger.warning(f"删除分享链接消息失败: chat_id={req.chat_id}, msg_id: {req.msg.id}, error: {e}")
 
 
+async def _try_send_cached(
+    sender: MessageSender,
+    cached: Any,
+    raw_url: str,
+    req: ParseRequest,
+) -> bool:
+    """试着用缓存的 file_id 直接发; 返回 True 表示已发出。
+
+    **失败要清掉这条缓存再继续走解析**, 不能直接把失败抛给用户: Telegram 官方
+    明确说 file_id 可能失效、不建议长期存储 —— 真失效时旧代码只 `return False`,
+    用户**什么都收不到**(只留一条日志)。清掉记录后正常流程会重新下载并重建缓存。
+    """
+    try:
+        await send_cached(sender, cached, raw_url, custom_content=req.custom_content, _t=req.t_)
+    except Exception as e:
+        logger.exception(e)
+        logger.warning(f"从缓存发送失败 (file_id 可能已失效), 清除缓存并重新解析: url={raw_url}")
+        try:
+            await persistent_cache.remove(raw_url)
+        except Exception as ce:  # noqa: BLE001 - 清缓存失败不该挡住重新解析
+            logger.warning(f"清除失效缓存失败: {type(ce).__name__}: {ce}")
+        return False
+    logger.debug("file_id 缓存发送成功")
+    return True
+
+
 def _get_parse_user_id(req: ParseRequest) -> int | None:
     return req.chat_id
 
@@ -207,14 +233,9 @@ async def handle_parse(req: ParseRequest) -> bool:
 
     if options.use_caching and not req.bypass_cache and (cached := await persistent_cache.get(raw_url)):
         logger.debug("file_id 缓存命中, 直接发送")
-        try:
-            await send_cached(sender, cached, raw_url, custom_content=req.custom_content, _t=req.t_)
-        except Exception as e:
-            logger.exception(e)
-            logger.error("从缓存发送失败, 以上为错误信息")
-            return False
-        else:
+        if await _try_send_cached(sender, cached, raw_url, req):
             return True
+        # 缓存失效: 已清掉那条记录, 继续往下走正常解析 (重新下载并重建缓存)
 
     cached_parse_result = None if req.bypass_cache else await parse_cache.get(raw_url)
     with ParsePipeline(
@@ -232,16 +253,10 @@ async def handle_parse(req: ParseRequest) -> bool:
             if pipeline.waited:
                 logger.debug("Singleflight 等待完成, 重新检查缓存")
                 if not req.bypass_cache and (cached := await persistent_cache.get(raw_url)):
-                    try:
-                        await send_cached(sender, cached, raw_url, custom_content=req.custom_content, _t=req.t_)
-                    except Exception as e:
-                        logger.exception(e)
-                        logger.error("从缓存发送失败, 以上为错误信息")
-                        return False
-                    else:
+                    if await _try_send_cached(sender, cached, raw_url, req):
                         return True
-                else:
-                    return await handle_parse(replace(req, delete_share_url_msg=False))
+                # 缓存失效或没有缓存: 重新走一遍解析
+                return await handle_parse(replace(req, delete_share_url_msg=False))
 
             else:
                 logger.debug("Pipeline 返回 None, 跳过后续处理")

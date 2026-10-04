@@ -1,4 +1,12 @@
-from pyrogram.types import InputMediaDocument, InputMediaPhoto, InputMediaVideo, Message
+"""从已发送的消息里提取 file_id, 供缓存复用。
+
+只保留从 Message 提取 (``cache_media_from_message``); 从 file_id **构建**发送
+用的 media group 已由 ``plugins.parse.inline_rich.cache_media_blocks``
+负责 —— 富文本路径统一走它, 旧 caption 路径的 ``build_cached_media_group``
+早已无人调用, 2026-10-04 删除。
+"""
+
+from pyrogram.types import Message
 
 from services import CacheMedia, CacheMediaType
 
@@ -18,31 +26,3 @@ def cache_media_from_message(m: Message) -> CacheMedia | None:
     if m.document:
         return CacheMedia(type=CacheMediaType.DOCUMENT, file_id=m.document.file_id)
     return None
-
-
-def build_cached_media_group(
-    media: list[CacheMedia], *, video_cover: bool, is_sensitive: bool = False
-) -> list[InputMediaPhoto | InputMediaVideo | InputMediaDocument]:
-    """从 CacheMedia 列表构建 Telegram media group。"""
-    group: list[InputMediaPhoto | InputMediaVideo | InputMediaDocument] = []
-    for m in media:
-        match m.type:
-            case CacheMediaType.PHOTO:
-                group.append(InputMediaPhoto(media=m.file_id, has_spoiler=is_sensitive))
-            case CacheMediaType.VIDEO:
-                if m.cover_file_id:
-                    group.append(
-                        InputMediaVideo(
-                            media=m.file_id,
-                            supports_streaming=True,
-                            has_spoiler=is_sensitive,
-                            video_cover=m.cover_file_id if video_cover else None,
-                        )
-                    )
-                else:
-                    group.append(
-                        InputMediaVideo(media=m.file_id, supports_streaming=True, has_spoiler=is_sensitive)
-                    )
-            case CacheMediaType.DOCUMENT:
-                group.append(InputMediaDocument(media=m.file_id))
-    return group

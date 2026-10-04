@@ -32,11 +32,15 @@ from plugins.helpers import (
     build_caption,
     build_rich_markdown,
     format_label,
-    get_parse_author_name,
 )
 from plugins.parse.cache import cache_media_from_message
 from plugins.parse.covers import prepare_video_thumbs
-from plugins.parse.inline_rich import build_cached_rich_content, build_rich_media, extract_cache_media
+from plugins.parse.inline_rich import (
+    build_cached_rich_content,
+    build_rich_media,
+    extract_cache_media,
+    rich_cache_entry,
+)
 from plugins.parse.rich_blocks import markdown_to_blocks
 from repo.settings import SettingsConfig
 
@@ -47,7 +51,6 @@ from services import (
     CacheEntry,
     CacheMedia,
     CacheMediaType,
-    CacheParseResult,
     PipelineResult,
     StatusReporter,
     persistent_cache,
@@ -496,38 +499,6 @@ def media_input(media: PathType | BinaryIO | None) -> PathType | BinaryIO:
     return cast(PathType | BinaryIO, media)
 
 
-def _rich_cache_entry(
-    parse_result: AnyParseResult,
-    media: list[CacheMedia],
-    *,
-    quoted_media_count: int = 0,
-    reply_media_count: int = 0,
-) -> CacheEntry:
-    """把一次富文本发送的字段与媒体 file_id 收成缓存条目。
-
-    ``quoted_media_count`` 记的是**媒体项数** (缓存里平铺的条数), 不是 ref 数
-    —— 一个 ref 可能展开成多个文件, 缓存只能按项切分。
-    """
-    return CacheEntry(
-        parse_result=CacheParseResult(
-            title=parse_result.title,
-            content=parse_result.content,
-            author_name=get_parse_author_name(parse_result),
-            author_handle=getattr(parse_result, "author_handle", ""),
-            author_url=getattr(parse_result, "author_url", ""),
-            is_sensitive=parse_result.is_sensitive,
-            published_at=getattr(parse_result, "published_at", None),
-            view_count=getattr(parse_result, "view_count", None),
-            like_count=getattr(parse_result, "like_count", None),
-            tags=list(getattr(parse_result, "tags", None) or []),
-            quoted_media_count=quoted_media_count,
-            reply_media_count=reply_media_count,
-        ),
-        media=media or None,
-        rich=True,
-    )
-
-
 async def send_rich_media(
     sender: MessageSender,
     parse_result: AnyParseResult,
@@ -593,7 +564,7 @@ async def send_rich_media(
             reply_items = min(len(reply_placeholders), len(cached_media) - quoted_items)
             await persistent_cache.set(
                 raw_url,
-                _rich_cache_entry(
+                rich_cache_entry(
                     parse_result,
                     cached_media,
                     quoted_media_count=quoted_items,

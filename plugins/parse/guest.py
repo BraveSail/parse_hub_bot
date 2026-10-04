@@ -32,9 +32,15 @@ from log import logger
 from plugins.helpers import build_rich_markdown
 from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
-from plugins.parse.inline_rich import build_rich_media
+from plugins.parse.inline_rich import (
+    build_cached_rich_content,
+    build_rich_media,
+    extract_cache_media,
+    rich_cache_entry,
+)
 from plugins.parse.reporters import MessageStatusReporter
 from services import ParsePipeline, ParseService, SettingsService, UserService
+from services.cache import persistent_cache
 from utils.helpers import to_list, with_request_id
 
 logger = logger.bind(name="GuestMode")
@@ -86,6 +92,39 @@ def _denied_result(text: str) -> InlineQueryResultArticle:
     )
 
 
+async def _deliver(
+    cli: Client,
+    guest_query_id: str,
+    reporter: MessageStatusReporter | None,
+    *,
+    title: str,
+    description: str,
+    markdown: str,
+    media: list | None,
+) -> Message | None:
+    """把结果送出去, 返回承载结果的 Message (缓存路径要拿它取 file_id)。
+
+    两条通道: ① 编辑召唤消息上的状态消息 (一条消息走完); ② 退回 guest 通道
+    (bot 不在群里时唯一可用的方式)。
+    """
+    if reporter is not None and reporter.has_message:
+        try:
+            edited = await reporter.finalize(InputRichMessage(markdown=markdown, media=media or None))
+            if edited is not None:
+                logger.info(f"guest 结果已编辑进状态消息: msg_id={edited.id}")
+                return edited
+        except Exception as e:
+            logger.warning(f"编辑状态消息失败, 退回 answer_guest_query: {type(e).__name__}: {str(e)[:120]}")
+
+    try:
+        sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown, media))
+    except Exception as e:
+        logger.warning(f"guest 带媒体发送失败, 退回纯文字: {type(e).__name__}: {str(e)[:120]}")
+        sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown))
+    logger.info(f"guest 结果已发送: inline_message_id={getattr(sent, 'inline_message_id', None)}")
+    return None          # guest 通道拿不到 Message, 也就拿不到 file_id
+
+
 async def _answer(
     cli: Client, guest_query_id: str, url: str, user_id: int, locale: str, caller_msg: Message | None = None
 ) -> bool:
@@ -107,6 +146,25 @@ async def _answer(
 
     service = ParseService()
     raw_url = await service.get_raw_url(url)
+
+    # ① 缓存命中: 直接用 file_id 发, 跳过解析/下载/转码/上传 (与私聊/群/inline 一致)
+    if cached := await persistent_cache.get(raw_url):
+        logger.debug(f"guest: file_id 缓存命中, 直接发送 url={raw_url}")
+        markdown, cached_media = build_cached_rich_content(
+            cached, raw_url, lang=locale, config=config, view_label=_t("查看")
+        )
+        pr = cached.parse_result
+        await _deliver(
+            cli,
+            guest_query_id,
+            reporter,
+            title=_clip(pr.title, 90) or _clip(pr.content, 90) or "-",
+            description=_clip(pr.content, 200),
+            markdown=markdown,
+            media=cached_media or None,
+        )
+        return True
+
     with ParsePipeline(url, raw_url, reporter_impl, singleflight=False, t=_t) as pipeline:
         result = await pipeline.run()
         if result is None:
@@ -141,23 +199,35 @@ async def _answer(
         title = _clip(parse_result.title, 90) or _clip(parse_result.content, 90) or "-"
         description = _clip(parse_result.content, 200)
 
-        # ① 优先把结果**编辑进状态消息** (一条消息走完整个流程; 媒体此时才上传)
-        if reporter is not None and reporter.has_message:
-            try:
-                edited = await reporter.finalize(InputRichMessage(markdown=markdown, media=media or None))
-                if edited is not None:
-                    logger.info(f"guest 结果已编辑进状态消息: msg_id={edited.id}")
-                    return True
-            except Exception as e:
-                logger.warning(f"编辑状态消息失败, 退回 answer_guest_query: {type(e).__name__}: {str(e)[:120]}")
+        delivered = await _deliver(
+            cli,
+            guest_query_id,
+            reporter,
+            title=title,
+            description=description,
+            markdown=markdown,
+            media=media or None,
+        )
 
-        # ② 退回 guest 通道: 带媒体一次到位; 媒体被拒时退回纯文字 (至少内容要看得到)
-        try:
-            sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown, media))
-        except Exception as e:
-            logger.warning(f"guest 带媒体发送失败, 退回纯文字: {type(e).__name__}: {str(e)[:120]}")
-            sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown))
-        logger.info(f"guest 结果已发送: inline_message_id={getattr(sent, 'inline_message_id', None)}")
+        # 写回 file_id 缓存: 下次同一链接零下载零上传
+        # (只有编辑状态消息那条路能拿到 Message, guest 通道拿不到 —— 拿不到就不写)
+        if delivered is not None:
+            cached_media = extract_cache_media(getattr(delivered, "rich_message", None))
+            if cached_media:
+                quoted_items = min(len(quoted_ph), len(cached_media))
+                reply_items = min(len(reply_ph), len(cached_media) - quoted_items)
+                await persistent_cache.set(
+                    raw_url,
+                    rich_cache_entry(
+                        parse_result,
+                        cached_media,
+                        quoted_media_count=quoted_items,
+                        reply_media_count=reply_items,
+                    ),
+                )
+                logger.debug(
+                    f"guest: 富文本媒体已写入缓存 count={len(cached_media)} 引用{quoted_items} 回复{reply_items}"
+                )
         return True
 
 

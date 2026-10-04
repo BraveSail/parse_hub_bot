@@ -235,6 +235,44 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str]]:
     return media, placeholders[:head_split], placeholders[tail_split:], placeholders[head_split:tail_split]
 
 
+def rich_cache_entry(
+    parse_result,
+    media: list,
+    *,
+    quoted_media_count: int = 0,
+    reply_media_count: int = 0,
+):
+    """把一次富文本发送的字段与媒体 file_id 收成缓存条目。
+
+    ``quoted_media_count`` 记的是**媒体项数** (缓存里平铺的条数), 不是 ref 数
+    —— 一个 ref 可能展开成多个文件, 缓存只能按项切分。
+
+    放在这里而不是发送层: 私聊/群 (``sender``) 与 guest 都要写同一种条目。
+    """
+    from parsehub.utils.helpers import get_parse_author_name
+
+    from services.cache import CacheEntry, CacheParseResult
+
+    return CacheEntry(
+        parse_result=CacheParseResult(
+            title=parse_result.title,
+            content=parse_result.content,
+            author_name=get_parse_author_name(parse_result),
+            author_handle=getattr(parse_result, "author_handle", ""),
+            author_url=getattr(parse_result, "author_url", ""),
+            is_sensitive=parse_result.is_sensitive,
+            published_at=getattr(parse_result, "published_at", None),
+            view_count=getattr(parse_result, "view_count", None),
+            like_count=getattr(parse_result, "like_count", None),
+            tags=list(getattr(parse_result, "tags", None) or []),
+            quoted_media_count=quoted_media_count,
+            reply_media_count=reply_media_count,
+        ),
+        media=media or None,
+        rich=True,
+    )
+
+
 def build_cached_rich_content(
     entry, raw_url: str, *, lang: str, config, view_label: str = "", custom_content: str = ""
 ) -> tuple[str, list[InputRichMessageMedia]]:
