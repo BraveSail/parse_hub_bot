@@ -163,9 +163,14 @@ _TRAILING_PUNCTUATION = "。，、！？；：,.!?;:"
 
 
 #: 手动开关标记 (独立 token): 让本次结果把正文折起来、摘要标 ⚠️
-#: 手动开关: 让本条结果把内容折起来。**多个标记等价**, 用户按语义挑一个 ——
-#: ``#nsfw`` 用于不便公开的内容, ``#spoiler`` 用于剧透。
-SPOILER_FLAGS = ("#nsfw", "#spoiler")
+#: 手动开关: 让本条结果把内容折起来。**所有标记等价**, 用户按语义挑一个 ——
+#: ``#nsfw`` / ``#r18`` 不宜公开, ``#spoiler`` / ``#劇透`` 剧透, ``#色色`` 同上。
+#:
+#: 匹配**大小写不敏感**(``#R18`` / ``#NSFW`` 都算), 但返回的是用户写的原形,
+#: 摘要照原样显示。简体 ``#剧透`` 一并认 —— 同一个词的两种写法都该触发。
+SPOILER_FLAGS = ("#nsfw", "#spoiler", "#r18", "#劇透", "#剧透", "#色色")
+#: 查表用的小写集合; 命中后返回的是原 token (保留用户写的大小写)
+_SPOILER_LOOKUP = frozenset(flag.lower() for flag in SPOILER_FLAGS)
 #: 无标记时的折叠摘要兜底 (正常总有一个标记, 摘要是 ``⚠️ <标记>``)
 SPOILER_FOLD_SUMMARY = "⚠️"
 
@@ -179,13 +184,15 @@ def strip_spoiler_flag(text: str | None) -> tuple[str, str]:
 
     返回命中的**标记本身**(而不是 bool) 是因为摘要要显示它: 用 ``#nsfw`` 触发就
     显示 ``⚠️ #nsfw``, 让读者一眼知道是被标为不宜公开还是剧透。
+    **大小写不敏感**(``#R18`` / ``#NSFW`` 都算), 但返回值保持用户写的原形 ——
+    摘要与用户输入一致, 不做规范化。
     """
     if not text:
         return "", ""
     hit = ""
     kept: list[str] = []
     for token in text.split():
-        if token in SPOILER_FLAGS:
+        if token.lower() in _SPOILER_LOOKUP:
             hit = hit or token
         else:
             kept.append(token)

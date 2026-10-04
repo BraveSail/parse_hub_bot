@@ -1,15 +1,17 @@
-"""手动折叠开关: 链接后跟独立的 ``#nsfw`` / ``#spoiler``。
+"""手动折叠开关: 链接后跟独立的 hashtag 标记。
 
-用户要求：把 ``/s`` 换成 ``#nsfw`` 与 ``#spoiler``（判定方式不变），
-折叠摘要去掉原来的文字，换成 ``⚠️ #nsfw`` / ``⚠️ #spoiler``。
+用户要求：把 ``/s`` 换成 ``#nsfw`` / ``#spoiler``（判定方式不变），
+摘要去掉原来的文字、换成 ``⚠️ <标记>``；随后再加 ``#r18``（不分大小写）、
+``#劇透``、``#色色``。
 
 **为什么用空格分隔的独立标记**（而不是 URL 参数或路径后缀）：
 - URL 参数会被 ``get_raw_url`` 的清理逻辑摘掉；
 - 路径后缀会污染缓存 key，且部分平台的 provider 按固定段数解析路径会出错；
 - 独立 token 让 URL 本体完全不变，且纯链接判定剔掉它之后不受影响。
 
-两个标记**等价**（都触发遮挡），区别只在语义 —— 摘要显示用户自己写的那个，
+所有标记**等价**（都触发遮挡），区别只在语义 —— 摘要显示用户自己写的那个，
 让读者知道为什么藏起来（不宜公开 / 剧透），所以解析函数返回**标记本身**而非 bool。
+匹配大小写不敏感，但返回值保持用户原形。
 """
 
 import types
@@ -24,10 +26,17 @@ LINK = "https://x.com/a/status/123"
 # ── 标记解析 ───────────────────────────────────────────────────────────
 
 
-def test_both_flags_are_recognised():
-    assert SPOILER_FLAGS == ("#nsfw", "#spoiler")
-    assert strip_spoiler_flag(f"{LINK} #nsfw") == (LINK, "#nsfw")
-    assert strip_spoiler_flag(f"{LINK} #spoiler") == (LINK, "#spoiler")
+def test_every_flag_is_recognised():
+    assert SPOILER_FLAGS == ("#nsfw", "#spoiler", "#r18", "#劇透", "#剧透", "#色色")
+    for flag in SPOILER_FLAGS:
+        assert strip_spoiler_flag(f"{LINK} {flag}") == (LINK, flag), flag
+
+
+def test_flags_are_case_insensitive():
+    """``#R18`` / ``#NSFW`` 这些大写写法同样算 —— 返回的是用户写的原形"""
+    assert strip_spoiler_flag(f"{LINK} #R18") == (LINK, "#R18")
+    assert strip_spoiler_flag(f"{LINK} #NSFW") == (LINK, "#NSFW")
+    assert strip_spoiler_flag(f"{LINK} #Spoiler") == (LINK, "#Spoiler")
 
 
 def test_flag_works_at_the_front_and_with_extra_spaces():
@@ -41,9 +50,10 @@ def test_no_flag_means_nothing_changes():
 
 
 def test_flag_must_be_a_standalone_token():
-    """``#nsfwxxx`` 不是开关; URL 里的片段也不是（判定方式与 ``/s`` 时期一致）"""
+    """``#nsfwxx`` 不是开关; URL 里的片段也不是（判定方式与 ``/s`` 时期一致）"""
     assert strip_spoiler_flag(f"{LINK} #nsfwxx") == (f"{LINK} #nsfwxx", "")
     assert strip_spoiler_flag("https://x.com/nsfw/status/1") == ("https://x.com/nsfw/status/1", "")
+    assert strip_spoiler_flag(f"{LINK} #r18x") == (f"{LINK} #r18x", "")
 
 
 def test_first_flag_wins_when_both_are_given():
@@ -56,9 +66,9 @@ def test_first_flag_wins_when_both_are_given():
 
 
 def test_flag_does_not_break_the_url_only_check():
-    """``<链接> #nsfw`` 仍要算纯链接消息 —— 否则群里/guest 根本不会触发"""
-    assert url_only_message_urls(f"{LINK} #nsfw") == [LINK]
-    assert url_only_message_urls(f"{LINK} #spoiler") == [LINK]
+    """``<链接> <标记>`` 仍要算纯链接消息 —— 否则群里/guest 根本不会触发"""
+    for flag in SPOILER_FLAGS:
+        assert url_only_message_urls(f"{LINK} {flag}") == [LINK], flag
     assert url_only_message_urls(LINK) == [LINK]
 
 
@@ -94,9 +104,9 @@ def _config():
 
 def test_summary_shows_the_flag_the_user_wrote():
     """摘要 = ⚠️ + 用户写的标记；不再写「展开全文」"""
-    for tag in ("#nsfw", "#spoiler"):
+    for tag in (*SPOILER_FLAGS, "#R18"):
         md = build_rich_markdown(_result("正文"), config=_config(), lang="zh-hans", hide_content=tag)
-        assert f"<details><summary>⚠️ {tag}</summary>" in md
+        assert f"<details><summary>⚠️ {tag}</summary>" in md, tag
 
 
 def test_summary_no_longer_carries_the_fold_label():
