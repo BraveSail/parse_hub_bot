@@ -33,7 +33,6 @@ from i18n import t_
 from log import logger
 from plugins.filters import platform_filter
 from plugins.helpers import (
-    build_caption,
     build_rich_markdown,
     build_start_text,
 )
@@ -313,19 +312,23 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
     query, _ = strip_spoiler_flag(chosen_result.query)
     raw_url = await ParseService().get_raw_url(query)
     cached_result = await parse_cache.get(raw_url)
-    caption = (
-        build_caption(cached_result, config=config, allow_expandable=True, lang=lang, view_label=_t("查看"))
-        if cached_result
-        else ""
+    # 处理过程要与最终结果同一种排版: 不再拼老 caption, 由 reporter 自己渲染富文本。
+    # 打码标记一并传下去 —— 处理过程也要遮, 否则"下载中"那几秒就露出来了
+    reporter = InlineStatusReporter(
+        cli,
+        inline_message_id,
+        t=_t,
+        user_config=config,
+        raw_url=raw_url,
+        spoiler_tag=spoiler_tag,
     )
-    reporter = InlineStatusReporter(cli, inline_message_id, caption, t=_t, user_config=config)
 
     with ParsePipeline(query, raw_url, reporter, parse_result=cached_result, singleflight=False, t=_t) as pipeline:
         if (result := await pipeline.run()) is None:
             return
 
         parse_result = result.parse_result
-        await reporter.report(_t("上 传 中..."))
+        await reporter.report_result(parse_result, _t("上 传 中..."))
         try:
             media_refs = to_list(parse_result.media)
             video_thumbs = (

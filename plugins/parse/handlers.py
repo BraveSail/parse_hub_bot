@@ -236,7 +236,15 @@ async def handle_parse(req: ParseRequest) -> bool:
         logger.debug("bypass_cache=True 绕过缓存")
 
     reporter = MessageStatusReporter(
-        req.cli, req.msg, t=req.t_, config=req.config, on_forbidden=disable_progress_on_report_forbidden
+        req.cli,
+        req.msg,
+        t=req.t_,
+        config=req.config,
+        on_forbidden=disable_progress_on_report_forbidden,
+        # 处理过程要和最终结果同一种排版: 骨架阶段要显示来源, 打码也要从第一秒就生效
+        raw_url=req.url,
+        spoiler_tag=req.spoiler_tag,
+        custom_content=req.custom_content,
     )
     sender = MessageSender(req.cli, req.msg, req.config)
     try:
@@ -341,7 +349,7 @@ async def handle_parse(req: ParseRequest) -> bool:
             return True
 
         logger.debug(f"开始上传媒体: media_count={len(result.processed_list)}")
-        await reporter.report(req.t_("上 传 中..."))
+        await reporter.report_result(parse_result, req.t_("上 传 中..."))
         try:
             # 敏感内容的媒体打码在 send_rich_media 内部切到 blocks 路径 (官方 API 的
             # 富文本媒体块没有 spoiler, 只有 raw 的 PageBlockPhoto/Video 有)
