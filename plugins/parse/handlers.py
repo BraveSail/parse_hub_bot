@@ -15,6 +15,7 @@ from plugins.filters import (
     allow_channel_auto_forward_parse_filter,
     forwarded_from_bot_filter,
     platform_filter,
+    url_only_filter,
     via_me_filter,
 )
 from plugins.helpers import build_caption, format_label
@@ -42,6 +43,7 @@ logger = logger.bind(name="Parse")
     | (
         (filters.text | filters.caption)
         & ~via_me_filter
+        & url_only_filter
         & platform_filter(True)
         & ~forwarded_from_bot_filter
         & allow_channel_auto_forward_parse_filter

@@ -55,9 +55,19 @@ def test_text_link_is_read():
     assert _run_filter(_channel_forward(text=LINK), disabled_platforms=["twitter"]) is True
 
 
+def test_channel_parses_a_bare_link_in_caption():
+    """频道没禁用该平台 → 频道会解析 → 群里不重复解析"""
+    assert _run_filter(_channel_forward(caption=LINK)) is False
+
+
 def test_caption_link_is_read():
     """带说明的媒体消息 text 是 None —— 必须看 caption, 否则这条永远漏解析"""
-    assert _run_filter(_channel_forward(caption=f"图里这个 {LINK}"), disabled_platforms=["twitter"]) is True
+    assert _run_filter(_channel_forward(caption=LINK), disabled_platforms=["twitter"]) is True
+
+
+def test_chatter_around_the_link_does_not_count():
+    """caption 里夹着文字时不是"纯链接消息", 不参与自动解析的去重判断"""
+    assert _run_filter(_channel_forward(caption=f"图里这个 {LINK}"), disabled_platforms=["twitter"]) is False
 
 
 def test_caption_is_used_when_text_is_absent():
@@ -67,11 +77,6 @@ def test_caption_is_used_when_text_is_absent():
     assert via_text == via_caption is True
 
 
-def test_channel_parses_it_so_group_skips():
-    """频道没禁用该平台 (频道自己会解析) → 群里不重复解析"""
-    assert _run_filter(_channel_forward(caption=LINK)) is False
-
-
 def test_no_link_is_not_parsed():
     assert _run_filter(_channel_forward(caption="今天就拍了张照片")) is False
 
@@ -79,6 +84,25 @@ def test_no_link_is_not_parsed():
 def test_no_text_and_no_caption_does_not_raise():
     """纯媒体消息 (text 与 caption 都是 None) 不能抛异常"""
     assert _run_filter(_channel_forward()) is False
+
+
+def test_url_only_filter_accepts_a_bare_link():
+    """自动解析只认纯链接消息"""
+    assert asyncio.run(flt._url_only(None, None, _channel_forward(text="https://x.com/a/status/1"))) is True
+
+
+def test_url_only_filter_accepts_a_bare_link_in_caption():
+    assert asyncio.run(flt._url_only(None, None, _channel_forward(caption="https://x.com/a/status/1"))) is True
+
+
+def test_url_only_filter_rejects_links_with_chatter():
+    """群里聊天时提到链接不该被解析"""
+    for text in ("看看这个 https://x.com/a/status/1", "https://x.com/a/status/1 很好笑", "普通聊天"):
+        assert asyncio.run(flt._url_only(None, None, _channel_forward(text=text))) is False
+
+
+def test_url_only_filter_survives_missing_text():
+    assert asyncio.run(flt._url_only(None, None, _channel_forward())) is False
 
 
 def test_platform_lookup_is_safe_for_empty_input():

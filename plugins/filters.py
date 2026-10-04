@@ -1,11 +1,24 @@
 from typing import Any
 
+from parsehub.utils.helpers import url_only_message_urls
 from pyrogram import Client, filters
 from pyrogram.types import InlineQuery, Message, MessageOriginChannel, User
 
 from db.session import get_session
 from plugins.context import get_config_target
 from services import ChannelSettingsTarget, ParseService, SettingsService
+
+
+async def _url_only(_: Any, __: Any, update: Message) -> bool:
+    """只有"整条消息就是链接"才让自动解析出手。
+
+    群里有人聊天时提到链接不该被解析, 所以自动解析只认纯链接消息;
+    显式命令 (/jx 等) 与 inline 不受此限制。
+    """
+    return bool(url_only_message_urls(update.caption or update.text))
+
+
+url_only_filter = filters.create(_url_only)
 
 
 def platform_filter(use_config: bool = False) -> filters.Filter:
@@ -79,7 +92,8 @@ async def _allow_channel_auto_forward_parse_filter(_: Any, cli: Client, update: 
         return True
 
     # 带 caption 的媒体消息 text 是 None: 必须两个都看, 否则这类自动转发会漏解析
-    if not (platform := ParseService().parser.get_platform(update.caption or update.text)):
+    urls = url_only_message_urls(update.caption or update.text)
+    if not (platform := ParseService().parser.get_platform(urls[0] if urls else "")):
         return False
 
     async with get_session() as session:

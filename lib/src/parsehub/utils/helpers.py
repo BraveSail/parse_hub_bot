@@ -147,6 +147,29 @@ def match_url(text: str) -> str:
     return url[0] if url else ""
 
 
+#: 允许跟在链接后面的句读 (句末加句号很常见, 不该因此漏解析)
+_TRAILING_PUNCTUATION = "。，、！？；：,.!?;:"
+
+
+def url_only_message_urls(text: str | None) -> list[str]:
+    """消息**整条都是链接**时返回这些链接, 否则返回空列表。
+
+    用于"只解析纯链接消息"的场景 (群里有人随口提到链接不该被解析):
+    按空白切分后要求每个片段**本身就是一个完整链接** —— 夹在文字里、被括号或
+    表情包住、混在分享文案里的都不算。允许多个链接 (一行一个或空格分隔);
+    链接末尾的句读会被去掉 (``https://x.com/...。`` 仍算纯链接)。
+    """
+    if not text:
+        return []
+    tokens = [token.rstrip(_TRAILING_PUNCTUATION) for token in text.split()]
+    if not tokens or any(not token for token in tokens):
+        return []
+    # 抽出的链接必须与片段完全一致: 不一致说明片段里还夹着别的内容
+    if any(match_url(token) != token for token in tokens):
+        return []
+    return tokens
+
+
 class SecretCookie:
     def __init__(self, cookie: str | dict[str, Any] | None = None) -> None:
         self._cookie = self.normalize_cookie(cookie)
