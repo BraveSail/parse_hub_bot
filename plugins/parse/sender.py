@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
 from itertools import batched
-from typing import Any, BinaryIO, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from easy_ai18n import PreLocaleSelector
 from parsehub.types import AniFile, AniRef, AnyMediaRef, AnyParseResult, ImageFile, LivePhotoFile, VideoFile
@@ -39,6 +39,10 @@ from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import build_cached_rich_content, build_rich_media, extract_cache_media
 from plugins.parse.rich_blocks import markdown_to_blocks
 from repo.settings import SettingsConfig
+
+if TYPE_CHECKING:
+    # 仅为类型标注: reporters 反向依赖本模块的 MessageSender, 运行时不能互相导入
+    from plugins.parse.reporters import MessageStatusReporter
 from services import (
     CacheEntry,
     CacheMedia,
@@ -522,8 +526,12 @@ async def send_rich_media(
     _t: PreLocaleSelector,
     custom_content: str = "",
     raw_url: str = "",
+    reporter: "MessageStatusReporter | None" = None,
 ) -> bool:
     """以富文本 (rich message) 发送解析结果: 正文保留原文格式, 统计与来源进页尾。
+
+    给了 ``reporter`` 且它已经发过状态消息时, 结果会**编辑进那条状态消息**
+    (整个流程只留一条消息, 没有删除记录、没有多余临时消息); 否则新建一条。
 
     发送后把服务端返回的媒体 file_id 写回缓存 —— 下次同一链接零上传直发,
     inline 也能直接带媒体 (不用二次编辑)。
@@ -558,13 +566,13 @@ async def send_rich_media(
         # 敏感内容的媒体必须打码: 官方 API 的富文本媒体块没有 spoiler 字段,
         # 只能自己构造 raw blocks (PageBlockPhoto/Video 带 spoiler)
         blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
-        logger.debug(f"富文本(blocks)发送: media={len(media_blocks)}, blocks={len(blocks)}")
-        message = await sender.rich_message(rich_message=InputRichMessage(blocks=blocks))
+        logger.debug(f"富文本(blocks): media={len(media_blocks)}, blocks={len(blocks)}")
+        rich = InputRichMessage(blocks=blocks)
     else:
-        logger.debug(f"富文本发送: media={len(media)}, markdown_len={len(markdown)}")
-        message = await sender.rich_message(
-            rich_message=InputRichMessage(markdown=markdown, media=media or None)
-        )
+        logger.debug(f"富文本: media={len(media)}, markdown_len={len(markdown)}")
+        rich = InputRichMessage(markdown=markdown, media=media or None)
+
+    message = await _post_rich(sender, rich, reporter=reporter)
 
     if raw_url and media:
         cached_media = extract_cache_media(getattr(message, "rich_message", None))
@@ -586,6 +594,26 @@ async def send_rich_media(
                 f"富文本媒体已写入缓存: count={len(cached_media)}, 引用{quoted_items} 回复{reply_items}"
             )
     return True
+
+
+async def _post_rich(
+    sender: MessageSender,
+    rich: InputRichMessage,
+    *,
+    reporter: "MessageStatusReporter | None" = None,
+) -> Message:
+    """发布富文本结果: 优先编辑状态消息, 不行再新建。
+
+    编辑失败 (状态消息被用户手动删掉、内容被判为未变更等) 时退回新建 ——
+    结果不能因为"收尾方式"失败而丢失。
+    """
+    if reporter is not None and reporter.has_message:
+        try:
+            if (edited := await reporter.finalize(rich)) is not None:
+                return edited
+        except Exception as e:
+            logger.warning(f"编辑状态消息失败, 改为新建结果: {type(e).__name__}: {e}")
+    return await sender.rich_message(rich_message=rich)
 
 
 def build_input_media(

@@ -5,7 +5,7 @@ from typing import Any
 from easy_ai18n import PreLocaleSelector
 from pyrogram import Client
 from pyrogram.errors import FloodWait, Forbidden, SlowmodeWait
-from pyrogram.types import LinkPreviewOptions, Message
+from pyrogram.types import InputRichMessage, LinkPreviewOptions, Message
 
 from core import bs
 from db import get_session
@@ -80,6 +80,38 @@ class MessageStatusReporter(StatusReporter):
 
         loop = asyncio.get_running_loop()
         loop.create_task(fn())
+
+    @property
+    def has_message(self) -> bool:
+        """是否已经发出过状态消息 (noprogress 或首条发送失败时为 False)。"""
+        return self._msg is not None
+
+    async def finalize(self, rich_message: InputRichMessage) -> Message | None:
+        """把状态消息**编辑成最终结果** (同一条消息走完整个流程)。
+
+        这样聊天里只留一条消息 —— 从"解析中"一路编辑到最终富文本, 既没有删除记录,
+        也没有多余的临时消息。
+
+        没有状态消息时返回 None (调用方改为新建); 编辑失败**不吞异常** ——
+        由调用方决定回退(新建)还是报错, 免得结果静默丢失。
+        """
+        if self._msg is None:
+            return None
+        logger.debug(f"编辑状态消息为最终结果: msg_id={self._msg.id}")
+        edited = await self._msg.edit_text(rich_message=rich_message)
+        return edited or self._msg
+
+    async def finalize_text(self, text: str, **kwargs: Any) -> Message | None:
+        """把状态消息编辑成**纯文本**结果 (不新建消息)。
+
+        给不走富文本的结果用 (例如 GIF 过多只发文字提示那种)。失败不吞异常 ——
+        调用方据此回退新建。
+        """
+        if self._msg is None:
+            return None
+        logger.debug(f"编辑状态消息为文本结果: msg_id={self._msg.id}")
+        edited = await self._msg.edit_text(text, **kwargs)
+        return edited or self._msg
 
     async def dismiss(self) -> None:
         """收尾: 把状态消息编辑成最小标记, **而不是删除**。

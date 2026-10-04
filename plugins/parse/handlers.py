@@ -1,6 +1,7 @@
 import asyncio
 import re
 from dataclasses import replace
+from typing import Any
 
 from parsehub.types import AniRef, RichTextParseResult
 from pyrogram import Client, filters
@@ -115,6 +116,21 @@ async def parse(cli: Client, msg: Message) -> None:
         for url in urls
     ]
     await asyncio.gather(*tasks)
+
+
+async def _post_text(
+    sender: MessageSender,
+    reporter: MessageStatusReporter,
+    caption: str,
+    markup: Any = None,
+) -> bool:
+    """把纯文本结果编辑进状态消息; 成功返回 True, 需要调用方新建时返回 False。"""
+    try:
+        if await reporter.finalize_text(format_label(caption), reply_markup=markup) is not None:
+            return True
+    except Exception as e:  # noqa: BLE001 - 收尾失败就回退新建, 不能让结果丢失
+        logger.warning(f"编辑状态消息为文本结果失败, 改为新建: {type(e).__name__}: {e}")
+    return False
 
 
 async def parse_url(cli: Client, msg: Message, url: str) -> None:
@@ -237,6 +253,7 @@ async def handle_parse(req: ParseRequest) -> bool:
         if isinstance(parse_result, RichTextParseResult):
             # 长文与普通结果同一条路径: 正文取 markdown_content, 排版交给富文本
             await sender.typing()
+            # 结果直接编辑进状态消息: 聊天里只留一条消息, 不新建也不删除
             await send_rich_media(
                 sender,
                 parse_result,
@@ -244,8 +261,8 @@ async def handle_parse(req: ParseRequest) -> bool:
                 _t=req.t_,
                 custom_content=req.custom_content,
                 raw_url=raw_url,
+                reporter=reporter,
             )
-            await reporter.dismiss()
             return True
 
         caption = build_caption(
@@ -264,8 +281,9 @@ async def handle_parse(req: ParseRequest) -> bool:
             and len(media_refs) > GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD
         ):
             await sender.typing()
-            await sender.text_no_preview(caption, reply_markup=build_gif_button(to_list(parse_result.media)))
-            await reporter.dismiss()
+            markup = build_gif_button(to_list(parse_result.media))
+            if not await _post_text(sender, reporter, caption, markup):
+                await sender.text_no_preview(caption, reply_markup=markup)
             return True
 
         if not result.processed_list:
@@ -274,9 +292,14 @@ async def handle_parse(req: ParseRequest) -> bool:
             # 富文本的正文是 Telegram 服务端解析的 markdown, 与缓存里的 caption 格式不同,
             # 所以这条路径不写缓存 (下次重新解析)
             await send_rich_media(
-                sender, parse_result, [], _t=req.t_, custom_content=req.custom_content, raw_url=raw_url
+                sender,
+                parse_result,
+                [],
+                _t=req.t_,
+                custom_content=req.custom_content,
+                raw_url=raw_url,
+                reporter=reporter,
             )
-            await reporter.dismiss()
             return True
 
         if req.mode == ParseMode.RAW:
@@ -291,6 +314,7 @@ async def handle_parse(req: ParseRequest) -> bool:
         try:
             # 敏感内容的媒体打码在 send_rich_media 内部切到 blocks 路径 (官方 API 的
             # 富文本媒体块没有 spoiler, 只有 raw 的 PageBlockPhoto/Video 有)
+            # 结果编辑进状态消息, 不再新建 + 删除
             await send_rich_media(
                 sender,
                 parse_result,
@@ -298,8 +322,8 @@ async def handle_parse(req: ParseRequest) -> bool:
                 _t=req.t_,
                 custom_content=req.custom_content,
                 raw_url=raw_url,
+                reporter=reporter,
             )
-            await reporter.dismiss()
             return True
         except Exception as e:
             logger.exception(e)

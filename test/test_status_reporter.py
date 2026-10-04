@@ -15,8 +15,9 @@ from plugins.parse.reporters import STATUS_DONE_TEXT, MessageStatusReporter
 class _Msg:
     """够用的假 Message: 记录 edit_text / delete 的调用。"""
 
-    def __init__(self, text="上 传 中..."):
+    def __init__(self, text="上 传 中...", msg_id=1):
         self.text = text
+        self.id = msg_id
         self.edit_text = AsyncMock()
         self.delete = AsyncMock()
 
@@ -74,6 +75,42 @@ def test_report_is_skipped_when_noprogress():
     reporter = _reporter(msg, config=SimpleNamespace(noprogress=True))
     asyncio.run(reporter.report("下 载 中..."))
     msg.edit_text.assert_not_awaited()
+
+
+def test_finalize_edits_the_status_message():
+    """收尾的另一种形态: 直接编辑成最终富文本 (整个流程一条消息)"""
+    from pyrogram.types import InputRichMessage
+
+    msg = _Msg()
+    rich = InputRichMessage(markdown="结果")
+    edited = asyncio.run(_reporter(msg).finalize(rich))
+    msg.edit_text.assert_awaited_once_with(rich_message=rich)
+    msg.delete.assert_not_awaited()
+    assert edited is not None
+
+
+def test_finalize_without_a_status_message_returns_none():
+    """没有状态消息 (noprogress) 时返回 None, 让调用方新建"""
+    assert asyncio.run(_reporter(None).finalize(object())) is None
+
+
+def test_finalize_does_not_swallow_errors():
+    """编辑失败必须上抛: 调用方要据此回退新建, 不能静默丢结果"""
+    msg = _Msg()
+    msg.edit_text.side_effect = RuntimeError("MESSAGE_ID_INVALID")
+    try:
+        asyncio.run(_reporter(msg).finalize(object()))
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("finalize 应上抛异常")
+
+
+def test_finalize_text_edits_plain_caption():
+    """不走富文本的结果 (GIF 过多只发文字) 也编辑进同一条消息"""
+    msg = _Msg()
+    asyncio.run(_reporter(msg).finalize_text("<b>文字结果</b>", reply_markup=None))
+    msg.edit_text.assert_awaited_once()
 
 
 def test_report_survives_a_manually_deleted_status_message():
