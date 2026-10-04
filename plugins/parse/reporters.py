@@ -196,9 +196,7 @@ class InlineStatusReporter(StatusReporter):
         text = self._t(f"{format_label(f'{stage}错误:')} \n```\n{error}```")
         if bs.demo_mode:
             text += self._t("\n\n<b>问题反馈: @MisakaSisters</b>")
-        await self._edit_inline_text(
-            inline_message_id=self._mid, text=text, link_preview_options=LinkPreviewOptions(is_disabled=True)
-        )
+        await self._edit_inline_text(inline_message_id=self._mid, text=text)
 
         if self._user_config.keep_error_log:
             return
@@ -215,6 +213,10 @@ class InlineStatusReporter(StatusReporter):
         loop.create_task(fn())
 
     async def _edit_inline_text(self, **kwargs: Any) -> None:
+        # 与 MessageStatusReporter._edit_text 同一个理由: 文本里带链接时 Telegram 会挂
+        # link preview 卡片, 卡片在正文之外、折叠盖不住 -> 内容遮了图还露着。
+        # 进度/结果/收尾都走这里, 默认关掉; 调用方显式传了就用调用方的。
+        kwargs.setdefault("link_preview_options", _NO_PREVIEW)
         try:
             await self._cli.edit_inline_text(**kwargs)
         except (FloodWait, SlowmodeWait):

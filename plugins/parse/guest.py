@@ -15,6 +15,7 @@ guest 是 bot 自己在群里发一条 —— 后者要求"只能被允许的人
 
 from __future__ import annotations
 
+from easy_ai18n import PreLocaleSelector
 from parsehub.utils.helpers import strip_spoiler_flag, url_only_message_urls
 from pyrogram import Client
 from pyrogram.types import (
@@ -35,11 +36,10 @@ from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
     build_cached_rich_content,
     build_rich_media,
-    extract_cache_media,
-    rich_cache_entry,
+    edit_inline_rich_message,
 )
-from plugins.parse.reporters import MessageStatusReporter
-from services import ParsePipeline, ParseService, SettingsService, UserService
+from plugins.parse.reporters import InlineStatusReporter
+from services import ParsePipeline, ParseService, SettingsService, StatusReporter, UserService
 from services.cache import persistent_cache
 from utils.helpers import to_list, with_request_id
 
@@ -69,6 +69,24 @@ def _result(title: str, description: str, markdown: str, media: list | None = No
     )
 
 
+async def _send_placeholder(cli: Client, guest_query_id: str, _t: PreLocaleSelector) -> str | None:
+    """先发一条占位结果, 返回它的 ``inline_message_id`` (拿不到则 None)。
+
+    **为什么要先发占位**: guest 消息就是 inline 消息, 但它的 id 只有**发出之后**
+    才存在 —— 想用它当进度载体, 就得先占个位。占位文本走 i18n 的「解 析 中...」,
+    与 pipeline 后续 ``report()`` 的进度文案同一套。
+    """
+    label = _t("解 析 中...")
+    try:
+        sent = await cli.answer_guest_query(guest_query_id, _result(label, "", f"**{label}**"))
+    except Exception as e:  # noqa: BLE001 - 占位失败就退回"只有结果", 不该打断解析
+        logger.warning(f"guest 占位发送失败, 本次没有进度反馈: {type(e).__name__}: {str(e)[:120]}")
+        return None
+    mid = getattr(sent, "inline_message_id", None)
+    logger.debug(f"guest 占位已发出: inline_message_id={mid}")
+    return mid
+
+
 class _NullReporter:
     """拿不到召唤消息时的兜底: 没有可编辑的载体, 进度只能丢弃 (结果照发)。"""
 
@@ -95,26 +113,40 @@ def _denied_result(text: str) -> InlineQueryResultArticle:
 async def _deliver(
     cli: Client,
     guest_query_id: str,
-    reporter: MessageStatusReporter | None,
+    inline_message_id: str | None,
     *,
     title: str,
     description: str,
     markdown: str,
     media: list | None,
-) -> Message | None:
-    """把结果送出去, 返回承载结果的 Message (缓存路径要拿它取 file_id)。
+    blocks: list | None = None,
+) -> None:
+    """把结果送出去 (缓存路径拿不到 Message, 所以不返回)。
 
-    两条通道: ① 编辑召唤消息上的状态消息 (一条消息走完); ② 退回 guest 通道
-    (bot 不在群里时唯一可用的方式)。
+    **两条通道**:
+
+    ① **编辑 guest 消息本身** (主路径)。guest 消息就是一条 inline 消息
+    (``SentGuestMessage``: *"inline message sent by a guest bot"*), 而 inline 消息 id
+    正是 ``EditInlineBotMessage`` 要的 ``InputBotInlineMessageID`` —— 所以开头发出的
+    那条占位可以一路编辑到结果, 与 inline 完全同构。
+
+    ② **退回 ``answer_guest_query`` 直发**。编辑失败时的兜底 (占位没发出去、
+    或服务端不接受编辑), 至少保证结果能送出去。
+
+    ``blocks`` 非空时走 blocks 路径 (敏感内容的媒体要靠 raw 的
+    ``PageBlockPhoto(spoiler=)`` 才能打码, 与 inline 同一套)。
     """
-    if reporter is not None and reporter.has_message:
+    if inline_message_id:
         try:
-            edited = await reporter.finalize(InputRichMessage(markdown=markdown, media=media or None))
-            if edited is not None:
-                logger.info(f"guest 结果已编辑进状态消息: msg_id={edited.id}")
-                return edited
+            await edit_inline_rich_message(
+                cli, inline_message_id, markdown=markdown, media=media or None, blocks=blocks
+            )
+            logger.info("guest 结果已编辑进 guest 消息: 一条消息走完整个流程")
+            return
         except Exception as e:
-            logger.warning(f"编辑状态消息失败, 退回 answer_guest_query: {type(e).__name__}: {str(e)[:120]}")
+            logger.warning(
+                f"编辑 guest 消息失败, 退回 answer_guest_query: {type(e).__name__}: {str(e)[:120]}"
+            )
 
     try:
         sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown, media))
@@ -122,7 +154,6 @@ async def _deliver(
         logger.warning(f"guest 带媒体发送失败, 退回纯文字: {type(e).__name__}: {str(e)[:120]}")
         sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown))
     logger.info(f"guest 结果已发送: inline_message_id={getattr(sent, 'inline_message_id', None)}")
-    return None          # guest 通道拿不到 Message, 也就拿不到 file_id
 
 
 async def _answer(
@@ -131,13 +162,16 @@ async def _answer(
     url: str,
     user_id: int,
     locale: str,
-    caller_msg: Message | None = None,
     spoiler_tag: str = "",
 ) -> bool:
     """解析一条链接并回答 guest 查询, 返回是否真的发出。
 
-    **进度反馈**: 在召唤消息上 reply 一条状态消息, 跟着把**同一条**编辑成结果
-    (与私聊/群自动解析一致)。召唤消息拿不到时就退回静默 (只有结果)。
+    **进度反馈**: 先把一条占位结果发进 guest 通道, 拿它的 ``inline_message_id``
+    当进度载体, 一路编辑到最终结果 —— 与 inline 同构, 也是"一条消息走完整个流程"。
+
+    以前是**在召唤消息上 reply 一条状态消息**, 但 guest 场景 bot 通常不在召唤群里
+    (这正是 guest 模式的意义), 那条 reply 根本发不出去 (实测 ``400 CHANNEL_PRIVATE``,
+    而且异常被吞成 debug 级), 于是 guest **从来没有处理过程、只有结果**。
 
     **发送必须在 with 块内**: ParsePipeline 退出时会清掉下载目录,
     媒体路径带出去就是死链 (结果是消息里没有图)。
@@ -146,9 +180,14 @@ async def _answer(
         config = await SettingsService(session).get_config_by_user(user_id)
     _t = t_[locale]
 
-    # 有召唤消息就用它做状态载体; 否则静默
-    reporter = MessageStatusReporter(cli, caller_msg, t=_t, config=config) if caller_msg is not None else None
-    reporter_impl = reporter or _NullReporter()
+    # 进度载体 = guest 消息自己: 先发一条占位, 拿 inline_message_id, 后面一路编辑。
+    # 发不出去就退回静默 (只有结果), 行为与以前一致。
+    inline_message_id = await _send_placeholder(cli, guest_query_id, _t)
+    reporter: StatusReporter = (
+        InlineStatusReporter(cli, inline_message_id, t=_t, user_config=config)
+        if inline_message_id
+        else _NullReporter()
+    )
 
     service = ParseService()
     raw_url = await service.get_raw_url(url)
@@ -168,7 +207,7 @@ async def _answer(
         await _deliver(
             cli,
             guest_query_id,
-            reporter,
+            inline_message_id,
             title=_clip(pr.title, 90) or _clip(pr.content, 90) or "-",
             description=_clip(pr.content, 200),
             markdown=markdown,
@@ -176,7 +215,7 @@ async def _answer(
         )
         return True
 
-    with ParsePipeline(url, raw_url, reporter_impl, singleflight=False, t=_t) as pipeline:
+    with ParsePipeline(url, raw_url, reporter, singleflight=False, t=_t) as pipeline:
         result = await pipeline.run()
         if result is None:
             logger.warning(f"guest 解析失败: url={url}")
@@ -211,35 +250,21 @@ async def _answer(
         title = _clip(parse_result.title, 90) or _clip(parse_result.content, 90) or "-"
         description = _clip(parse_result.content, 200)
 
-        delivered = await _deliver(
+        await _deliver(
             cli,
             guest_query_id,
-            reporter,
+            inline_message_id,
             title=title,
             description=description,
             markdown=markdown,
             media=media or None,
+            # 敏感内容的媒体要走 blocks 路径才能打码 (与 inline 同一套)
+            blocks=_blocks if parse_result.is_sensitive and _blocks else None,
         )
 
-        # 写回 file_id 缓存: 下次同一链接零下载零上传
-        # (只有编辑状态消息那条路能拿到 Message, guest 通道拿不到 —— 拿不到就不写)
-        if delivered is not None:
-            cached_media = extract_cache_media(getattr(delivered, "rich_message", None))
-            if cached_media:
-                quoted_items = min(len(quoted_ph), len(cached_media))
-                reply_items = min(len(reply_ph), len(cached_media) - quoted_items)
-                await persistent_cache.set(
-                    raw_url,
-                    rich_cache_entry(
-                        parse_result,
-                        cached_media,
-                        quoted_media_count=quoted_items,
-                        reply_media_count=reply_items,
-                    ),
-                )
-                logger.debug(
-                    f"guest: 富文本媒体已写入缓存 count={len(cached_media)} 引用{quoted_items} 回复{reply_items}"
-                )
+        # 不写 file_id 缓存: guest 的结果发在**别人群里的一条 inline 消息**上,
+        # 服务端不把它回传成 Message, 所以拿不到上传后的 file_id。
+        # (只有私聊/群的直发路径能拿到, 那条路径在 send_rich_media 里写缓存。)
         return True
 
 
@@ -287,6 +312,4 @@ async def guest_parse(cli: Client, msg: Message) -> None:
     # 用召唤消息做进度载体: reply 它一条状态, 最后编辑成结果
     # 手动打码开关同样适用: 剥掉 /s 并传下去
     _, spoiler_tag = strip_spoiler_flag(msg.text or msg.caption)
-    await _answer(
-        cli, guest_query_id, urls[0], user_id or 0, locale, caller_msg=msg, spoiler_tag=spoiler_tag
-    )
+    await _answer(cli, guest_query_id, urls[0], user_id or 0, locale, spoiler_tag=spoiler_tag)
