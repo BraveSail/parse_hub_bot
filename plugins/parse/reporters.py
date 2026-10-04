@@ -18,6 +18,13 @@ from services import SettingsService, StatusReporter
 
 logger = logger.bind(name="ParseReporter")
 
+#: 状态消息收尾时编辑成的内容。
+#:
+#: **收尾用编辑、不用删除**: 删除会在 Telegram 的后台留下删除记录 (用户明确要求避免)。
+#: 也不能编辑成空串/零宽字符/空格 —— 实测 Telegram 一律回 ``400 MESSAGE_EMPTY``
+#: (U+200B、U+200D、空格、空串都试过), 所以只能用最小的可见字符。
+STATUS_DONE_TEXT = "·"
+
 
 async def disable_progress_on_report_forbidden(msg: Message, config: SettingsConfig) -> None:
     """状态消息无权限时自动关闭解析进度。"""
@@ -75,8 +82,19 @@ class MessageStatusReporter(StatusReporter):
         loop.create_task(fn())
 
     async def dismiss(self) -> None:
-        if self._msg:
-            await self._msg.delete()
+        """收尾: 把状态消息编辑成最小标记, **而不是删除**。
+
+        删除会在聊天后台留下"消息已删除"的记录; 编辑不会。用户明确要求避免前者。
+
+        这里吞掉所有异常: dismiss 是流程末尾的清理动作, 它失败不该让调用方把
+        已经成功的解析误判成失败 (handlers 里 dismiss 在 try 块内, 抛错会被当成"上传失败")。
+        """
+        if self._msg is None:
+            return
+        try:
+            await self._edit_text(STATUS_DONE_TEXT)
+        except Exception as e:  # noqa: BLE001 - 清理动作不该影响结果
+            logger.debug(f"状态消息收尾失败 (已忽略): {type(e).__name__}: {e}")
 
     async def _edit_text(self, text: str, **kwargs: Any) -> None:
         try:
@@ -91,6 +109,9 @@ class MessageStatusReporter(StatusReporter):
             logger.warning(f"状态消息发送失败, Bot 无权限: {e}")
             if self._on_forbidden:
                 await self._on_forbidden(self._user_msg, self._config)
+        except Exception as e:  # noqa: BLE001
+            # 状态消息是尽力而为: 它被用户手动删掉、或编辑被拒, 都不该打断解析本身
+            logger.debug(f"状态消息更新失败 (已忽略): {type(e).__name__}: {e}")
 
 
 class InlineStatusReporter(StatusReporter):
