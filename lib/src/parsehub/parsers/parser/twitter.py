@@ -1,3 +1,4 @@
+import html
 from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -77,11 +78,39 @@ class TwitterParser(BaseParser):
         return TwitterParser._quote_block(tweet.quoted_status) if tweet.quoted_status else ""
 
     @staticmethod
-    def _compose(body: str, tweet: TwitterTweet) -> str:
-        """组装正文: 被回复推文在最前, 被引用推文在最后 (与 X 上的卡片位置一致)."""
+    def _compose(body: str, tweet: TwitterTweet, extra: str = "") -> str:
+        """组装正文: 被回复推文在最前, 被引用推文在最后 (与 X 上的卡片位置一致).
+
+        :param extra: 额外追加在**最末**的引用卡片 (正文里的 YouTube 链接, 见
+            ``_youtube_card``)。放最末是为了和媒体顺序对齐 —— 它的封面走
+            ``quoted_media_count`` 那一档。
+        """
         text = f"{TwitterParser._build_quote(tweet)}{body}"
-        quoted = TwitterParser._build_quoted_block(tweet).strip()
-        return f"{text}\n\n{quoted}" if quoted else text
+        tail = "\n\n".join(part for part in (TwitterParser._build_quoted_block(tweet).strip(), extra) if part)
+        return f"{text}\n\n{tail}" if tail else text
+
+    @staticmethod
+    async def _youtube_card(text: str | None) -> tuple[str, list[AnyMediaRef]]:
+        """正文里引用的 YouTube 链接 -> 引用卡片 (标题可点) + 封面图。
+
+        用户要求: 正文引用的 YouTube 链接要**像 bilibili 引用的视频那样** —— 有封面、
+        标题能点开 (bilibili 那边是 ``_render_forward`` 给标题包 ``<a href>``)。
+
+        只取**第一个**能抓到卡片的链接: 一条推文塞多张封面会喧宾夺主, 而且卡片之间
+        没有各自的位置信息 (引用块媒体是按数量切分的, 见 ``quoted_media_count``)。
+
+        抓不到 (网络失败/链接不是频道也不是视频) 就返回空 —— 封面是锦上添花,
+        不该让整条解析失败。
+        """
+        from ...provider_api.youtube import fetch_card, find_youtube_links
+
+        for link in find_youtube_links(text):
+            card = await fetch_card(link)
+            if card:
+                href = html.escape(card.url, quote=True)
+                label = html.escape(card.title)
+                return f'> <i><a href="{href}">{label}</a></i>', [ImageRef(url=card.cover_url)]
+        return "", []
 
     @staticmethod
     def to_media_refs(media_items: Sequence[TwitterPhoto | TwitterVideo | TwitterAni] | None) -> list[AnyMediaRef]:
@@ -107,6 +136,11 @@ class TwitterParser(BaseParser):
 
     @staticmethod
     async def media_parse(tweet: TwitterTweet) -> MultimediaParseResult | RichTextParseResult:
+        # 正文里引用的 YouTube 链接: 抓封面做成引用卡片 (抓不到就是空, 不影响解析)。
+        # 检测源把 article 正文也带上 —— 两种结果类型都可能含链接, 但只抓一次网络。
+        article_content = tweet.article.content if tweet.article else ""
+        yt_quote, yt_media = await TwitterParser._youtube_card(f"{tweet.full_text or ''}\n{article_content}")
+
         media: list[AnyMediaRef] = TwitterParser.to_media_refs(tweet.media)
         # 被回复/被引用内容的媒体追加在正文媒体之后, 并用两个计数告诉渲染层怎么切:
         # 顺序是 [正文..., 被回复..., 被引用...], 让它们分别落到对应的引用块里
@@ -114,9 +148,12 @@ class TwitterParser(BaseParser):
         quoted_media = TwitterParser.to_media_refs(tweet.quoted_status.media if tweet.quoted_status else None)
         media.extend(reply_media)
         media.extend(quoted_media)
+        # YouTube 卡片的封面也归"引用块媒体" —— 卡片就在最后一个引用块里
+        media.extend(yt_media)
+        quoted_total = len(quoted_media) + len(yt_media)
         if article := tweet.article:
             return RichTextParseResult(
-                markdown_content=TwitterParser._compose(article.content, tweet),
+                markdown_content=TwitterParser._compose(article.content, tweet, yt_quote),
                 title=article.title,
                 media=media,
                 author_name=tweet.author_name,
@@ -126,11 +163,11 @@ class TwitterParser(BaseParser):
                 published_at=tweet.published_at,
                 view_count=tweet.view_count,
                 like_count=tweet.like_count,
-                quoted_media_count=len(quoted_media),
+                quoted_media_count=quoted_total,
                 reply_media_count=len(reply_media),
             )
         return MultimediaParseResult(
-            content=TwitterParser._compose(tweet.full_text, tweet),
+            content=TwitterParser._compose(tweet.full_text, tweet, yt_quote),
             media=media,
             author_name=tweet.author_name,
             author_handle=tweet.author_handle,
@@ -139,7 +176,7 @@ class TwitterParser(BaseParser):
             published_at=tweet.published_at,
             view_count=tweet.view_count,
             like_count=tweet.like_count,
-            quoted_media_count=len(quoted_media),
+            quoted_media_count=quoted_total,
             reply_media_count=len(reply_media),
         )
 
