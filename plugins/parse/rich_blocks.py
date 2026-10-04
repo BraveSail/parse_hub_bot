@@ -19,7 +19,9 @@ from pyrogram import raw
 from pyrogram.types import (
     InputRichBlockBlockQuotation,
     InputRichBlockCollage,
+    InputRichBlockDetails,
     InputRichBlockDivider,
+    InputRichBlockExpandableBlockQuotation,
     InputRichBlockFooter,
     InputRichBlockList,
     InputRichBlockListItem,
@@ -196,6 +198,55 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
             block = media_blocks.get(m.group(1))
             if block is not None:
                 blocks.append(block)
+            i += 1
+            continue
+
+        # ── 折叠容器 ──
+        # **markdown 路径由服务端解析这两个标签, blocks 路径必须自己认** ——
+        # 不认的话标签会原样进段落, 用户看到字面的 <details>, 里面的内容也全散架。
+        # 敏感内容走 blocks, 所以只有敏感内容会这样 (与 <tg-time> 同一类坑)。
+        if stripped.startswith("<details>"):
+            flush_paragraph(paragraph)
+            chunk: list[str] = []
+            one_line = re.match(r"<details>(.*)</details>\s*$", stripped, re.S)
+            if one_line:
+                chunk.append(one_line.group(1))
+                i += 1
+            else:
+                chunk.append(stripped[len("<details>") :])
+                i += 1
+                while i < len(lines) and "</details>" not in lines[i]:
+                    chunk.append(lines[i])
+                    i += 1
+                if i < len(lines):
+                    chunk.append(lines[i].split("</details>", 1)[0])
+                    i += 1
+            inner_raw = "\n".join(chunk)
+            sm = re.search(r"<summary>(.*?)</summary>", inner_raw, re.S)
+            summary = sm.group(1).strip() if sm else ""
+            body = inner_raw[sm.end() :] if sm else inner_raw
+            # 递归: 内部可能是段落/媒体/图集 —— 媒体占位符照样要换成打码块
+            blocks.append(
+                InputRichBlockDetails(
+                    parse_inline(summary),
+                    markdown_to_blocks(body, media_blocks=media_blocks),
+                )
+            )
+            continue
+
+        if stripped.startswith("<blockquote expandable>"):
+            flush_paragraph(paragraph)
+            one_line = re.match(r"<blockquote expandable>(.*)</blockquote>\s*$", stripped, re.S)
+            content = (
+                one_line.group(1)
+                if one_line
+                else stripped[len("<blockquote expandable>") :].rsplit("</blockquote>", 1)[0]
+            )
+            # 块内换行在源 markdown 里是 <br> (真换行会被并成空格) —— 转成真换行后交给
+            # RichText, 服务端才会分行
+            for br in ("<br>", "<br/>", "<br />"):
+                content = content.replace(br, "\n")
+            blocks.append(InputRichBlockExpandableBlockQuotation(parse_inline(content)))
             i += 1
             continue
 

@@ -60,6 +60,62 @@ def make_result(media=None, **kwargs):
     return result
 
 
+# ── blocks 路径的折叠容器 ──────────────────────────────────────────────
+#
+# 与 <tg-time> 同一类坑: markdown 路径由**服务端**解析这两个折叠标签,
+# blocks 路径必须自己认。不认的表现 (用户报的原文):
+#   "<details><summary>⚠️ #不可以色色</summary>" 字面显示、内容散架,
+#   **而且本该被折叠并打码的媒体掉到了折叠外面** —— 看起来就是"手动折叠时自动遮罩没工作"。
+
+
+def test_blocks_path_parses_details():
+    from pyrogram.types import InputRichBlockDetails
+
+    from plugins.parse.rich_blocks import markdown_to_blocks
+
+    md = "<details><summary>⚠️ #不可以色色</summary>\n\n被藏起来的正文\n\n</details>"
+    blocks = markdown_to_blocks(md)
+    assert len(blocks) == 1
+    node = blocks[0]
+    assert isinstance(node, InputRichBlockDetails)
+    # 摘要不能带上标签
+    assert "不可以色色" in str(node.summary)
+    assert "<summary>" not in str(node.summary)
+
+
+def test_media_inside_details_stays_inside_and_keeps_its_spoiler():
+    """**这条是用户报的那个 bug**: 媒体必须落在折叠块内, 且保留打码标记。
+
+    以前不认 <details>, 占位符变成普通段落文字、媒体块被排到折叠**外面**。
+    """
+    from pyrogram.types import InputRichBlockDetails
+
+    from plugins.parse.rich_blocks import SpoilerPhotoBlock, markdown_to_blocks
+
+    md = "<details><summary>⚠️ #nsfw</summary>\n\n正文\n\n![](tg://photo?id=m0)\n\n</details>"
+    blocks = markdown_to_blocks(md, media_blocks={"m0": SpoilerPhotoBlock(object())})
+    details = [b for b in blocks if isinstance(b, InputRichBlockDetails)]
+    assert details, "应该产出 details 块"
+    inner = details[0].blocks
+    assert any(isinstance(b, SpoilerPhotoBlock) for b in inner), (
+        "媒体必须在折叠块内部 (掉到外面就等于没遮)"
+    )
+    assert not [b for b in blocks if isinstance(b, SpoilerPhotoBlock)], "折叠外不该再有媒体"
+
+
+def test_blocks_path_parses_expandable_quotation():
+    from pyrogram.types import InputRichBlockExpandableBlockQuotation
+
+    from plugins.parse.rich_blocks import markdown_to_blocks
+
+    md = "<blockquote expandable><i>引用</i>第一行<br>第二行</blockquote>"
+    blocks = markdown_to_blocks(md)
+    assert len(blocks) == 1
+    assert isinstance(blocks[0], InputRichBlockExpandableBlockQuotation)
+    # 块内 <br> 要变成真换行, 否则内容会挤成一行
+    assert "\n" in str(blocks[0].text)
+
+
 def test_blocks_path_parses_the_time_entity():
     """blocks 的转换器必须认 ``<tg-time>`` —— markdown 路径由服务端解析它,
 
