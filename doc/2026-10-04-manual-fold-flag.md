@@ -1,4 +1,4 @@
-# 手动折叠开关：链接后跟 `/s`
+# 手动折叠开关：链接后跟 `#nsfw` / `#spoiler`
 
 日期：2026-10-04 · 来源：用户提议（`has_spoiler` 讨论引出的更优方案）
 
@@ -9,7 +9,28 @@
 > 「用正文那个折叠功能，标记 ⚠️」
 > 「我是说空格 /s」
 
-**即：`<链接> /s` → 正文折进 `<details>`，摘要 `⚠️`**。
+后来（同日）改标记，并要求摘要跟着变：
+
+> 「把手动折叠的 /s 改成 #nsfw 和 #spoiler，过滤方式不变，然后去掉 叹号emoji后面的文字
+> 换成叹号空格 #nsfw 或者 #spoiler」
+
+**即：`<链接> #nsfw`（或 `#spoiler`）→ 内容折进 `<details>`，摘要 `⚠️ #nsfw` / `⚠️ #spoiler`**。
+
+### 变更：标记与摘要（`/s` → `#nsfw` / `#spoiler`）
+
+| 项 | 之前 | 现在 |
+| --- | --- | --- |
+| 标记 | `/s` | `#nsfw` 与 `#spoiler`（**等价**，语义不同） |
+| 判定 | 独立 token | **不变**（`#nsfwxx`、URL 里的片段都不算） |
+| 摘要 | `⚠️ 展开全文` | `⚠️ <用户写的那个标记>` |
+
+- **解析函数返回标记本身**（不是 bool）—— 摘要要显示是哪个，让读者知道为什么藏。
+- **两个都写时以先出现的为准**（`#nsfw #spoiler` → `#nsfw`），不随缘。
+- **摘要不再走 i18n**：标记是用户输入，不翻译，任何语言下原样显示。
+  原来的「展开全文」是复用自动折叠的按钮文案 —— 那个文字对"为什么被藏"没有信息量。
+- **`#nsfw` 会被 Telegram 自动识别成 hashtag**（真机块里是 `RichTextHashtag`，可点击）。
+  这是客户端行为；要避免就得关掉整条消息的实体检测（`skip_entity_detection`），
+  那会连链接一起关，得不偿失。
 
 ## 为什么不用 spoiler
 
@@ -33,7 +54,8 @@
 | **空格分隔的独立 token** ✓ | URL 本体完全不变；纯链接判定剔掉它即可 |
 
 实测 `url_only_message_urls` 的判定是「按空白切分后每个片段必须本身就是完整链接」，
-所以 `/s` 天然不通过 —— 剔掉后 `<链接> /s` 正常算纯链接（`/soccer`、URL 里的 `/s` 都不误伤）。
+所以标记天然不通过 —— 剔掉后 `<链接> #nsfw` 正常算纯链接
+（`#nsfwxx`、URL 里的 `nsfw` 片段都不误伤）。
 
 ## 遮住的范围：**除了标题与作者，全部进折叠**
 
@@ -56,19 +78,23 @@ details 内含图集     -> RichBlockDetails 内=['Paragraph', 'Collage']  ✓
 于是实现改成：先把 parts 拆成 `meta_parts`（标题/作者）与 `parts`（其余），
 `hide_content` 时把整个 `parts` 拼进一个 `<details>`，再用 `meta_parts` 打头。
 
-## 摘要复用现成词条（不新建翻译）
+## 摘要：从「展开全文」到 `⚠️ <标记>`
 
-第一版新建了「内容已隐藏」并**手动插进 16 个 yaml** —— 用户指出折叠按钮的文字**本来就有**。
+演进过两版：
 
-折叠按钮（`<summary>`）用的就是自动折叠那个词条 `展开全文`（16 语言早已就位），
-所以摘要 = **`⚠️ ` + 现成的折叠文案**：
+1. 第一版新建了「内容已隐藏」并**手动插进 16 个 yaml** —— 用户指出折叠按钮的文字
+   **本来就有**，于是改成复用自动折叠的词条 `展开全文`（16 语言早已就位）。
+2. 用户随后要求**去掉「叹号 emoji 后面的文字」**，换成 `⚠️ #nsfw` / `⚠️ #spoiler`。
 
-```
-zh-hans  ⚠️ 展开全文        en-us  ⚠️ Show full text
-zh-hant  ⚠️ 展開全文        ja-jp  ⚠️ 全文を表示
-```
+现在是**标记本身**：`<details><summary>⚠️ #nsfw</summary>`。
 
-新键已从 16 个 yaml 里清掉。
+- **不走 i18n**：标记是用户输入，不翻译 —— 任何语言下都原样显示。
+- 放弃「展开全文」是因为它对"**为什么**被藏"没有信息量；标记既说明原因，又和用户在
+  消息里写的字面一致。
+- 为此解析函数改为**返回命中的标记**（`str`）而不是 `bool`，一路传到渲染层。
+
+用 `i18n.build` + 守卫 translator 验证过：`Content unchanged, skipping build`
+（无漏翻、无孤儿键）。
 
 **手插翻译还跳过了 `i18n.build` 的自校验** —— 用项目自带的构建入口验证过：
 `Content unchanged, skipping build` + GuardTranslator 零触发（无漏翻、无孤儿键）。
@@ -77,19 +103,20 @@ zh-hant  ⚠️ 展開全文        ja-jp  ⚠️ 全文を表示
 
 ## 实现（5 处）
 
-1. `strip_spoiler_flag(text) -> (text, bool)`（`parsehub/utils/helpers.py`）；
-   `SPOILER_FLAG = "/s"`、`SPOILER_FOLD_SUMMARY = "⚠️"`
-2. `url_only_message_urls` 内先剔标记，否则 `<链接> /s` 不算纯链接
-3. `build_rich_markdown(..., hide_content=True)`：正文整个进 `<details>`，**不留预览**
-   —— 与自动折叠相反（那是为避开长正文，这是用户明确要藏）
+1. `strip_spoiler_flag(text) -> (text, 命中的标记或空串)`（`parsehub/utils/helpers.py`）；
+   `SPOILER_FLAGS = ("#nsfw", "#spoiler")`、`SPOILER_FOLD_SUMMARY = "⚠️"`（兜底）
+2. `url_only_message_urls` 内先剔标记，否则 `<链接> #nsfw` 不算纯链接
+3. `build_rich_markdown(..., hide_content=<标记>)`：内容整个进 `<details>`，**不留预览**
+   —— 与自动折叠相反（那是为避开长正文，这是用户明确要藏）。
+   参数是**标记字符串**（空串=不遮），非空即遮，摘要直接用它
 4. 贯通三个入口 + inline 选中回调：
-   - `ParseRequest.force_spoiler` / `send_rich_media(force_spoiler=)`
-   - `build_inline_results(force_spoiler=)`
-   - `guest._answer(force_spoiler=)`
+   - `ParseRequest.spoiler_tag` / `send_rich_media(spoiler_tag=)`
+   - `build_inline_results(spoiler_tag=)`
+   - `guest._answer(spoiler_tag=)`
    - ⚠️ **`inline_result_download`（选中回调）也要剥** —— 它重新读 `chosen_result.query`，
      不剥的话标记会被拼进 URL
 
-## 坑：缓存命中时 `/s` 曾完全失效
+## 坑：缓存命中时标记曾完全失效
 
 用户报「我 url /s 不行」。日志给了根因：
 
@@ -121,31 +148,34 @@ handle_parse → persistent_cache.get(raw_url) 命中
 | inline | `_call_inline_parse` → `build_cached_rich_result` → 同上 |
 | guest | `_answer` → 同上 |
 
-`force_spoiler` 依次传进 `send_cached` / `build_cached_rich_result` / `build_cached_rich_content`
+`spoiler_tag` 依次传进 `send_cached` / `build_cached_rich_result` / `build_cached_rich_content`
 → `build_rich_markdown_by_str` 的 `hide_content` → `build_rich_markdown`。
 
-另外**请求日志加上 `force_spoiler=`** —— 这次的日志里 url 已被剥掉标记，无法分辨
+另外**请求日志加上 `spoiler_tag=`** —— 这次的日志里 url 已被剥掉标记，无法分辨
 用户到底带没带 `/s`，只能靠时间线推断缓存命中。以后一眼可见。
 
 ## 验证
 
 - bot 309 passed（新增 22 条：标记解析 / 与纯链接判定共存 / 渲染 / 不留预览 /
-  媒体与引用媒体都在折叠内 / 摘要随语言 / 短正文不误折 / **缓存路径渲染与传参**）、
-  lib 435 passed、`check.sh`（ruff + pylint）干净。
+  媒体与引用媒体都在折叠内 / 摘要显示标记 / 摘要不随语言 / 短正文不误折 /
+  **缓存路径渲染与传参**）、lib 444 passed、`check.sh`（ruff + pylint）干净。
 - **真机 · 用真实缓存条目**（用户报障的那条 URL，缓存已命中）走 `send_cached`：
 
 ```
-不带 /s: 折叠=False
-带 /s:   折叠=True  摘要=⚠️  媒体在折叠内=True      ← 修复后才对
+不带标记: 折叠=False
+带标记:   折叠=True  媒体在折叠内=True      ← 修复后才对
 ```
-- **真机服务端块**（全遮）：
+- **真机服务端块**（改标记后的最终形态）：
 
 ```
-块0: RichBlockSectionHeading   标题 (折叠外)
-块1: RichBlockParagraph        作者 (折叠外)
-块2: RichBlockDetails          摘要='⚠️ 展开全文'  收起=True
-     内=['RichBlockParagraph', 'RichBlockParagraph', 'RichBlockPhoto']   ← 正文 + 图
+块0: RichBlockParagraph   作者 (折叠外)
+块1: RichBlockDetails     收起=True
+     摘要节点 = [文字 '⚠️ ' , RichTextHashtag '#nsfw']
+     内 = ['RichBlockParagraph', 'RichBlockParagraph', 'RichBlockPhoto']   ← 正文 + 图
 ```
+
+`#nsfw` / `#spoiler` 被 Telegram 识别成 **`RichTextHashtag`**（用户消息里也是同一种实体），
+折叠本身不受影响。
 
 ## 附带查明的 `has_spoiler` 用法
 
