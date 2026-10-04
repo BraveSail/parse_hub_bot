@@ -36,7 +36,7 @@ async def cfg(cli: Client, msg: Message) -> None:
         return
 
     async with get_session() as session:
-        lang = await UserService(session).get_lang(msg.from_user.id)
+        lang = await UserService(session).ensure_lang(msg.from_user.id, msg.from_user.language_code)
         _t = t_[lang]
 
     channel_ref = msg.command[1] if msg.command and msg.command[1:] else None
@@ -77,7 +77,7 @@ async def cfg_callback(cli: Client, cq: CallbackQuery) -> None:
 
     data = CfgCQData.parse(cq.data)
     async with get_session() as session:
-        lang = await UserService(session).get_lang(cq.from_user.id)
+        lang = await UserService(session).ensure_lang(cq.from_user.id, cq.from_user.language_code)
         _t = t_[lang]
     if data.action == CfgAction.DONE:
         await finish_cfg_panel(cli, cq, _t, data)

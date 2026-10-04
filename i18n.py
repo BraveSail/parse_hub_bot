@@ -29,9 +29,16 @@ LANG_MAP = {
     "id-id": "Bahasa Indonesia",
 }
 
+#: Telegram 上报的用户语言码 (``User.language_code``) -> 本项目 locale。
+#:
+#: Telegram 用的是简写 ISO 639-1 (``ja`` / ``zh``)，本项目用带地区的 BCP-47
+#: (``ja-jp`` / ``zh-hans``)。**繁体必须单列**: Telegram 报 ``zh-hant``，
+#: 它跟 ``zh`` 是两种语言，不能靠 "zh" 前缀套用。
 ISO639_MAP = {
     "": bs.language,
     "zh": "zh-hans",
+    "zh-hans": "zh-hans",
+    "zh-hant": "zh-hant",
     "ja": "ja-jp",
     "en": "en-us",
     "ko": "ko-kr",

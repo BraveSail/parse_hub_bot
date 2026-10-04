@@ -12,7 +12,7 @@ async def start(cli: Client, msg: Message) -> None:
         return
 
     async with get_session() as session:
-        lang = await UserService(session).get_lang(msg.from_user.id)
+        lang = await UserService(session).ensure_lang(msg.from_user.id, msg.from_user.language_code)
 
     await msg.reply(
         build_start_text()[lang],

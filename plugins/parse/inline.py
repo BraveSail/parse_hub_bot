@@ -85,7 +85,9 @@ LINK_ICON_HEIGHT = 72
 @Client.on_inline_query(~platform_filter(False))
 async def inline_parse_tip(_: Client, inline_query: InlineQuery) -> None:
     async with get_session() as session:
-        lang = await UserService(session).get_lang(inline_query.from_user.id)
+        lang = await UserService(session).ensure_lang(
+            inline_query.from_user.id, inline_query.from_user.language_code
+        )
     _t = t_[lang]
     results: list[InlineQueryResult] = [
         InlineQueryResultArticle(
@@ -192,7 +194,9 @@ async def call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
         logger.opt(exception=e).warning(f"内联解析失败: {e}")
         try:
             async with get_session() as session:
-                lang = await UserService(session).get_lang(inline_query.from_user.id)
+                lang = await UserService(session).ensure_lang(
+                    inline_query.from_user.id, inline_query.from_user.language_code
+                )
         except Exception:  # noqa: BLE001 - 兜底路径不再抛错
             lang = ""
         await answer_inline(inline_query, [], lang=lang)
@@ -211,7 +215,9 @@ def build_denied_result(_t: PreLocaleSelector) -> InlineQueryResult:
 
 async def _call_inline_parse(cli: Client, inline_query: InlineQuery) -> None:
     async with get_session() as session:
-        lang = await UserService(session).get_lang(inline_query.from_user.id)
+        lang = await UserService(session).ensure_lang(
+            inline_query.from_user.id, inline_query.from_user.language_code
+        )
         config = await SettingsService(session).get_config_by_user(inline_query.from_user.id)
 
     # 门禁: 群/频道里的 inline 要求发起者与 bot 同在白名单群; 私聊里用户是主动找 bot, 不限制
@@ -285,7 +291,9 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
         return
 
     async with get_session() as session:
-        lang = await UserService(session).get_lang(chosen_result.from_user.id)
+        lang = await UserService(session).ensure_lang(
+            chosen_result.from_user.id, chosen_result.from_user.language_code
+        )
         config = await SettingsService(session).get_config_by_user(chosen_result.from_user.id)
         _t = t_[lang]
 

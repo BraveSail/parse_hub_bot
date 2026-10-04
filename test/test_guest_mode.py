@@ -11,12 +11,12 @@ from unittest.mock import AsyncMock, patch
 from plugins.parse import guest as guest_mod
 
 
-def _msg(text=None, caption=None, user_id=1879026273, guest_query_id="q1"):
+def _msg(text=None, caption=None, user_id=1879026273, guest_query_id="q1", language_code="ja"):
     return SimpleNamespace(
         text=text,
         caption=caption,
         guest_query_id=guest_query_id,
-        from_user=SimpleNamespace(id=user_id) if user_id else None,
+        from_user=SimpleNamespace(id=user_id, language_code=language_code) if user_id else None,
         chat=SimpleNamespace(id=-1001234567890),
     )
 
@@ -36,7 +36,11 @@ def _run(msg, allowed=True, locale="zh-hans") -> tuple[AsyncMock, AsyncMock]:
         patch.object(guest_mod.access_gate, "is_allowed", AsyncMock(return_value=allowed)),
         patch.object(guest_mod, "_answer", answer),
         patch.object(guest_mod, "get_session", fake_session),
-        patch.object(guest_mod, "UserService", return_value=SimpleNamespace(get_lang=AsyncMock(return_value=locale))),
+        patch.object(
+            guest_mod,
+            "UserService",
+            return_value=SimpleNamespace(ensure_lang=AsyncMock(return_value=locale)),
+        ),
     ):
         asyncio.run(guest_mod.guest_parse(cli, msg))
     return answer, direct

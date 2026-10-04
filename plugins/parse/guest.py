@@ -157,7 +157,11 @@ async def guest_parse(cli: Client, msg: Message) -> None:
         return
 
     async with get_session() as session:
-        locale = await UserService(session).get_lang(user_id) if user_id else ""
+        locale = (
+            await UserService(session).ensure_lang(user_id, msg.from_user.language_code if msg.from_user else None)
+            if user_id
+            else ""
+        )
     _t = t_[locale]
 
     if not await access_gate.is_allowed(cli, user_id):

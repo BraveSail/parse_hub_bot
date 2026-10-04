@@ -57,7 +57,7 @@ async def parse(cli: Client, msg: Message) -> None:
 
     async with get_session() as session:
         if msg.from_user:
-            lang = await UserService(session).get_lang(msg.from_user.id)
+            lang = await UserService(session).ensure_lang(msg.from_user.id, msg.from_user.language_code)
         config = await SettingsService(session).get_config(get_config_target(msg))
         mode = config.default_mode
 
@@ -140,7 +140,7 @@ async def parse_url(cli: Client, msg: Message, url: str) -> None:
     """
     async with get_session() as session:
         if msg.from_user:
-            lang = await UserService(session).get_lang(msg.from_user.id)
+            lang = await UserService(session).ensure_lang(msg.from_user.id, msg.from_user.language_code)
         else:
             lang = bs.language
         config = await SettingsService(session).get_config(get_config_target(msg))
