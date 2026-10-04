@@ -161,11 +161,20 @@ def test_build_rich_markdown_does_not_truncate_a_very_long_body():
     assert "长" * 1500 in md
 
 
-def test_caption_path_still_truncates():
-    """对照: 旧 caption 路径受 Telegram 1024 上限约束, 该截还得截"""
+def test_format_text_does_not_truncate_by_default():
+    """默认**不截断**: 忘了传 max_length 时行为是安全的 (完整渲染), 不是静默砍内容"""
     from plugins.helpers import format_text
 
     out = format_text("x" * 1200)
+    assert "......" not in out
+    assert "x" * 1200 in out
+
+
+def test_caption_path_truncates_only_when_asked():
+    """发文件的路径 (send_raw/send_zip) 显式传上限 —— Telegram 媒体 caption 上限 1024"""
+    from plugins.helpers import format_text
+
+    out = format_text("x" * 1200, max_length=1000)
     assert "......" in out
     assert len(out) < 1000
 
@@ -195,7 +204,8 @@ def test_build_rich_markdown_keeps_a_short_body_plain():
 
 
 def test_truncation_happens_before_html_conversion():
-    out = format_text("> " + "z" * 1500)
+    """要求截断时, 截断发生在 HTML 转换之前 —— 否则会切断 blockquote 闭合标签"""
+    out = format_text("> " + "z" * 1500, max_length=1000)
     assert out.endswith("......</blockquote>")
     assert out.count("<blockquote") == 1
 

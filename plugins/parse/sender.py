@@ -56,6 +56,12 @@ from services.media import ProcessedMedia, resolve_media_info
 from utils.helpers import pack_dir_to_tar_gz, to_list
 
 logger = logger.bind(name="ParseSender")
+
+#: Telegram 媒体 caption 上限 1024, 留余量给元数据行。
+#: 只有**以媒体 caption 发送**的路径需要: send_raw / send_zip。
+#: 富文本正文没有这个限制, 靠折叠收起 (见 helpers.format_text)。
+_CAPTION_MAX_LENGTH = 1000
+
 MAX_RETRIES = 5
 GIF_ONLY_SKIP_DOWNLOAD_COUNT_THRESHOLD = 5
 
@@ -359,6 +365,8 @@ async def send_raw(
             custom_content=custom_content,
             lang=_t.locale,
             view_label=_t("查看"),
+            # 原始文件以媒体 caption 形式发送, Telegram 上限 1024
+            max_length=_CAPTION_MAX_LENGTH,
         )
         docs: list[InputMediaDocument] = []
         gifs = []
@@ -433,6 +441,8 @@ async def send_zip(
             custom_content=custom_content,
             lang=_t.locale,
             view_label=_t("查看"),
+            # 打包成一条消息时带 caption, Telegram 上限 1024, 必须留余量
+            max_length=_CAPTION_MAX_LENGTH,
         )
         if result.output_dir is None:
             raise ValueError("缺少打包目录")

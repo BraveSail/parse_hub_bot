@@ -60,6 +60,7 @@ def build_caption(
     allow_expandable: bool = True,
     lang: str = "",
     view_label: str = "",
+    max_length: int | None = None,
 ) -> str:
     return build_caption_by_str(
         parse_result.title,
@@ -86,6 +87,7 @@ def build_caption(
             view_label=view_label,
             like_label=t_("点赞") if view_label else "",
         ),
+        max_length=max_length,
     )
 
 
@@ -152,6 +154,7 @@ def build_caption_by_str(
     allow_blockquote: bool = True,
     allow_expandable: bool = True,
     metadata_line: str = "",
+    max_length: int | None = None,
 ) -> str:
     """构建消息正文：标题 + 内容 + 统计行 + 来源链接"""
     title, content = title or "", content or ""
@@ -168,6 +171,7 @@ def build_caption_by_str(
             ("\n\n".join(parts)).strip(),
             allow_blockquote=allow_blockquote,
             allow_expandable=allow_expandable,
+            max_length=max_length,
         )
 
     if author_name:
@@ -232,9 +236,9 @@ def build_rich_markdown(
             media_placeholders = [*media_placeholders, *reply_media]
         reply_media = []
     if body_text and not config.hide_desc:
-        # 正文只折叠、不截断: 富文本没有 caption 的 1024 限制, 截断会把长正文
-        # 变成省略号, 折叠也就轮不上了
-        parts.append(format_text(body_text, max_length=None))
+        # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
+        # 截断会把长正文变成省略号, 折叠也就轮不上了
+        parts.append(format_text(body_text))
     if custom_content:
         parts.append(custom_content)
 
@@ -702,16 +706,18 @@ def format_text(
     *,
     allow_blockquote: bool = True,
     allow_expandable: bool = True,
-    max_length: int | None = 1000,
+    max_length: int | None = None,
 ) -> str:
-    """格式化输出内容, 限制长度, 添加折叠块样式。
+    """格式化输出内容, 按需限制长度, 添加折叠块样式。
 
     折叠规则统一: 引用块与正文各段共用同一阈值 (字符数或行数任一超出即折叠),
     且各段独立折叠、互不外包 (Telegram 不支持嵌套 blockquote)。
 
     :param max_length: 超过就截断 (在 markdown 阶段截, 避免切断后面生成的 blockquote 标签)。
-        默认 1000 是给**旧 caption 路径**用的 (Telegram caption 上限 1024);
-        **富文本路径没有这个限制, 应传 None** —— 否则长正文会被截成省略号, 轮不到折叠。
+        **默认不截断** —— 让"忘了传"时的行为是安全的 (完整渲染), 而不是静默砍掉内容。
+        只有**发文件**的路径需要传 (Telegram 的媒体 caption 上限 1024):
+        ``send_raw`` / ``send_zip`` / GIF 过多时的纯文字提示。
+        富文本正文没有这个限制, 不传即可 (超长靠折叠收起)。
     """
     text = text.strip()
     if max_length is not None and len(text) > max_length:
