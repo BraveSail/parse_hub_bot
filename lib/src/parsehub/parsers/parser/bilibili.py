@@ -43,34 +43,64 @@ class BiliParse(BaseParser):
         return refs
 
     @staticmethod
-    def _strip_forward_comment(content: str) -> str:
-        """去掉转发格式里 ``//@原作者:原文`` 那段。
+    def _split_forward_comment(content: str) -> tuple[str, str]:
+        """把转发动态的正文拆成 (转发者自己的评论, ``//@`` 段里的原文)。
 
-        转发动态的正文是「转发者的话 + ``//@原作者:被转发的原文``」; 原文会由引用块
-        重新渲染 (还带原作者署名), 留在正文里就是重复。
+        转发格式是「转发者的话 + ``//@原作者:被转发的原文``」。后者是**被转发动态的
+        正文**, 和引用块里来自 ``orig`` 的东西**不是一回事** —— ``orig`` 是视频时给的是
+        视频标题/简介, 这段文字不见于其中 (实测: 丢的是「10月新番《脑洞学生会！》第1话
+        已更新！」，而引用块里只有视频标题)。所以不能直接丢, 交给引用块一起渲染。
         """
         if not content:
-            return content
-        # 取第一个 //@ 之前的作为转发者自己的评论 (多层转发时同样只留最外层评论)
-        stripped = re.split(r"\s*\u200b?\s*//@", content, maxsplit=1)[0]
-        return stripped.strip()
+            return content, ""
+        # 第一个 //@ 之前是转发者自己的评论 (多层转发时同样只留最外层)
+        parts = re.split(r"\s*\u200b?\s*//@", content, maxsplit=1)
+        comment = parts[0].strip()
+        if len(parts) == 1:
+            return comment, ""
+        rest = parts[1]
+        # 去掉 "原作者:" 前缀, 只留原文
+        for sep in (":", "："):
+            if sep in rest:
+                rest = rest.split(sep, 1)[1]
+                break
+        return comment, rest.strip()
+
+    @staticmethod
+    def _forward_text_is_covered(extra: str, forward: BiliDynamic) -> bool:
+        """``//@`` 段的原文是否已被引用块内容覆盖 (覆盖了就别重复渲染)。"""
+        normalize = lambda s: re.sub(r"[\s#《》「」【】:：!！?？。，,.·\u200b]", "", s or "")  # noqa: E731
+        target = normalize(extra)
+        if not target:
+            return True
+        return target in normalize(f"{forward.title or ''}{forward.content or ''}")
 
     @classmethod
-    def _render_forward(cls, forward: BiliDynamic) -> str:
+    def _render_forward(cls, forward: BiliDynamic, extra_text: str = "") -> str:
         """把被转发的原动态渲染成引用块 (作者带主页链接, 内容取标题或正文)。
 
         **被转发的是视频时, 标题链到视频页** —— 引用块里只有封面图, 没有视频本身,
         标题不可点就等于看得到标题、进不去视频 (用户明确要求)。
+
+        :param extra_text: 主动态 ``//@`` 段里的**原动态正文**。``orig`` 是视频时它带的是
+            视频标题/简介, 这段文字不见于其中 —— 丢掉就是内容丢失 (用户报「为什么丢了
+            //@…这些内容」), 所以并进引用块; 与已有内容重复时跳过。
         """
         raw_title = (forward.title or "").strip()
         title = raw_title
         if raw_title and (url := forward.video_url):
             title = f'<a href="{url}">{raw_title}</a>'
         text = (forward.content or "").strip()
-        if title and text and text != raw_title:
-            body = f"{title}\n{text}"
-        else:
-            body = title or text
+
+        lines: list[str] = []
+        if extra_text and not cls._forward_text_is_covered(extra_text, forward):
+            lines.append(extra_text)          # 原动态正文在前, 视频信息在后
+        if title:
+            lines.append(title)
+        if text and text != raw_title:
+            lines.append(text)
+        body = "\n".join(lines)
+
         if not body and not forward.images:
             return ""
         author = format_author_link(
@@ -90,8 +120,10 @@ class BiliParse(BaseParser):
             # 转发动态: 被转发的原动态渲染成引用块 (文字 + 它自己的媒体)
             quoted_media_count = 0
             if forward := dynamic.forward:
-                content = BiliParse._strip_forward_comment(content)
-                if quote := BiliParse._render_forward(forward):
+                content, forward_text = BiliParse._split_forward_comment(content)
+                if forward_text:
+                    forward_text = BiliParse.hashtag_handler(forward_text)
+                if quote := BiliParse._render_forward(forward, extra_text=forward_text):
                     content = f"{content}\n\n{quote}" if content else quote
                 forward_refs = BiliParse._to_refs(forward.images)
                 quoted_media_count = len(forward_refs)

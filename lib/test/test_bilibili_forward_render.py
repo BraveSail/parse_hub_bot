@@ -13,28 +13,37 @@ def _dyn(**kw) -> BiliDynamic:
 
 # ── 剥掉 //@ 注释 ──────────────────────────────────────────────────────
 
-def test_strip_forward_comment_keeps_the_forwarder_text():
+def test_split_forward_comment_returns_both_halves():
+    """拆成 (转发者的话, //@ 段原文) —— **原文不能丢**。
+
+    原文是被转发动态的正文, 而引用块里来自 orig 的是视频标题/简介, 两者不是一回事
+    (用户报「为什么丢了 //@夏日幻听MCE:10月新番《脑洞学生会！》第1话 已更新！」)。
+    """
     content = "片头曲为X演唱的《Y》。 \n\u200b//@夏日幻听MCE:10月新番《脑洞学生会！》第1话 已更新！"
-    assert BiliParse._strip_forward_comment(content) == "片头曲为X演唱的《Y》。"
+    comment, original = BiliParse._split_forward_comment(content)
+    assert comment == "片头曲为X演唱的《Y》。"
+    assert original == "10月新番《脑洞学生会！》第1话 已更新！"      # 作者名前缀已剥掉
+    assert "@" not in original
 
 
-def test_strip_forward_comment_without_comment():
-    assert BiliParse._strip_forward_comment("就是一条普通动态") == "就是一条普通动态"
+def test_split_forward_comment_without_comment():
+    assert BiliParse._split_forward_comment("就是一条普通动态") == ("就是一条普通动态", "")
 
 
-def test_strip_forward_comment_keeps_only_the_outermost():
-    """多层转发时只留最外层转发者的话"""
-    content = "外层评论 //@A:中间 //@B:最内层"
-    assert BiliParse._strip_forward_comment(content) == "外层评论"
+def test_split_forward_comment_keeps_only_the_outermost():
+    """多层转发时只取最外层"""
+    comment, original = BiliParse._split_forward_comment("外层评论 //@A:中间 //@B:最内层")
+    assert comment == "外层评论"
+    assert original == "中间 //@B:最内层"
 
 
-def test_strip_forward_comment_handles_leading_marker():
-    """转发者没写评论时正文就是 //@... , 剥完应为空"""
-    assert BiliParse._strip_forward_comment("//@某人:原文内容") == ""
+def test_split_forward_comment_handles_leading_marker():
+    """转发者没写评论时, 评论为空但原文仍在"""
+    assert BiliParse._split_forward_comment("//@某人:原文内容") == ("", "原文内容")
 
 
-def test_strip_forward_comment_empty():
-    assert BiliParse._strip_forward_comment("") == ""
+def test_split_forward_comment_empty():
+    assert BiliParse._split_forward_comment("") == ("", "")
 
 
 # ── 引用块渲染 ──────────────────────────────────────────────────────────
@@ -76,6 +85,35 @@ def test_render_forward_links_the_video_title():
     # 简介跟在后一行, 不带链接 (每行各自被 <i> 包住)
     assert "> <i>「脑洞学生会！」第1话</i>" in quote
     assert '<a href="https://www.bilibili.com/video/BV1UqHi6uEie">「脑洞学生会！」第1话</a>' not in quote
+
+
+def test_render_forward_includes_the_original_text():
+    """//@ 段的原文要进引用块 —— orig 是视频时它不在 title/简介里, 丢了就是丢内容"""
+    forward = _dyn(
+        author_name="夏日幻听MCE",
+        author_mid=224267770,
+        title="「脑洞学生会！」第1话【中文字幕】",
+        content="「脑洞学生会！」第1话",
+        bvid="BV1UqHi6uEie",
+    )
+    quote = BiliParse._render_forward(forward, extra_text="10月新番《脑洞学生会！》第1话 已更新！")
+    assert "10月新番《脑洞学生会！》第1话 已更新！" in quote
+    # 原文在视频信息之前
+    assert quote.index("10月新番") < quote.index("【中文字幕】")
+
+
+def test_render_forward_skips_duplicate_original_text():
+    """原文已包含在引用块内容里时不要重复渲染"""
+    forward = _dyn(author_name="A", content="转发了一条视频")
+    quote = BiliParse._render_forward(forward, extra_text="转发了一条视频")
+    assert quote.count("转发了一条视频") == 1
+
+
+def test_render_forward_original_text_survives_normalisation_differences():
+    """归一化后相同 (空白/标点/话题符号差异) 也算重复"""
+    forward = _dyn(author_name="A", content="#脑洞学生会# 第1话已更新")
+    quote = BiliParse._render_forward(forward, extra_text="脑洞学生会 第1话已更新")
+    assert quote.count("第1话已更新") == 1
 
 
 def test_render_forward_without_bvid_keeps_the_title_plain():
