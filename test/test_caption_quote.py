@@ -207,15 +207,40 @@ def test_short_quote_block_is_not_folded():
     assert out.startswith("> ")
 
 
-def test_quote_media_stays_inside_the_folded_block():
-    """引用块的媒体占位符要跟着一起折进 expandable 里 (不能掉到块外)"""
-    from plugins.helpers import attach_quote_media, fold_quote_block
+def test_media_goes_inside_a_short_quote():
+    """不折叠的引用块: 媒体留在块内 (普通 blockquote 里 ![]() 能正常出图)"""
+    from plugins.helpers import render_quote_card
+
+    quote = "> <i>作者：</i>\n> <i>短内容</i>"
+    parts = render_quote_card(quote, ["![](tg://photo?id=m0)"], summary="展开全文")
+    assert len(parts) == 1
+    assert "> ![](tg://photo?id=m0)" in parts[0]        # 在引用块内 (带 > 前缀)
+    assert "<blockquote expandable>" not in parts[0]
+
+
+def test_media_moves_outside_a_folded_quote():
+    """**折叠**的引用块: 媒体必须放块外。
+
+    实测折叠块内 `![]()` 不解析 (原样显示成 `![]()` 加一个链接 = 图片格式坏掉);
+    块内改用 `<img>` 能出图但会把块退化成不可折叠的普通引用块。
+    """
+    from plugins.helpers import render_quote_card
 
     quote = "\n".join(["> <i>作者：</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
-    with_media = attach_quote_media(quote, ["![](tg://photo?id=m0)"])
-    out = fold_quote_block(with_media, summary="展开全文")
-    assert "![](tg://photo?id=m0)" in out
-    assert out.index("![](tg://photo?id=m0)") < out.rindex("</blockquote>")   # 在折叠块内
+    parts = render_quote_card(quote, ["![](tg://photo?id=m0)"], summary="展开全文")
+    assert len(parts) == 2
+    folded, media_part = parts
+    assert folded.startswith("<blockquote expandable>")     # 文字折起来
+    assert "![](tg://" not in folded                        # 折叠块内没有媒体占位符
+    assert media_part == "![](tg://photo?id=m0)"            # 媒体独立成段 (块外)
+    assert not media_part.startswith(">")
+
+
+def test_no_media_means_a_single_part():
+    from plugins.helpers import render_quote_card
+
+    quote = "\n".join(["> <i>作者：</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
+    assert len(render_quote_card(quote, [], summary="展开全文")) == 1
 
 
 def test_build_rich_markdown_folds_a_long_reply_block():

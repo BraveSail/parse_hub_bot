@@ -231,7 +231,7 @@ def build_rich_markdown(
     reply_media = list(reply_media_placeholders)
     if reply_quote and not config.hide_desc:
         # 被回复的卡片也要能折叠: 以前直接拼进 parts, 1294 字的回复块整屏铺开
-        parts.append(fold_quote_block(attach_quote_media(reply_quote, reply_media), summary=fold_summary))
+        parts.extend(render_quote_card(reply_quote, reply_media, summary=fold_summary))
         reply_media = []  # 已安置
     elif not reply_quote:
         # 没有独立的回复块 (例如正文为空): 媒体不能丢, 兜到末尾引用块或正文媒体里
@@ -255,8 +255,7 @@ def build_rich_markdown(
 
     if quote and not config.hide_desc:
         # 被引用/被回复的卡片: 主推自己的媒体要排在它上面 (与 X 上的观感一致)
-        # 引用内容自己的媒体放进引用块内部 (每行都要 > 前缀, 否则会被踢出引用块)
-        parts.append(fold_quote_block(attach_quote_media(quote, quote_media_placeholders), summary=fold_summary))
+        parts.extend(render_quote_card(quote, quote_media_placeholders, summary=fold_summary))
 
     body = "\n\n".join(part for part in parts if part)
 
@@ -481,23 +480,52 @@ def attach_quote_media(quote: str, placeholders: Sequence[str]) -> str:
     return "\n".join([quote, *lines])
 
 
+def _quote_body(quote: str) -> str:
+    """引用块去掉每行行首的 '> ' 后的正文。"""
+    lines = quote.rstrip("\n").split("\n")
+    return "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
+
+
+def quote_will_fold(quote: str) -> bool:
+    """引用块会不会被折叠 (调用方据此决定媒体放块内还是块外)。"""
+    return bool(quote) and _should_fold(_quote_body(quote))
+
+
 def fold_quote_block(quote: str, *, summary: str = "") -> str:
     """把过长的引用块折起来。
 
     引用块的老折叠形态是**整体一个 `<blockquote expandable>`**（客户端自己
     显示开头几行），不像正文那样用 ``<details>`` 切成「预览 / 按钮 / 折起部分」
     三段 —— 用户明确反馈后者「引用块被按钮分割, 割裂感太强了」。
-
-    **这里只剥 ``>`` 前缀, 不做 markdown 中和** (区别于 ``convert_markdown_quote``):
-    引用块内容本身就是 ``*斜体*`` 和 ``<a href>``, 中和会把斜体变成字面实体。
     """
     if not quote:
         return quote
-    lines = quote.rstrip("\n").split("\n")
-    body = "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
+    body = _quote_body(quote)
     if not _should_fold(body):
         return quote
     return render_expandable_quote(body)
+
+
+def render_quote_card(quote: str, media: Sequence[str] = (), *, summary: str = "") -> list[str]:
+    """渲染一张引用卡片（含它自己的媒体），返回若干段。
+
+    **媒体的位置取决于折没折叠**（真机实测）：
+    - 折叠块（``<blockquote expandable>``）内 ``![]()`` 图片语法**不解析**，
+      会原样显示成 ``![]()`` 加一个链接（图片格式坏掉）；块内改用 ``<img>``
+      虽然能出图，却会把块**退化成不可折叠**的普通引用块。
+    - 普通 ``<blockquote>`` 内 ``![]()`` **正常出图**。
+
+    ⇒ 会折叠时把媒体放到块**外**（文字折起来、图片在下面正常显示）；
+    不折叠时留在块**内**（语义上属于引用内容）。
+    """
+    if not quote:
+        return []
+    if media and not quote_will_fold(quote):
+        return [attach_quote_media(quote, media)]
+    parts = [fold_quote_block(quote, summary=summary)]
+    if media:
+        parts.extend(wrap_collage(media))
+    return parts
 
 
 def wrap_collage(placeholders: Sequence[str]) -> list[str]:
