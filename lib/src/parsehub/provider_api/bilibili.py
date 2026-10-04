@@ -223,6 +223,10 @@ class DynamicType(Enum):
         return cls.UNKNOWN
 
 
+#: 正文里的转发格式: ``//@原作者:被转发的原文`` (可能夹零宽字符)
+_FORWARD_COMMENT_RE = re.compile(r"\s*\u200b?\s*//\s*@(?P<author>[^:：\n]+)[:：](?P<body>.+)", re.S)
+
+
 class MajorType(Enum):
     """动态主体类型"""
 
@@ -266,6 +270,10 @@ class BiliDynamic:
     #: 转发的原动态 (``item["orig"]``); 不是转发时为 None。递归结构, 支持嵌套转发。
     forward: "BiliDynamic | None" = None
 
+    def has_content(self) -> bool:
+        """是否拿到了可展示的内容 (标题/正文/媒体任一)。"""
+        return bool((self.title or "").strip() or (self.content or "").strip() or self.images)
+
     @classmethod
     def parse(cls, data: dict) -> Self:
         return cls._from_item(data["item"])
@@ -289,12 +297,29 @@ class BiliDynamic:
         stat = (modules.get("module_stat") or {}).get("like") or {}
         result.like_count = to_int(stat.get("count"))
 
+        result.forward = cls._resolve_forward(item, module_dynamic)
+        return result
+
+    @classmethod
+    def _resolve_forward(cls, item: dict, module_dynamic: dict) -> "BiliDynamic | None":
+        """确定被转发的原动态。
+
+        两条来源, 优先前者:
+        1. ``item["orig"]`` —— 正常转发;
+        2. 正文里的 ``//@原作者:原文`` —— **原动态被删/接口降级**时 ``orig`` 是空壳
+           (desc 空、major 是 MAJOR_TYPE_NONE、author.mid=0), 但 B 站客户端仍靠正文这段
+           显示引用卡片, 我们也照做, 否则用户看到的就是「引用没了」。
+        """
         if orig := item.get("orig"):
             try:
-                result.forward = cls._from_item(orig)
+                candidate = cls._from_item(orig)
             except Exception as e:  # 原动态结构不认识时不能拖垮主动态
-                logger.debug(f"被转发的动态解析失败, 忽略: {type(e).__name__}: {e}")
-        return result
+                logger.warning(f"被转发的动态解析失败, 回退正文的 //@ 段: {type(e).__name__}: {e}")
+            else:
+                if candidate.has_content():
+                    return candidate
+                logger.debug("被转发的动态是空壳 (原动态可能已删), 回退正文的 //@ 段")
+        return cls._from_forward_comment(module_dynamic)
 
     @classmethod
     def _parse_major(cls, module_dynamic: dict, major: dict) -> Self:
@@ -313,8 +338,47 @@ class BiliDynamic:
         }
         major_parser = major_parsers.get(MajorType(major_type), None)
         if not major_parser:
-            raise ValueError(f"Unknown major type: {major_type}")
+            # 不抛异常: 接口会返回 MAJOR_TYPE_NONE (原动态被删/降级), 抛出去会让
+            # 调用方**整个放弃**这条内容 —— 转发场景下就是引用块凭空消失。
+            # 退回按 desc 文本解析, 至少保住文字。
+            logger.debug(f"未知的 major 类型, 按纯文本处理: {major_type}")
+            return cls._parse_forward(module_dynamic)
         return major_parser(module_dynamic, major)
+
+    @classmethod
+    def _from_forward_comment(cls, module_dynamic: dict) -> "BiliDynamic | None":
+        """从正文的 ``//@原作者:被转发的原文`` 段还原被转发的动态。
+
+        这是 B 站的原生转发格式, 客户端就是靠它渲染引用卡片。节点里紧随 ``//``
+        之后的 ``RICH_TEXT_NODE_TYPE_AT`` 带 ``rid`` (= 对方 mid), 有了它作者名
+        才能链到主页。
+        """
+        desc = module_dynamic.get("desc") or {}
+        text = str(desc.get("text") or "")
+        match = _FORWARD_COMMENT_RE.search(text)
+        if not match:
+            return None
+        author = match.group("author").strip()
+        body = match.group("body").strip()
+        if not author and not body:
+            return None
+        return cls(
+            content=body,
+            author_name=author,
+            author_mid=cls._forward_comment_mid(desc.get("rich_text_nodes") or []),
+        )
+
+    @staticmethod
+    def _forward_comment_mid(nodes: list[dict]) -> int | str | None:
+        """取 ``//@`` 里那个 AT 节点的 rid (被转发者的 mid)。"""
+        for i, node in enumerate(nodes):
+            if "//" not in str(node.get("text") or ""):
+                continue
+            for later in nodes[i + 1 :]:
+                if later.get("type") == "RICH_TEXT_NODE_TYPE_AT":
+                    return to_int(later.get("rid"))
+            return None
+        return None
 
     @classmethod
     def _parse_pgc_union(cls, _: dict, major: dict) -> Self:

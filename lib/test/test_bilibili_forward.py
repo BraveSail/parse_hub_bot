@@ -124,3 +124,81 @@ def test_broken_forward_does_not_break_the_main_dynamic():
     d = BiliDynamic.parse({"item": _item({"desc": {"text": "转发"}, "major": None}, orig=broken)})
     assert d.content == "转发"
     assert d.forward is None
+
+
+# ── orig 空壳 -> 回退正文的 //@ 段 ─────────────────────────────────────
+#
+# 原动态被删/不可见时, 接口返回的 orig 是**空壳** (desc 空、major 是
+# MAJOR_TYPE_NONE、author.mid=0)。以前这种情况会抛 "Unknown major type" 并被
+# 静默吞掉, 引用块直接消失 (用户报「又没有引用了」)。B 站客户端此时靠正文里的
+# `//@原作者:原文` 显示引用卡片, 我们也照做。
+
+
+def _shell_orig():
+    """真实抓包的空壳 orig 形状。"""
+    return {
+        "id_str": "0",
+        "type": "DYNAMIC_TYPE_NONE",
+        "visible": False,
+        "modules": {
+            "module_author": {"name": "", "mid": 0, "pub_ts": 0},
+            "module_dynamic": {
+                "desc": {"text": "", "rich_text_nodes": []},
+                "major": {"type": "MAJOR_TYPE_NONE", "none": {}},
+                "additional": None,
+                "topic": None,
+            },
+            "module_stat": {},
+        },
+    }
+
+
+def _forward_desc():
+    """主动态正文: 转发评论 + ``//@原作者:原文`` (真实形状)。"""
+    return {
+        "text": "片头曲为#三月的Phantasia#演唱的。 \n\u200b//@夏日幻听MCE:10月新番《#脑洞学生会！#》第1话 已更新！",
+        "rich_text_nodes": [
+            {"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": "片头曲为#三月的Phantasia#演唱的。 \n\u200b//"},
+            {"type": "RICH_TEXT_NODE_TYPE_AT", "text": "@夏日幻听MCE", "rid": "224267770"},
+            {"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": ":10月新番《"},
+            {"type": "RICH_TEXT_NODE_TYPE_TOPIC", "text": "#脑洞学生会！#"},
+            {"type": "RICH_TEXT_NODE_TYPE_TEXT", "text": "》第1话 已更新！"},
+        ],
+    }
+
+
+def test_shell_forward_falls_back_to_the_forward_comment():
+    item = _item(
+        {"desc": _forward_desc(), "major": None}, stat=439, item_type="DYNAMIC_TYPE_FORWARD", orig=_shell_orig()
+    )
+    d = BiliDynamic.parse({"item": item})
+
+    assert d.forward is not None
+    assert d.forward.author_name == "夏日幻听MCE"
+    assert d.forward.author_mid == 224267770          # AT 节点的 rid, 引用块作者才能链主页
+    assert "第1话 已更新" in d.forward.content
+    assert "//@" not in d.forward.content             # 只留原文, 不带转发标记
+    assert d.like_count == 439                        # 主动态字段不受影响
+
+
+def test_missing_orig_also_falls_back():
+    """接口连 orig 都不给时, 同样从正文还原"""
+    d = BiliDynamic.parse(
+        {"item": _item({"desc": _forward_desc(), "major": None}, item_type="DYNAMIC_TYPE_FORWARD")}
+    )
+    assert d.forward is not None
+    assert d.forward.author_mid == 224267770
+
+
+def test_no_forward_comment_means_no_forward():
+    """既没有可用的 orig, 正文里也没有 //@ -> 确实没有转发"""
+    d = BiliDynamic.parse({"item": _item({"desc": {"text": "普通动态"}, "major": None}, orig=_shell_orig())})
+    assert d.forward is None
+
+
+def test_unknown_major_type_degrades_instead_of_raising():
+    """未知 major 类型 (含 MAJOR_TYPE_NONE) 不抛异常, 退回按 desc 文本解析"""
+    orig = _item({"desc": {"text": "文字还在"}, "major": {"type": "MAJOR_TYPE_NONE", "none": {}}})
+    d = BiliDynamic.parse({"item": _item({"desc": {"text": "转发"}, "major": None}, orig=orig)})
+    assert d.forward is not None
+    assert d.forward.content == "文字还在"
