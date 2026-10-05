@@ -5,7 +5,7 @@ import re
 from collections.abc import Coroutine, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from pydantic import SecretStr
 from urlextract import URLExtract
@@ -92,6 +92,22 @@ def profile_url(platform: Platform | None, handle: str = "", user_id: str = "") 
     return template.format(**values)
 
 
+def profile_id_from_url(url: str) -> str:
+    """从主页 URL 里取用户标识。
+
+    给**只有 ID、没有 @用户名**的平台用 (B 站 ``space.bilibili.com/<mid>``、
+    抖音 ``/user/<sec_uid>``、pixiv ``/users/<id>``) —— 那种平台的标识就在 URL 末段。
+
+    用户要求 (原话「像B站这种id形式没有用户名的，换成 @uid」): 没有用户名时不要让
+    ``@`` 那一段整个消失, 拿 ID 顶上。URL 没有可用段时返回空串。
+    """
+    try:
+        path = urlparse(url or "").path.strip("/")
+    except ValueError:  # 畸形 URL: 不该让作者行整行失败
+        return ""
+    return path.rsplit("/", 1)[-1] if path else ""
+
+
 def format_author_link(name: str, handle: str = "", url: str = "") -> str:
     """作者标签: **显示名做成超链接**, ``@用户名`` 作为**等宽下角标**。
 
@@ -119,13 +135,15 @@ def format_author_link(name: str, handle: str = "", url: str = "") -> str:
     if not url:
         return format_author_label(name, handle)
     href = html.escape(url, quote=True)
-    # 名字与 @handle 是两个不同的东西: 名字可点, @handle 附在后面的等宽下角标
-    if display and clean and display.casefold() != clean.casefold():
-        handle_markup = f"<sub><code>@{html.escape(clean)}</code></sub>"
+    # 标识: 优先真实用户名; 没有就取主页 URL 末段当 ID (B 站 mid / 抖音 sec_uid / pixiv id)
+    tag = clean or profile_id_from_url(url)
+    # 名字与标识是两个不同的东西: 名字可点, 标识附在后面的等宽下角标
+    if display and tag and display.casefold() != tag.casefold():
+        handle_markup = f"<sub><code>@{html.escape(tag)}</code></sub>"
         return f'<a href="{href}">{html.escape(display)}</a> {handle_markup}'
     # 只有一边 (或两边相同): 就一个, 做成链接。
-    # 相同的情况沿用既有约定 —— 显示 ``@handle`` 形态 (不因为这次改动改语义)
-    text = f"@{clean}" if clean else display
+    # 相同的情况沿用既有约定 —— 显示 ``@标识`` 形态 (不因为这次改动改语义)
+    text = f"@{tag}" if tag else display
     return f'<a href="{href}">{html.escape(text)}</a>' if text else ""
 
 

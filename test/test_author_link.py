@@ -25,10 +25,22 @@ def test_name_is_the_link_and_handle_is_a_subscript():
     assert out == '<a href="https://x.com/yanwuyan">言吾言_</a> <sub><code>@yanwuyan</code></sub>'
 
 
-def test_name_is_the_link_when_there_is_no_handle():
-    """B 站这类只有主页 ID 的平台: 链接要挂在显示名上, 否则整行不可点"""
+def test_a_platform_without_a_username_falls_back_to_its_id():
+    """B 站这类只有 ID、没有 @用户名 的平台: 拿主页 URL 末段当 ``@标识``。
+
+    用户要求 (原话「像B站这种id形式没有用户名的，换成 @uid」) ——
+    没有用户名时不能让标识整个消失。链接仍挂在显示名上。
+    """
     out = format_author_link("言吾言_", "", "https://space.bilibili.com/12345")
-    assert out == '<a href="https://space.bilibili.com/12345">言吾言_</a>'
+    assert out == (
+        '<a href="https://space.bilibili.com/12345">言吾言_</a> <sub><code>@12345</code></sub>'
+    )
+
+
+def test_the_real_username_wins_over_the_id():
+    """两者都能拿到时用真实用户名 (URL 末段只是兜底)"""
+    out = format_author_link("Jason Lee", "huacnlee", "https://x.com/huacnlee")
+    assert "@huacnlee" in out and "@huacnlee</code>" in out
 
 
 def test_no_url_means_plain_label():
@@ -47,7 +59,9 @@ def test_author_line_links_bilibili_name():
         author_url="https://space.bilibili.com/12345",
         platform=Platform.BILIBILI,
     )
-    assert format_author_line(result) == '**<a href="https://space.bilibili.com/12345">言吾言_</a>**'
+    assert format_author_line(result) == (
+        '**<a href="https://space.bilibili.com/12345">言吾言_</a> <sub><code>@12345</code></sub>**'
+    )
 
 
 def test_author_line_without_url_is_plain():
