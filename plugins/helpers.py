@@ -221,6 +221,23 @@ def build_caption_by_str(
     return f"{body}\n\n{format_label(f"<a href='{safe_url}'>{source}</a>")}"
 
 
+def _meta_divider(meta_parts: Sequence[str], parts: Sequence[str]) -> list[str]:
+    """元信息 (标题/作者) 与内容之间的分割线。
+
+    用户要求「作者下面的分割线」—— 让"谁发的"和"发了什么"之间有一道明显的界,
+    与**内容与页脚之间**那条 (``body`` 拼接时加的 ``---``) 同一形态。
+
+    三个条件都满足才插, 否则不加多余的线:
+
+    - **有作者行** (只有标题时用户没要求, 不引入新的视觉变化)
+    - **后面还有内容** (纯元信息没有要分隔的东西)
+    - 元信息段里作者不是唯一一个空壳 (由调用方过滤后传入)
+    """
+    has_author = any(part and not part.startswith("### ") for part in meta_parts)
+    has_content = any(part for part in parts)
+    return ["---"] if (has_author and has_content) else []
+
+
 def build_rich_markdown(
     parse_result: AnyParseResult,
     *,
@@ -315,9 +332,9 @@ def build_rich_markdown(
         # 且不留预览 (留了就等于没遮)。只保留标题/作者在外面, 否则看不出这是什么内容。
         inner = "\n\n".join(visible)
         folded = f"<details><summary>{spoiler_summary}</summary>\n\n{inner}\n\n</details>"
-        body = "\n\n".join([*[p for p in meta_parts if p], folded])
+        body = "\n\n".join([*[p for p in meta_parts if p], *_meta_divider(meta_parts, parts), folded])
     else:
-        body = "\n\n".join(part for part in [*meta_parts, *parts] if part)
+        body = "\n\n".join(part for part in [*meta_parts, *_meta_divider(meta_parts, parts), *parts] if part)
 
     footer_parts: list[str] = []
     # 处理过程的进度放页尾第一段: 与最终结果的"时间 · 统计"同一个位置, 主体不动
