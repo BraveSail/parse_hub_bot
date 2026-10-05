@@ -358,6 +358,96 @@ def cached_rich_message(
     return InputRichMessage(markdown=markdown, media=media or None)
 
 
+async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]) -> list:
+    """把 ``media`` 里的**本地文件**上传成 file_id, 就地换成 file_id 引用, 并返回可缓存的条目。
+
+    为什么需要这一步:
+
+    - inline 消息只能用 ``EditInlineBotMessage`` 更新, 而它**只回 Bool** —— 拿不到服务端
+      生成的 file_id。所以 inline 路径**从来不写** file_id 缓存, 每次选中都要重新
+      下载 + 上传 (直发路径能从返回的 Message 里提取, inline 不行)。
+    - 常规做法是让 ``InputRichMessageMedia.write`` 内部上传, 那样 file_id 就留在库里拿不出来。
+      这里**先自己上传**, 从 ``messages.UploadMedia`` 的 raw 结果构造出 file_id
+      (照抄 pyrogram ``Photo._parse`` / ``Document._parse`` 的构造参数), 再把媒体换成
+      ``InputMediaPhoto(file_id)`` 形式 —— 于是 write 时直接引用, **不会二次上传**。
+
+    返回的条目与直发路径写进缓存的格式一致 (``CacheMedia``), 下一次选中即可零上传。
+
+    只处理 markdown 路径的 ``InputRichMessageMedia``; blocks (敏感内容) 有自己的媒体结构,
+    暂不支持 —— 那种情况返回空列表 (退化成"不写缓存", 与改动前一致)。
+    """
+    from pyrogram.file_id import FileId, FileType, ThumbnailSource
+
+    from services.cache import CacheMedia, CacheMediaType
+
+    entries: list = []
+    for item in media:
+        inner = getattr(item, "media", None)
+        source = getattr(inner, "media", None)
+        if not isinstance(source, str) or not Path(source).exists():
+            # 已经是 file_id (缓存命中) 或没有本地文件: 保留原样, 不产生条目
+            continue
+
+        is_photo = isinstance(inner, InputMediaPhoto)
+        try:
+            if is_photo:
+                uploaded = await cli.invoke(
+                    raw.functions.messages.UploadMedia(
+                        peer=raw.types.InputPeerSelf(),
+                        media=raw.types.InputMediaUploadedPhoto(file=await cli.save_file(source)),
+                    )
+                )
+                photo = uploaded.photo
+                sizes = list(getattr(photo, "sizes", None) or [])
+                biggest = max(sizes, key=lambda s: getattr(s, "w", 0) * getattr(s, "h", 0)) if sizes else None
+                file_id = FileId(
+                    file_type=FileType.PHOTO,
+                    dc_id=photo.dc_id,
+                    media_id=photo.id,
+                    access_hash=photo.access_hash,
+                    file_reference=photo.file_reference,
+                    thumbnail_source=ThumbnailSource.THUMBNAIL,
+                    thumbnail_file_type=FileType.PHOTO,
+                    thumbnail_size=getattr(biggest, "type", "") or "",
+                    volume_id=0,
+                    local_id=0,
+                ).encode()
+                item.media = InputMediaPhoto(file_id)
+                entries.append(CacheMedia(type=CacheMediaType.PHOTO, file_id=file_id))
+            else:
+                uploaded = await cli.invoke(
+                    raw.functions.messages.UploadMedia(
+                        peer=raw.types.InputPeerSelf(),
+                        media=raw.types.InputMediaUploadedDocument(
+                            file=await cli.save_file(source),
+                            mime_type=getattr(inner, "mime_type", None) or "video/mp4",
+                            attributes=[
+                                raw.types.DocumentAttributeVideo(
+                                    duration=int(getattr(inner, "duration", 0) or 0),
+                                    w=int(getattr(inner, "width", 0) or 0),
+                                    h=int(getattr(inner, "height", 0) or 0),
+                                    supports_streaming=bool(getattr(inner, "supports_streaming", True)),
+                                )
+                            ],
+                        ),
+                    )
+                )
+                document = uploaded.document
+                file_id = FileId(
+                    file_type=FileType.VIDEO,
+                    dc_id=document.dc_id,
+                    media_id=document.id,
+                    access_hash=document.access_hash,
+                    file_reference=document.file_reference,
+                ).encode()
+                item.media = InputMediaVideo(file_id, supports_streaming=True)
+                entries.append(CacheMedia(type=CacheMediaType.VIDEO, file_id=file_id))
+            logger.debug(f"inline 媒体已上传并记账: type={type(entries[-1]).__name__}")
+        except Exception as e:  # noqa: BLE001 - 记账失败不能影响发送本身
+            logger.warning(f"inline 媒体上传记账失败 (改由后续步骤上传, 只是不写缓存): {type(e).__name__}: {e}")
+    return entries
+
+
 def extract_cache_media(rich_message) -> list:
     """从发送后返回的富文本消息里取出媒体 file_id (写回缓存用, 下次零上传)。
 

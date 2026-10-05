@@ -44,6 +44,8 @@ from plugins.parse.inline_rich import (
     build_rich_media,
     cached_rich_message,
     edit_inline_rich_message,
+    rich_cache_entry,
+    upload_media_for_cache,
 )
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
@@ -365,7 +367,33 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
                 await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, blocks=blocks)
             else:
+                # 先自己上传拿 file_id (就地换成 file_id 引用, 编辑时不再上传), 再编辑。
+                # 这样**这一条 inline 消息**的媒体也进了 file_id 缓存 —— 以前 inline 从不写,
+                # 每次选中都要重新下载 + 上传 (EditInlineBotMessage 只回 Bool, 拿不到 file_id)。
+                uploaded_media = await upload_media_for_cache(cli, media)
                 await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, media=media)
+                # 只有**全部**媒体都记上账才写缓存: 部分成功时引用/回复媒体的计数会对不上,
+                # 写进去会让下次命中的消息把图放错位置 (宁可这次不写)
+                if uploaded_media and len(uploaded_media) == len(media):
+                    quoted_items = min(len(quoted_placeholders), len(uploaded_media))
+                    reply_items = min(len(reply_placeholders), len(uploaded_media) - quoted_items)
+                    await persistent_cache.set(
+                        raw_url,
+                        rich_cache_entry(
+                            parse_result,
+                            uploaded_media,
+                            quoted_media_count=quoted_items,
+                            reply_media_count=reply_items,
+                        ),
+                    )
+                    logger.info(
+                        f"inline 媒体已写 file_id 缓存: count={len(uploaded_media)} "
+                        f"引用{quoted_items} 回复{reply_items} (下次选中零下载/零上传)"
+                    )
+                elif uploaded_media:
+                    logger.warning(
+                        f"inline 媒体只记上 {len(uploaded_media)}/{len(media)} 条, 跳过写缓存 (避免引用计数错位)"
+                    )
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
             logger.error(f"inline 富文本编辑失败: {e}")
