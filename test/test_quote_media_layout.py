@@ -39,11 +39,11 @@ def _result(**kw):
 
 def test_split_takes_both_ends():
     head, middle, tail = split_quote_blocks(
-        "> <i>回复的作者：</i>\n> <i>回复内容</i>\n\n正文\n\n> <i>引用的作者：</i>\n> <i>引用内容</i>"
+        "> <i>回复的作者</i>\n> <i>回复内容</i>\n\n正文\n\n> <i>引用的作者</i>\n> <i>引用内容</i>"
     )
-    assert head == "> <i>回复的作者：</i>\n> <i>回复内容</i>"
+    assert head == "> <i>回复的作者</i>\n> <i>回复内容</i>"
     assert middle == "正文"
-    assert tail == "> <i>引用的作者：</i>\n> <i>引用内容</i>"
+    assert tail == "> <i>引用的作者</i>\n> <i>引用内容</i>"
 
 
 def test_split_without_quotes():
@@ -121,7 +121,7 @@ def test_quoted_media_falls_back_to_the_leading_quote_block():
     这时 split_quote_blocks 把它归到 reply_quote, quote 为空 —— 媒体的归属块
     为空就会被 render_quote_card 丢弃 (症状: 主楼的图不见了)。
     """
-    content = "> <i>@楼主 · #1：</i>\n\n本层正文"
+    content = "> <i>@楼主 · #1</i>\n\n本层正文"
     md = build_rich_markdown(
         _result(content=content),
         config=_Cfg(),
@@ -146,7 +146,7 @@ def test_quoted_media_falls_back_to_the_body_when_no_quote_block_at_all():
 
 def test_quoted_media_stays_in_the_trailing_block_when_it_exists():
     """末尾引用块存在时不做兜底 (回归)"""
-    content = "正文\n\n> <i>@被引用者：</i>\n> <i>引用内容</i>"
+    content = "正文\n\n> <i>@被引用者</i>\n> <i>引用内容</i>"
     md = build_rich_markdown(
         _result(content=content),
         config=_Cfg(),
@@ -157,7 +157,7 @@ def test_quoted_media_stays_in_the_trailing_block_when_it_exists():
 
 
 def test_reply_and_quoted_media_land_in_their_blocks():
-    content = "> <i>回复者 @a：</i>\n> <i>被回复的话</i>\n\n正文内容\n\n> <i>引用者 @b：</i>\n> <i>被引用的话</i>"
+    content = "> <i>回复者 @a</i>\n> <i>被回复的话</i>\n\n正文内容\n\n> <i>引用者 @b</i>\n> <i>被引用的话</i>"
     md = build_rich_markdown(
         _result(content=content),
         config=_Cfg(),

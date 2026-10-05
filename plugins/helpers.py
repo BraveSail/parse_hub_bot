@@ -759,17 +759,20 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
 
 
 def format_author_line(parse_result: AnyParseResult) -> str:
-    """作者行 (markdown): ``**名字 @handle：**``。
+    """作者行 (markdown): ``**<a>名字</a> <sub><code>@handle</code></sub>**``。
 
     拼装与链接一律交给库里的 ``format_author_link`` —— 这里不要再手写一遍替换,
     否则"作者长什么样"这件事就有了两份实现 (曾经就是如此)。
+
+    **不加冒号** (用户要求「取消冒号」) —— 名字已经可点、@handle 已是小字标识,
+    再加冒号只是多余的标点。
     """
     label = format_author_link(
         get_parse_author_name(parse_result),
         str(getattr(parse_result, "author_handle", "") or ""),
         str(getattr(parse_result, "author_url", "") or ""),
     )
-    return f"**{label}：**" if label else ""
+    return f"**{label}**" if label else ""
 
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")

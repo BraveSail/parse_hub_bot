@@ -93,25 +93,40 @@ def profile_url(platform: Platform | None, handle: str = "", user_id: str = "") 
 
 
 def format_author_link(name: str, handle: str = "", url: str = "") -> str:
-    """作者标签 (名字 @handle); 给了主页地址时渲染成 HTML 链接.
+    """作者标签: **显示名做成超链接**, ``@用户名`` 作为**等宽下角标**。
 
-    富文本 (rich message) 里 markdown 链接语法不生效, 会原样显示成 ``[文字](url)``,
-    所以在这里统一用 ``<a href>``。
+    用户要求 (原话「把作者名 @用户名 改成 作者名超链接，@用户名弄成 下角标」+
+    「这个下角标能不能调成灰色就是等宽那种」): 名字是读者要点进去的,
+    而 ``@handle`` 只是标识 —— 占位比信息值钱, 所以压成小字附在名字后面。
 
-    有 handle 时链接挂在 ``@handle`` 上; **没有 handle 时链接挂在显示名上**
-    —— 像 B 站这种只有主页 ID、没有 @用户名 的平台, 这样至少名字是可点的。
+    写法说明 (都真机实测过):
+
+    - **超链接必须用 HTML ``<a href>``**: 富文本里 markdown 链接语法不生效,
+      会原样显示成 ``[文字](url)``。
+    - **下角标用 ``<sub>``**, 服务端解析成 ``RichTextSubscript``。
+      ``<tg-sub>`` / ``~波浪~`` 都**不**生效。
+    - **``@handle`` 还要再包一层 ``<code>``**: 富文本里 Telegram 会把裸 ``@名字``
+      自动识别成 **Mention 实体 (可点击)** —— 只套 ``<sub>`` 仍然可点, 而这里要的是
+      纯文本标识; 包上 ``<code>`` 它才变成普通等宽文本 (顺带就是"等宽那种"
+      的观感 —— 富文本**没有直接指定颜色的写法**, 等宽是客户端里最接近的样式)。
+    - 名字与 ``@handle`` 之间**空一格**。
+
+    只有一个名字 (没有 ``@handle``, 或两者相同) 时, 那一个仍然做成链接 ——
+    否则整行不可点。没有主页地址时退回 ``format_author_label`` 的纯文本形态。
     """
-    label = format_author_label(name, handle)
-    if not (label and url):
-        return label
-    href = html.escape(url, quote=True)
-    clean = (handle or "").strip().lstrip("@").strip()
-    if clean and f"@{clean}" in label:
-        return label.replace(f"@{clean}", f'<a href="{href}">@{html.escape(clean)}</a>')
     display = (name or "").strip()
-    if display and display in label:
-        return label.replace(display, f'<a href="{href}">{html.escape(display)}</a>', 1)
-    return label
+    clean = (handle or "").strip().lstrip("@").strip()
+    if not url:
+        return format_author_label(name, handle)
+    href = html.escape(url, quote=True)
+    # 名字与 @handle 是两个不同的东西: 名字可点, @handle 附在后面的等宽下角标
+    if display and clean and display.casefold() != clean.casefold():
+        handle_markup = f"<sub><code>@{html.escape(clean)}</code></sub>"
+        return f'<a href="{href}">{html.escape(display)}</a> {handle_markup}'
+    # 只有一边 (或两边相同): 就一个, 做成链接。
+    # 相同的情况沿用既有约定 —— 显示 ``@handle`` 形态 (不因为这次改动改语义)
+    text = f"@{clean}" if clean else display
+    return f'<a href="{href}">{html.escape(text)}</a>' if text else ""
 
 
 def format_quote_block(text: str, author: str = "", *, sign_only: bool = False) -> str:
@@ -131,7 +146,8 @@ def format_quote_block(text: str, author: str = "", *, sign_only: bool = False) 
     ``<i>行</i>`` 来补救, 现在在源头直接产出正确的标记, 不需要转换。
     """
     body = (text or "").strip()
-    head = f"> <i>{author}：</i>\n" if author else ""
+    # 署名不加冒号 (与作者行统一 —— 用户要求「取消冒号」)
+    head = f"> <i>{author}</i>\n" if author else ""
     if not body:
         return f"{head}\n" if (head and sign_only) else ""
     lines = "\n".join(f"> <i>{line}</i>" if line.strip() else ">" for line in body.splitlines())

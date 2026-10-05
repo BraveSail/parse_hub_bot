@@ -304,7 +304,7 @@ def test_quote_reply_uses_the_shared_quote_renderer():
     body = topic.markdown_content
 
     # 作者在引用块内 (带主页链接), 不在块外裸着
-    assert '> <i><a href="https://linux.do/u/paomian_1">@paomian_1</a>：</i>' in body
+    assert '> <i><a href="https://linux.do/u/paomian_1">@paomian_1</a></i>' in body
     # 引用内容整块斜体
     assert "> <i>被引用的第一段</i>" in body
     assert "> <i>被引用的第二段</i>" in body

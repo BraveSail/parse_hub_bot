@@ -243,7 +243,8 @@ def test_rich_markdown_puts_metadata_and_source_in_footer():
         lang="zh-hans", view_label="查看",
     )
 
-    assert markdown.startswith("**Author：**")
+    # 作者行: 不加冒号 (用户要求「取消冒号」)
+    assert markdown.startswith("**Author**")
     assert "正文**粗体**" in markdown
     assert "- 列表项" in markdown
     assert "---" in markdown
@@ -266,14 +267,14 @@ def test_rich_markdown_author_label_with_handle():
     result.raw_url = "https://www.pixiv.net/artworks/1"
     result.author_name = "隣人X"
     result.author_handle = "user_ydyj5227"
-    assert build_rich_markdown(result, config=config).startswith("**隣人X @user_ydyj5227：**")
+    assert build_rich_markdown(result, config=config).startswith("**隣人X @user_ydyj5227**")
 
     only_handle = MultimediaParseResult(content="正文")
     only_handle.platform = Platform.THREADS
     only_handle.raw_url = "https://www.threads.com/@same/post/x"
     only_handle.author_name = "same"
     only_handle.author_handle = "same"
-    assert build_rich_markdown(only_handle, config=config).startswith("**@same：**")
+    assert build_rich_markdown(only_handle, config=config).startswith("**@same**")
 
 
 def test_rich_markdown_wraps_multiple_media_in_collage():
@@ -344,7 +345,9 @@ def test_author_handle_links_to_profile():
     markdown = build_rich_markdown(
         result, config=types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=False)
     )
-    assert '<a href="https://www.pixiv.net/users/123568955">@user_ydyj5227</a>' in markdown
+    # 名字可点, @handle 是等宽下角标 (不再是可点的 Mention)
+    assert '<a href="https://www.pixiv.net/users/123568955">隣人X</a>' in markdown
+    assert "<sub><code>@user_ydyj5227</code></sub>" in markdown
     assert "隣人X" in markdown
 
 

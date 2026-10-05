@@ -15,9 +15,14 @@ def _result(**kwargs):
     return result
 
 
-def test_handle_is_the_link_when_present():
+def test_name_is_the_link_and_handle_is_a_subscript():
+    """作者行: **显示名做成链接**, ``@handle`` 是**等宽下角标** (用户要求)。
+
+    两处都不能少: ``<code>`` 让 ``@handle`` 不再是 Mention (否则仍可点),
+    ``<sub>`` 把它压成下角标; 两个名字之间空一格。
+    """
     out = format_author_link("言吾言_", "yanwuyan", "https://x.com/yanwuyan")
-    assert out == '言吾言_ <a href="https://x.com/yanwuyan">@yanwuyan</a>'
+    assert out == '<a href="https://x.com/yanwuyan">言吾言_</a> <sub><code>@yanwuyan</code></sub>'
 
 
 def test_name_is_the_link_when_there_is_no_handle():
@@ -42,12 +47,12 @@ def test_author_line_links_bilibili_name():
         author_url="https://space.bilibili.com/12345",
         platform=Platform.BILIBILI,
     )
-    assert format_author_line(result) == '**<a href="https://space.bilibili.com/12345">言吾言_</a>：**'
+    assert format_author_line(result) == '**<a href="https://space.bilibili.com/12345">言吾言_</a>**'
 
 
 def test_author_line_without_url_is_plain():
     result = _result(author_name="某人", author_handle="", author_url="")
-    assert format_author_line(result) == "**某人：**"
+    assert format_author_line(result) == "**某人**"
 
 
 def test_author_line_is_empty_without_author():

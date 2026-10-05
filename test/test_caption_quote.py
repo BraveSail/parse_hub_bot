@@ -183,12 +183,12 @@ def test_long_quote_block_is_folded():
     """
     from plugins.helpers import fold_quote_block
 
-    quote = "\n".join(["> <i>作者 @handle：</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
+    quote = "\n".join(["> <i>作者 @handle</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
     out = fold_quote_block(quote, summary="展开全文")
     assert out.startswith("<blockquote expandable>")
     assert out.endswith("</blockquote>")
     assert "<details>" not in out                       # 不用 details, 避免割裂
-    assert "<i>作者 @handle：</i>" in out                # 斜体走 HTML 标签 (块内 markdown 不解析)
+    assert "<i>作者 @handle</i>" in out                # 斜体走 HTML 标签 (块内 markdown 不解析)
     assert "<i>第19行内容</i>" in out
     assert "*" not in out                               # 不留字面星号
     assert out.count("<br>") == 19                      # 换行走 <br>
@@ -205,14 +205,14 @@ def test_quote_style_comes_from_the_source_not_a_conversion():
     assert format_quote_block("斜体行") == "> <i>斜体行</i>\n\n"
     assert format_quote_block("两段\n\n二") == "> <i>两段</i>\n>\n> <i>二</i>\n\n"
     # 作者行也在块内, 同样走 <i>
-    assert format_quote_block("正文", "作者") == "> <i>作者：</i>\n> <i>正文</i>\n\n"
+    assert format_quote_block("正文", "作者") == "> <i>作者</i>\n> <i>正文</i>\n\n"
 
 
 def test_unfolded_quote_passes_through_unchanged():
     """不折叠的引用块原样透传 (样式已在源头写好, 渲染层不该再动它)"""
     from plugins.helpers import fold_quote_block
 
-    quote = "> <i>作者：</i>\n> 短内容"
+    quote = "> <i>作者</i>\n> 短内容"
     assert fold_quote_block(quote, summary="展开全文") == quote
 
 
@@ -220,7 +220,7 @@ def test_short_quote_block_is_not_folded():
     """短引用块不折叠"""
     from plugins.helpers import fold_quote_block
 
-    out = fold_quote_block("> <i>作者：</i>\n> 短内容", summary="展开全文")
+    out = fold_quote_block("> <i>作者</i>\n> 短内容", summary="展开全文")
     assert "<blockquote expandable>" not in out
     assert "<details>" not in out
     assert out.startswith("> ")
@@ -230,7 +230,7 @@ def test_media_goes_inside_a_short_quote():
     """不折叠的引用块: 媒体留在块内 (普通 blockquote 里 ![]() 能正常出图)"""
     from plugins.helpers import render_quote_card
 
-    quote = "> <i>作者：</i>\n> <i>短内容</i>"
+    quote = "> <i>作者</i>\n> <i>短内容</i>"
     parts = render_quote_card(quote, ["![](tg://photo?id=m0)"], summary="展开全文")
     assert len(parts) == 1
     assert "> ![](tg://photo?id=m0)" in parts[0]        # 在引用块内 (带 > 前缀)
@@ -245,7 +245,7 @@ def test_media_moves_outside_a_folded_quote():
     """
     from plugins.helpers import render_quote_card
 
-    quote = "\n".join(["> <i>作者：</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
+    quote = "\n".join(["> <i>作者</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
     parts = render_quote_card(quote, ["![](tg://photo?id=m0)"], summary="展开全文")
     assert len(parts) == 2
     folded, media_part = parts
@@ -258,7 +258,7 @@ def test_media_moves_outside_a_folded_quote():
 def test_no_media_means_a_single_part():
     from plugins.helpers import render_quote_card
 
-    quote = "\n".join(["> <i>作者：</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
+    quote = "\n".join(["> <i>作者</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
     assert len(render_quote_card(quote, [], summary="展开全文")) == 1
 
 
@@ -268,7 +268,7 @@ def test_build_rich_markdown_folds_a_long_reply_block():
 
     from plugins.helpers import build_rich_markdown
 
-    reply = "\n".join(["> <i>Vincent @VincentBounce：</i>", *[f"> <i>第{i}行</i>  " for i in range(1, 18)]])
+    reply = "\n".join(["> <i>Vincent @VincentBounce</i>", *[f"> <i>第{i}行</i>  " for i in range(1, 18)]])
     content = reply + "\n\n短正文"
     result = types.SimpleNamespace(
         title="", content=content, raw_url="https://x.com/a/status/1",

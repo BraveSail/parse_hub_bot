@@ -151,7 +151,7 @@ def test_hide_content_hides_everything_but_the_header():
 
     只有标题与作者留在外面 —— 那是"这是什么"的元信息, 全遮掉会看不出解析了什么。
     """
-    content = "> <i>@楼主 · #1：</i>\n\n本层正文"
+    content = "> <i>@楼主 · #1</i>\n\n本层正文"
     md = build_rich_markdown(_result(content), config=_config(), lang="zh-hans", hide_content="#nsfw")
     inner = md.split("<details>", 1)[1]
     assert "@楼主" in inner and "本层正文" in inner
@@ -174,7 +174,7 @@ def test_media_goes_inside_the_fold():
 
 def test_quoted_media_also_goes_inside_the_fold():
     """引用块的媒体同样要遮进去"""
-    content = "主推正文\n\n> <i>@被引用者：</i>\n> <i>引用内容</i>"
+    content = "主推正文\n\n> <i>@被引用者</i>\n> <i>引用内容</i>"
     md = build_rich_markdown(
         _result(content),
         config=_config(),

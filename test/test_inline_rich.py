@@ -115,7 +115,7 @@ def test_blocks_path_parses_html_bold_and_italic():
     bold = parse_inline("<b>▎上 传 中...</b> · 来源")
     assert any(isinstance(n, RichTextBold) for n in bold), "footer 里的 <b> 必须解析"
 
-    italic = parse_inline("<i>@某人：</i>")
+    italic = parse_inline("<i>@某人</i>")
     assert any(isinstance(n, RichTextItalic) for n in italic), "<i> 必须解析"
 
     # 不该把标签字面留在文本里

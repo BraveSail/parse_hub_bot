@@ -141,34 +141,34 @@ def test_quoted_like_count_is_independent_of_the_main_tweet():
 def test_quoted_block_renders_markdown():
     tweet = TwitterTweet(tweet_id="1", full_text="mine", quoted_status=quoted_tweet("line1\nline2"))
     assert TwitterParser._build_quoted_block(tweet) == (
-        '> <i><a href="https://x.com/other">@other</a>：</i>\n> <i>line1</i>\n> <i>line2</i>\n\n'
+        '> <i><a href="https://x.com/other">@other</a></i>\n> <i>line1</i>\n> <i>line2</i>\n\n'
     )
 
 
 def test_quoted_block_marks_blank_lines():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("a\n\nb"))
     assert TwitterParser._build_quoted_block(tweet) == (
-        '> <i><a href="https://x.com/other">@other</a>：</i>\n> <i>a</i>\n>\n> <i>b</i>\n\n'
+        '> <i><a href="https://x.com/other">@other</a></i>\n> <i>a</i>\n>\n> <i>b</i>\n\n'
     )
 
 
 def test_quoted_block_falls_back_to_author_name():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="", name="夏吉ゆうこ"))
-    assert TwitterParser._build_quoted_block(tweet) == "> <i>夏吉ゆうこ：</i>\n> <i>x</i>\n\n"
+    assert TwitterParser._build_quoted_block(tweet) == "> <i>夏吉ゆうこ</i>\n> <i>x</i>\n\n"
 
 
 def test_quoted_block_uses_handle_only_when_name_matches():
     """显示名与用户名相同时只写 @用户名, 避免 "same @same" 这种重复"""
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="same", name="same"))
     assert TwitterParser._build_quoted_block(tweet) == (
-        '> <i><a href="https://x.com/same">@same</a>：</i>\n> <i>x</i>\n\n'
+        '> <i><a href="https://x.com/same">@same</a></i>\n> <i>x</i>\n\n'
     )
 
 
 def test_quoted_block_shows_name_and_handle():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="huacnlee", name="Jason Lee"))
     assert TwitterParser._build_quoted_block(tweet) == (
-        '> <i>Jason Lee <a href="https://x.com/huacnlee">@huacnlee</a>：</i>\n> <i>x</i>\n\n'
+        '> <i><a href="https://x.com/huacnlee">Jason Lee</a> <sub><code>@huacnlee</code></sub></i>\n> <i>x</i>\n\n'
     )
 
 
@@ -189,7 +189,7 @@ def test_quoted_block_skipped_when_text_empty():
 def test_media_parse_appends_quote_after_text():
     tweet = TwitterTweet(tweet_id="1", full_text="mine", quoted_status=quoted_tweet("original"))
     result = asyncio.run(TwitterParser.media_parse(tweet))
-    assert result.content == 'mine\n\n> <i><a href="https://x.com/other">@other</a>：</i>\n> <i>original</i>'
+    assert result.content == 'mine\n\n> <i><a href="https://x.com/other">@other</a></i>\n> <i>original</i>'
 
 
 def test_media_parse_keeps_reply_before_and_quote_after():
@@ -202,8 +202,8 @@ def test_media_parse_keeps_reply_before_and_quote_after():
     result = asyncio.run(TwitterParser.media_parse(tweet))
     # "Parent"/"parent" 与 "Other"/"other" 忽略大小写视为同一名字, 只出 @用户名
     assert result.content == (
-        '> <i><a href="https://x.com/parent">@parent</a>：</i>\n> <i>parent</i>\n\nmine\n\n'
-        '> <i><a href="https://x.com/other">@other</a>：</i>\n> <i>original</i>'
+        '> <i><a href="https://x.com/parent">@parent</a></i>\n> <i>parent</i>\n\nmine\n\n'
+        '> <i><a href="https://x.com/other">@other</a></i>\n> <i>original</i>'
     )
 
 
@@ -221,7 +221,7 @@ def test_rich_text_parse_appends_quote():
         quoted_status=quoted_tweet("original"),
     )
     result = asyncio.run(TwitterParser.media_parse(tweet))
-    assert result.markdown_content == '# Body\n\n> <i><a href="https://x.com/other">@other</a>：</i>\n> <i>original</i>'
+    assert result.markdown_content == '# Body\n\n> <i><a href="https://x.com/other">@other</a></i>\n> <i>original</i>'
 
 
 def test_quote_end_to_end_from_payload():
@@ -231,7 +231,8 @@ def test_quote_end_to_end_from_payload():
     result = asyncio.run(TwitterParser.media_parse(Twitter().parse(payload)))
     assert result.content == (
         "往代码仓库里拉屎的就这些人\n\n"
-        '> <i>Jason Lee <a href="https://x.com/huacnlee">@huacnlee</a>：</i>\n> <i>Vibe coding 的时候…</i>'
+        '> <i><a href="https://x.com/huacnlee">Jason Lee</a>'
+        ' <sub><code>@huacnlee</code></sub></i>\n> <i>Vibe coding 的时候…</i>'
     )
 
 
