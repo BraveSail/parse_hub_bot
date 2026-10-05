@@ -32,21 +32,36 @@
 405ba1795958: Configuration du sujet
 421687e6f757: '{target} figure dans la configuration (ADMIN_USERS) ; modifiez .env pour le retirer'
 460ce129a523: Téléchargement en cours...
+4833c4c22f97: '**Envoyez un lien de partage pour analyse**
+
+
+  **Plateformes prises en charge :**
+
+  <blockquote expandable>{get_supported_platforms()}</blockquote>
+
+
+  **Liste des commandes :**
+
+  <blockquote expandable>/jx <lien> - Analyser et prévisualiser le contenu
+
+  /raw <lien> - Envoyer le fichier original, éviter la compression de la qualité
+
+  /zip <lien> - Envoyer en paquet, avec informations d''analyse
+
+  /jxjx <lien> - Analyser en contournant le cache
+
+  /lang - Langue
+
+  /cfg - Configuration
+
+  /cfg <nom d''utilisateur/lien/id du canal> - Configuration du canal
+
+  </blockquote>
+
+
+  **Code source : [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Masquer le titre
 4fb5f29ee802: Veuillez ajouter un lien ou répondre à un message
-4fbdbeb0f163: '
-
-
-  >**Pour garantir une expérience utilisateur optimale, une limitation de débit est
-  actuellement en vigueur**
-
-
-  >Ce projet est open source. En cas de besoins fréquents ou en masse d''analyse,
-  il est recommandé de déployer votre propre instance afin d''éviter de déclencher
-  la limitation globale de débit de l''API Telegram.
-
-
-  **Code source : [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 5348dcac296c: Échec de l'analyse
 569c1f28ab00: Emballage en cours...
 5861d620c41d: Téléchargement en cours... | {current}/{total}
@@ -92,34 +107,6 @@ c11154582f8a: Masquer la description
 c2236f70c559: Contourner l'analyse du cache
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Retiré de la liste blanche
-c97827ba89ec: '**Envoyez un lien de partage pour analyse**
-
-
-  **Plateformes prises en charge :**
-
-  <blockquote expandable>{get_supported_platforms()}</blockquote>
-
-
-  **Liste des commandes :**
-
-  <blockquote expandable>/jx <lien> - Analyser et prévisualiser le contenu
-
-  /raw <lien> - Envoyer le fichier original, éviter la compression de la qualité
-
-  /zip <lien> - Envoyer en paquet, avec informations d''analyse
-
-  /jxjx <lien> - Analyser en contournant le cache
-
-  /lang - Langue
-
-  /cfg - Configuration
-
-  /cfg <nom d''utilisateur/lien/id du canal> - Configuration du canal
-
-  </blockquote>
-
-
-  **Code source : [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Panneau de configuration
 d34addb9b2f0: Cache effacé
 d5631690265c: Impossible de reconnaître la cible de configuration
@@ -127,6 +114,19 @@ d59c948c471c: Analyse en cours...
 d5a73b0c7f2f: Téléverser
 dee5266e01a9: 'Tous les caches ont été vidés : {db_count} en base · {mem_count} en mémoire'
 e14de27e8559: '{target_label}'
+e3889d130a2f: '
+
+
+  >**Pour garantir une expérience utilisateur optimale, une limitation de débit est
+  actuellement en vigueur**
+
+
+  >Ce projet est open source. En cas de besoins fréquents ou en masse d''analyse,
+  il est recommandé de déployer votre propre instance afin d''éviter de déclencher
+  la limitation globale de débit de l''API Telegram.
+
+
+  **Code source : [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Analyser et prévisualiser le contenu
 e4f6307e1c4f: 'Passé à : {LANG_MAP[selected]}'
 eaa3cd851501: Texte personnalisé

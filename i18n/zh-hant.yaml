@@ -29,18 +29,36 @@
 405ba1795958: 話題配置
 421687e6f757: '{target} 在設定 (ADMIN_USERS) 裡，需改 .env 才能移除'
 460ce129a523: 下 載 中...
+4833c4c22f97: '**發送分享連結以進行解析**
+
+
+  **支援的平台:**
+
+  <blockquote expandable>{get_supported_platforms()}</blockquote>
+
+
+  **命令列表:**
+
+  <blockquote expandable>/jx <連結> - 解析並預覽內容
+
+  /raw <連結> - 發送原文件，避免畫質壓縮
+
+  /zip <連結> - 打包發送，附帶解析資訊
+
+  /jxjx <連結> - 繞過快取解析
+
+  /lang - 語言
+
+  /cfg - 配置
+
+  /cfg <頻道用戶名/連結/id> - 頻道配置
+
+  </blockquote>
+
+
+  **開源地址: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: 隱藏標題
 4fb5f29ee802: 請加上連結或回覆一條訊息
-4fbdbeb0f163: '
-
-
-  >**為保障所有用戶的使用體驗，當前已啟用速率限制**
-
-
-  >本項目為開源項目，如有高頻或批量解析需求，建議自行部署實例，以免觸發 Telegram API 全局速率限制
-
-
-  **開源地址: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 5348dcac296c: 解析失敗
 569c1f28ab00: 打 包 中...
 5861d620c41d: 下載中... | {current}/{total}
@@ -84,34 +102,6 @@ c11154582f8a: 隱藏簡介
 c2236f70c559: 繞過快取解析
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: 已移出白名單
-c97827ba89ec: '**發送分享連結以進行解析**
-
-
-  **支援的平台:**
-
-  <blockquote expandable>{get_supported_platforms()}</blockquote>
-
-
-  **命令列表:**
-
-  <blockquote expandable>/jx <連結> - 解析並預覽內容
-
-  /raw <連結> - 發送原文件，避免畫質壓縮
-
-  /zip <連結> - 打包發送，附帶解析資訊
-
-  /jxjx <連結> - 繞過快取解析
-
-  /lang - 語言
-
-  /cfg - 配置
-
-  /cfg <頻道用戶名/連結/id> - 頻道配置
-
-  </blockquote>
-
-
-  **開源地址: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: 配置面板
 d34addb9b2f0: 已清除快取
 d5631690265c: 無法識別配置目標
@@ -119,6 +109,16 @@ d59c948c471c: 解 析 中...
 d5a73b0c7f2f: 上傳
 dee5266e01a9: 已清空全部快取：資料庫 {db_count} 條 · 記憶體 {mem_count} 條
 e14de27e8559: '{target_label}'
+e3889d130a2f: '
+
+
+  >**為保障所有用戶的使用體驗，當前已啟用速率限制**
+
+
+  >本項目為開源項目，如有高頻或批量解析需求，建議自行部署實例，以免觸發 Telegram API 全局速率限制
+
+
+  **開源地址: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: 解析並預覽內容
 e4f6307e1c4f: '已切換為: {LANG_MAP[selected]}'
 eaa3cd851501: 自訂文案

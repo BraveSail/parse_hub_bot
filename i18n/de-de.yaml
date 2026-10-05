@@ -32,21 +32,36 @@
 405ba1795958: Themen-Konfiguration
 421687e6f757: '{target} steht in der Konfiguration (ADMIN_USERS); zum Entfernen .env bearbeiten'
 460ce129a523: Herunterladen...
+4833c4c22f97: '**Senden Sie einen Freigabelink zur Analyse**
+
+
+  **Unterstützte Plattformen:**
+
+  <blockquote expandable>{get_supported_platforms()}</blockquote>
+
+
+  **Befehlsliste:**
+
+  <blockquote expandable>/jx <Link> - Inhalt analysieren und Vorschau anzeigen
+
+  /raw <Link> - Originaldatei senden, um Qualitätsverlust zu vermeiden
+
+  /zip <Link> - Paket senden, inklusive Analyseinformationen
+
+  /jxjx <Link> - Cache-Umgehung beim Parsen
+
+  /lang - Sprache
+
+  /cfg - Konfiguration
+
+  /cfg <Kanal-Benutzername/Link/ID> - Kanal-Konfiguration
+
+  </blockquote>
+
+
+  **Open-Source-Adresse: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Titel ausblenden
 4fb5f29ee802: Bitte füge einen Link hinzu oder antworte auf eine Nachricht
-4fbdbeb0f163: '
-
-
-  >**Um die Nutzungserfahrung aller Benutzer zu gewährleisten, ist derzeit eine Geschwindigkeitsbegrenzung
-  aktiviert**
-
-
-  >Dieses Projekt ist ein Open-Source-Projekt. Bei häufigen oder massenhaften Analyseanforderungen
-  wird empfohlen, eine eigene Instanz bereitzustellen, um globale Geschwindigkeitsbegrenzungen
-  der Telegram-API zu vermeiden.
-
-
-  **Open-Source-Adresse: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 5348dcac296c: Analyse fehlgeschlagen
 569c1f28ab00: Verpacken...
 5861d620c41d: Herunterladen... | {current}/{total}
@@ -93,34 +108,6 @@ c11154582f8a: Einführung ausblenden
 c2236f70c559: Cache-Parsing umgehen
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Von der Whitelist entfernt
-c97827ba89ec: '**Senden Sie einen Freigabelink zur Analyse**
-
-
-  **Unterstützte Plattformen:**
-
-  <blockquote expandable>{get_supported_platforms()}</blockquote>
-
-
-  **Befehlsliste:**
-
-  <blockquote expandable>/jx <Link> - Inhalt analysieren und Vorschau anzeigen
-
-  /raw <Link> - Originaldatei senden, um Qualitätsverlust zu vermeiden
-
-  /zip <Link> - Paket senden, inklusive Analyseinformationen
-
-  /jxjx <Link> - Cache-Umgehung beim Parsen
-
-  /lang - Sprache
-
-  /cfg - Konfiguration
-
-  /cfg <Kanal-Benutzername/Link/ID> - Kanal-Konfiguration
-
-  </blockquote>
-
-
-  **Open-Source-Adresse: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Konfigurationspanel
 d34addb9b2f0: Cache gelöscht
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
@@ -128,6 +115,19 @@ d59c948c471c: Analysiere...
 d5a73b0c7f2f: Hochladen
 dee5266e01a9: 'Alle Caches geleert: {db_count} in der Datenbank · {mem_count} im Speicher'
 e14de27e8559: '{target_label}'
+e3889d130a2f: '
+
+
+  >**Um die Nutzungserfahrung aller Benutzer zu gewährleisten, ist derzeit eine Geschwindigkeitsbegrenzung
+  aktiviert**
+
+
+  >Dieses Projekt ist ein Open-Source-Projekt. Bei häufigen oder massenhaften Analyseanforderungen
+  wird empfohlen, eine eigene Instanz bereitzustellen, um globale Geschwindigkeitsbegrenzungen
+  der Telegram-API zu vermeiden.
+
+
+  **Open-Source-Adresse: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Inhalt analysieren und Vorschau anzeigen
 e4f6307e1c4f: 'Wechsel zu: {LANG_MAP[selected]}'
 eaa3cd851501: Benutzerdefinierter Text

@@ -31,13 +31,36 @@
 405ba1795958: Configuração do tópico
 421687e6f757: '{target} está na configuração (ADMIN_USERS); edite o .env para removê-lo'
 460ce129a523: Baixando...
+4833c4c22f97: '**Envie o link para compartilhar para análise**
+
+
+  **Plataformas suportadas:**
+
+  <blockquote expandable>{get_supported_platforms()}</blockquote>
+
+
+  **Lista de comandos:**
+
+  <blockquote expandable>/jx <link> - Analisar e pré-visualizar conteúdo
+
+  /raw <link> - Enviar arquivo original, evitar compressão de qualidade
+
+  /zip <link> - Enviar em pacote, com informações de análise
+
+  /jxjx <link> - Analisar ignorando cache
+
+  /lang - Idioma
+
+  /cfg - Configuração
+
+  /cfg <nome de usuário/link/id do canal> - Configuração do canal
+
+  </blockquote>
+
+
+  **Código aberto: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Ocultar título
 4fb5f29ee802: Por favor, adicione um link ou responda a uma mensagem
-4fbdbeb0f163: '\n\n>**Para garantir a experiência de uso de todos os usuários, o limite
-  de taxa está atualmente ativado**\n\n>Este projeto é de código aberto. Se houver
-  necessidade de análise frequente ou em lote, recomenda-se implantar sua própria
-  instância para evitar acionar o limite global de taxa da API do Telegram\n\n**Código
-  aberto disponível em: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 5348dcac296c: Falha na análise
 569c1f28ab00: Empacotando...
 5861d620c41d: Baixando... | {current}/{total}
@@ -83,34 +106,6 @@ c11154582f8a: Ocultar resumo
 c2236f70c559: Ignorar análise de cache
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Removido da lista de permissões
-c97827ba89ec: '**Envie o link para compartilhar para análise**
-
-
-  **Plataformas suportadas:**
-
-  <blockquote expandable>{get_supported_platforms()}</blockquote>
-
-
-  **Lista de comandos:**
-
-  <blockquote expandable>/jx <link> - Analisar e pré-visualizar conteúdo
-
-  /raw <link> - Enviar arquivo original, evitar compressão de qualidade
-
-  /zip <link> - Enviar em pacote, com informações de análise
-
-  /jxjx <link> - Analisar ignorando cache
-
-  /lang - Idioma
-
-  /cfg - Configuração
-
-  /cfg <nome de usuário/link/id do canal> - Configuração do canal
-
-  </blockquote>
-
-
-  **Código aberto: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Painel de configuração
 d34addb9b2f0: Cache limpo
 d5631690265c: Alvo da configuração não reconhecido
@@ -118,6 +113,11 @@ d59c948c471c: Analisando...
 d5a73b0c7f2f: Enviar
 dee5266e01a9: 'Todos os caches foram limpos: {db_count} no banco · {mem_count} na memória'
 e14de27e8559: '{target_label}'
+e3889d130a2f: '\n\n>**Para garantir a experiência de uso de todos os usuários, o limite
+  de taxa está atualmente ativado**\n\n>Este projeto é de código aberto. Se houver
+  necessidade de análise frequente ou em lote, recomenda-se implantar sua própria
+  instância para evitar acionar o limite global de taxa da API do Telegram\n\n**Código
+  aberto disponível em: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Analisar e pré-visualizar conteúdo
 e4f6307e1c4f: 'Alterado para: {LANG_MAP[selected]}'
 eaa3cd851501: Texto personalizado

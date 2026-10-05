@@ -32,18 +32,36 @@
 405ba1795958: Topic Configuration
 421687e6f757: '{target} is in the config (ADMIN_USERS); edit .env to remove them'
 460ce129a523: Downloading...
+4833c4c22f97: '**Send share link for parsing**
+
+
+  **Supported platforms:**
+
+  <blockquote expandable>{get_supported_platforms()}</blockquote>
+
+
+  **Command list:**
+
+  <blockquote expandable>/jx <link> - Parse and preview content
+
+  /raw <link> - Send original file to avoid quality compression
+
+  /zip <link> - Pack and send with parsing information
+
+  /jxjx <link> - Bypass cache parsing
+
+  /lang - Language
+
+  /cfg - Configuration
+
+  /cfg <channel username/link/id> - Channel configuration
+
+  </blockquote>
+
+
+  **Open source: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Hide Title
 4fb5f29ee802: Please add a link or reply to a message
-4fbdbeb0f163: '>**To ensure a good experience for all users, rate limiting is currently
-  enabled**
-
-
-  >This project is open source. If you have high-frequency or bulk parsing needs,
-  it is recommended to deploy your own instance to avoid triggering Telegram API global
-  rate limits.
-
-
-  **Open source repository: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 5348dcac296c: Parse failed
 569c1f28ab00: Packaging...
 5861d620c41d: Downloading... | {current}/{total}
@@ -88,34 +106,6 @@ c11154582f8a: Hide Introduction
 c2236f70c559: Bypass cache parsing
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Removed from the whitelist
-c97827ba89ec: '**Send share link for parsing**
-
-
-  **Supported platforms:**
-
-  <blockquote expandable>{get_supported_platforms()}</blockquote>
-
-
-  **Command list:**
-
-  <blockquote expandable>/jx <link> - Parse and preview content
-
-  /raw <link> - Send original file to avoid quality compression
-
-  /zip <link> - Pack and send with parsing information
-
-  /jxjx <link> - Bypass cache parsing
-
-  /lang - Language
-
-  /cfg - Configuration
-
-  /cfg <channel username/link/id> - Channel configuration
-
-  </blockquote>
-
-
-  **Open source: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Configuration panel
 d34addb9b2f0: Cache cleared
 d5631690265c: Unrecognized configuration target
@@ -123,6 +113,16 @@ d59c948c471c: Parsing...
 d5a73b0c7f2f: Upload
 dee5266e01a9: 'Cleared all caches: {db_count} in the database · {mem_count} in memory'
 e14de27e8559: '{target_label}'
+e3889d130a2f: '>**To ensure a good experience for all users, rate limiting is currently
+  enabled**
+
+
+  >This project is open source. If you have high-frequency or bulk parsing needs,
+  it is recommended to deploy your own instance to avoid triggering Telegram API global
+  rate limits.
+
+
+  **Open source repository: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Parse and preview content
 e4f6307e1c4f: 'Switched to: {LANG_MAP[selected]}'
 eaa3cd851501: Custom Copy

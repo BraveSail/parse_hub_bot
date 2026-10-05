@@ -30,20 +30,36 @@
 405ba1795958: Konu yapılandırması
 421687e6f757: '{target} yapılandırmada (ADMIN_USERS); kaldırmak için .env dosyasını düzenleyin'
 460ce129a523: İndiriliyor...
+4833c4c22f97: '**Çözümleme için paylaşım bağlantısı gönderin**
+
+
+  **Desteklenen platformlar:**
+
+  <blockquote expandable>{get_supported_platforms()}</blockquote>
+
+
+  **Komut listesi:**
+
+  <blockquote expandable>/jx <bağlantı> - İçeriği çözümle ve önizle
+
+  /raw <bağlantı> - Orijinal dosyayı gönder, kalite sıkıştırmasını önle
+
+  /zip <bağlantı> - Paket halinde gönder, çözümleme bilgisi ile birlikte
+
+  /jxjx <bağlantı> - Önbelleği atlayarak çözümle
+
+  /lang - Dil
+
+  /cfg - Yapılandırma
+
+  /cfg <kanal kullanıcı adı/link/id> - Kanal yapılandırması
+
+  </blockquote>
+
+
+  **Açık kaynak adresi: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Başlığı Gizle
 4fb5f29ee802: Lütfen bir link ekleyin veya bir mesaja yanıt verin
-4fbdbeb0f163: '
-
-
-  >**Tüm kullanıcıların deneyimini korumak için, şu anda hız sınırı etkinleştirilmiştir**
-
-
-  >Bu proje açık kaynaklıdır, yüksek frekanslı veya toplu çözümleme ihtiyaçlarınız
-  varsa, Telegram API''nin genel hız sınırını tetiklememek için kendi örneğinizi kurmanız
-  önerilir
-
-
-  **Açık kaynak adresi: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 5348dcac296c: Ayrıştırma başarısız
 569c1f28ab00: Paketleniyor...
 5861d620c41d: İndiriliyor... | {current}/{total}
@@ -90,34 +106,6 @@ c11154582f8a: Özeti Gizle
 c2236f70c559: Önbellek çözümlemesini atla
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: İzin listesinden çıkarıldı
-c97827ba89ec: '**Çözümleme için paylaşım bağlantısı gönderin**
-
-
-  **Desteklenen platformlar:**
-
-  <blockquote expandable>{get_supported_platforms()}</blockquote>
-
-
-  **Komut listesi:**
-
-  <blockquote expandable>/jx <bağlantı> - İçeriği çözümle ve önizle
-
-  /raw <bağlantı> - Orijinal dosyayı gönder, kalite sıkıştırmasını önle
-
-  /zip <bağlantı> - Paket halinde gönder, çözümleme bilgisi ile birlikte
-
-  /jxjx <bağlantı> - Önbelleği atlayarak çözümle
-
-  /lang - Dil
-
-  /cfg - Yapılandırma
-
-  /cfg <kanal kullanıcı adı/link/id> - Kanal yapılandırması
-
-  </blockquote>
-
-
-  **Açık kaynak adresi: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Yapılandırma paneli
 d34addb9b2f0: Önbellek temizlendi
 d5631690265c: Yapılandırma hedefi tanınamadı
@@ -125,6 +113,18 @@ d59c948c471c: Çözülüyor...
 d5a73b0c7f2f: Yükle
 dee5266e01a9: 'Tüm önbellekler temizlendi: veritabanında {db_count} · bellekte {mem_count}'
 e14de27e8559: '{target_label}'
+e3889d130a2f: '
+
+
+  >**Tüm kullanıcıların deneyimini korumak için, şu anda hız sınırı etkinleştirilmiştir**
+
+
+  >Bu proje açık kaynaklıdır, yüksek frekanslı veya toplu çözümleme ihtiyaçlarınız
+  varsa, Telegram API''nin genel hız sınırını tetiklememek için kendi örneğinizi kurmanız
+  önerilir
+
+
+  **Açık kaynak adresi: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: İçeriği çözümle ve önizle
 e4f6307e1c4f: '{LANG_MAP[selected]} olarak değiştirildi'
 eaa3cd851501: Özel metin

@@ -32,21 +32,36 @@
 405ba1795958: Topicconfiguratie
 421687e6f757: '{target} staat in de configuratie (ADMIN_USERS); bewerk .env om te verwijderen'
 460ce129a523: Bezig met downloaden...
+4833c4c22f97: '**Stuur een deel-link om te parseren**
+
+
+  **Ondersteunde platforms:**
+
+  <blockquote expandable>{get_supported_platforms()}</blockquote>
+
+
+  **Lijst met commando''s:**
+
+  <blockquote expandable>/jx <link> - Parseer en bekijk inhoud
+
+  /raw <link> - Stuur het originele bestand om kwaliteitscompressie te voorkomen
+
+  /zip <link> - Verpak en stuur, inclusief parseer informatie
+
+  /jxjx <link> - Omzeil cache parsing
+
+  /lang - Taal
+
+  /cfg - Configuratie
+
+  /cfg <kanaal gebruikersnaam/link/id> - Kanaalconfiguratie
+
+  </blockquote>
+
+
+  **Open source adres: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Titel verbergen
 4fb5f29ee802: Voeg een link toe of beantwoord een bericht
-4fbdbeb0f163: '
-
-
-  >**Om de gebruikservaring voor alle gebruikers te waarborgen, is er momenteel een
-  snelheidslimiet ingeschakeld**
-
-
-  >Dit project is open source. Als u frequente of batchverwerking nodig heeft, wordt
-  aanbevolen om uw eigen instantie te implementeren om te voorkomen dat de wereldwijde
-  snelheidslimiet van de Telegram API wordt geactiveerd.
-
-
-  **Open source locatie: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 5348dcac296c: Parsen mislukt
 569c1f28ab00: Bezig met inpakken...
 5861d620c41d: Bezig met downloaden... | {current}/{total}
@@ -92,34 +107,6 @@ c11154582f8a: Introductie verbergen
 c2236f70c559: Cache-omzeiling parsing
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Verwijderd van de whitelist
-c97827ba89ec: '**Stuur een deel-link om te parseren**
-
-
-  **Ondersteunde platforms:**
-
-  <blockquote expandable>{get_supported_platforms()}</blockquote>
-
-
-  **Lijst met commando''s:**
-
-  <blockquote expandable>/jx <link> - Parseer en bekijk inhoud
-
-  /raw <link> - Stuur het originele bestand om kwaliteitscompressie te voorkomen
-
-  /zip <link> - Verpak en stuur, inclusief parseer informatie
-
-  /jxjx <link> - Omzeil cache parsing
-
-  /lang - Taal
-
-  /cfg - Configuratie
-
-  /cfg <kanaal gebruikersnaam/link/id> - Kanaalconfiguratie
-
-  </blockquote>
-
-
-  **Open source adres: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Configuratiepaneel
 d34addb9b2f0: Cache gewist
 d5631690265c: Kan configuratiedoel niet herkennen
@@ -127,6 +114,19 @@ d59c948c471c: Bezig met ontleden...
 d5a73b0c7f2f: Uploaden
 dee5266e01a9: 'Alle caches gewist: {db_count} in de database · {mem_count} in het geheugen'
 e14de27e8559: '{target_label}'
+e3889d130a2f: '
+
+
+  >**Om de gebruikservaring voor alle gebruikers te waarborgen, is er momenteel een
+  snelheidslimiet ingeschakeld**
+
+
+  >Dit project is open source. Als u frequente of batchverwerking nodig heeft, wordt
+  aanbevolen om uw eigen instantie te implementeren om te voorkomen dat de wereldwijde
+  snelheidslimiet van de Telegram API wordt geactiveerd.
+
+
+  **Open source locatie: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Parseer en bekijk inhoud
 e4f6307e1c4f: 'Gewisseld naar: {LANG_MAP[selected]}'
 eaa3cd851501: Aangepaste tekst

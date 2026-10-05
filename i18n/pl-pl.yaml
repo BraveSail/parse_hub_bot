@@ -31,21 +31,36 @@
 405ba1795958: Konfiguracja tematu
 421687e6f757: '{target} jest w konfiguracji (ADMIN_USERS); aby usunąć, zmień .env'
 460ce129a523: Pobieranie...
+4833c4c22f97: '**Wyślij link do udostępnienia, aby przeanalizować**
+
+
+  **Obsługiwane platformy:**
+
+  <blockquote expandable>{get_supported_platforms()}</blockquote>
+
+
+  **Lista poleceń:**
+
+  <blockquote expandable>/jx <link> - Analizuj i podglądaj zawartość
+
+  /raw <link> - Wyślij oryginalny plik, aby uniknąć kompresji jakości obrazu
+
+  /zip <link> - Wyślij jako paczkę, z informacjami o analizie
+
+  /jxjx <link> - Analiza z pominięciem pamięci podręcznej
+
+  /lang - Język
+
+  /cfg - Konfiguracja
+
+  /cfg <nazwa_użytkownika_kanalu/link/id> - Konfiguracja kanału
+
+  </blockquote>
+
+
+  **Adres źródłowy: [GitHub](https://github.com/BraveSail/shirobako)**'
 4e9ce9dfe13d: Ukryj tytuł
 4fb5f29ee802: Proszę dołączyć link lub odpowiedzieć na wiadomość
-4fbdbeb0f163: '
-
-
-  >**Aby zapewnić dobrą jakość korzystania wszystkim użytkownikom, obecnie włączono
-  ograniczenie szybkości**
-
-
-  >Projekt jest otwartoźródłowy, jeśli masz potrzeby częstego lub masowego przetwarzania,
-  zalecamy samodzielne uruchomienie instancji, aby uniknąć globalnych ograniczeń szybkości
-  API Telegrama
-
-
-  **Repozytorium otwartego źródła: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 5348dcac296c: Analiza nie powiodła się
 569c1f28ab00: Pakowanie...
 5861d620c41d: Pobieranie... | {current}/{total}
@@ -91,34 +106,6 @@ c11154582f8a: Ukryj wprowadzenie
 c2236f70c559: Omijanie analizy pamięci podręcznej
 c25add78a072: "{t} \n```\n{error}```"
 c4638f9eedae: Usunięto z listy dozwolonych
-c97827ba89ec: '**Wyślij link do udostępnienia, aby przeanalizować**
-
-
-  **Obsługiwane platformy:**
-
-  <blockquote expandable>{get_supported_platforms()}</blockquote>
-
-
-  **Lista poleceń:**
-
-  <blockquote expandable>/jx <link> - Analizuj i podglądaj zawartość
-
-  /raw <link> - Wyślij oryginalny plik, aby uniknąć kompresji jakości obrazu
-
-  /zip <link> - Wyślij jako paczkę, z informacjami o analizie
-
-  /jxjx <link> - Analiza z pominięciem pamięci podręcznej
-
-  /lang - Język
-
-  /cfg - Konfiguracja
-
-  /cfg <nazwa_użytkownika_kanalu/link/id> - Konfiguracja kanału
-
-  </blockquote>
-
-
-  **Adres źródłowy: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Panel konfiguracji
 d34addb9b2f0: Pamięć podręczna wyczyszczona
 d5631690265c: Nie można rozpoznać celu konfiguracji
@@ -126,6 +113,19 @@ d59c948c471c: Analizowanie...
 d5a73b0c7f2f: Przesyłanie
 dee5266e01a9: 'Wyczyszczono wszystkie pamięci podręczne: {db_count} w bazie · {mem_count} w pamięci'
 e14de27e8559: '{target_label}'
+e3889d130a2f: '
+
+
+  >**Aby zapewnić dobrą jakość korzystania wszystkim użytkownikom, obecnie włączono
+  ograniczenie szybkości**
+
+
+  >Projekt jest otwartoźródłowy, jeśli masz potrzeby częstego lub masowego przetwarzania,
+  zalecamy samodzielne uruchomienie instancji, aby uniknąć globalnych ograniczeń szybkości
+  API Telegrama
+
+
+  **Repozytorium otwartego źródła: [GitHub](https://github.com/BraveSail/shirobako)**'
 e3ab31c8d89c: Analizuj i podglądaj zawartość
 e4f6307e1c4f: 'Przełączono na: {LANG_MAP[selected]}'
 eaa3cd851501: Niestandardowy tekst

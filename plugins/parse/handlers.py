@@ -174,7 +174,7 @@ async def _handle_parse_request(req: ParseRequest) -> None:
                     "\n\n>**为保障所有用户的使用体验, 当前已启用速率限制**\n\n"
                     ">本项目为开源项目, 如有高频或批量解析需求, 建议自行部署实例, "
                     "以免触发 Telegram API 全局速率限制\n\n"
-                    "**开源地址: [GitHub](https://github.com/z-mio/parse_hub_bot)**"
+                    "**开源地址: [GitHub](https://github.com/BraveSail/shirobako)**"
                 )
             await MessageSender(req.cli, req.msg, req.config).delete_after(e.retry_after).text_no_preview(text)
     else:
