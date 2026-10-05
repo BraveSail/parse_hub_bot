@@ -373,8 +373,9 @@ async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]
 
     返回的条目与直发路径写进缓存的格式一致 (``CacheMedia``), 下一次选中即可零上传。
 
-    只处理 markdown 路径的 ``InputRichMessageMedia``; blocks (敏感内容) 有自己的媒体结构,
-    暂不支持 —— 那种情况返回空列表 (退化成"不写缓存", 与改动前一致)。
+    ``media`` 是 ``build_rich_media`` 的产物, 两条路 (markdown / 敏感内容的 blocks) 都产出
+    同一份 ``InputRichMessageMedia`` 列表 —— 敏感路径只是**发送时**改用 blocks 渲染, 所以
+    这个函数对两者一样有效 (原先只给 markdown 路径记账, 敏感内容因此每次都重新下载)。
     """
     from pyrogram.file_id import FileId, FileType, ThumbnailSource
 

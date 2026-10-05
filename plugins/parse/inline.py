@@ -42,6 +42,7 @@ from plugins.parse.inline_rich import (
     RICH_RESULT_ID,
     build_cached_rich_content,
     build_rich_media,
+    cache_media_blocks,
     cached_rich_message,
     edit_inline_rich_message,
     rich_cache_entry,
@@ -279,6 +280,50 @@ async def _drop_inline_keyboard(cli: Client, inline_message_id: str) -> None:
         logger.warning(f"摘除 inline 键盘失败: {type(e).__name__}: {e}")
 
 
+async def _upload_and_cache_inline_media(
+    cli: Client,
+    raw_url: str,
+    parse_result,
+    media: list,
+    quoted_placeholders: list[str],
+    reply_placeholders: list[str],
+):
+    """先自己上传拿 file_id, 并把这条 inline 消息的媒体写进缓存。
+
+    为什么要自己上传: inline 消息只能用 ``EditInlineBotMessage`` 更新, 它**只回 Bool**,
+    拿不到服务端生成的 file_id —— 所以 inline 路径以前**从不写**缓存, 每次选中都要
+    重新下载 + 上传。这里先上传一次, file_id 就能记下来 (调用方随后用 file_id 引用编辑,
+    不会二次上传)。
+
+    记账是 **all-or-nothing**: 只有**全部**媒体都拿到 file_id 才写 —— 部分成功时引用/回复
+    媒体的计数会对不上, 下次命中会把图放错块 (宁可这次不写)。返回写成功的缓存条目, 否则 None。
+    """
+    uploaded = await upload_media_for_cache(cli, media)
+    if not uploaded:
+        return None
+    if len(uploaded) != len(media):
+        logger.warning(
+            f"inline 媒体只记上 {len(uploaded)}/{len(media)} 条, 跳过写缓存 (避免引用计数错位)"
+        )
+        return None
+    if not raw_url:
+        return None
+    quoted_items = min(len(quoted_placeholders), len(uploaded))
+    reply_items = min(len(reply_placeholders), len(uploaded) - quoted_items)
+    entry = rich_cache_entry(
+        parse_result,
+        uploaded,
+        quoted_media_count=quoted_items,
+        reply_media_count=reply_items,
+    )
+    await persistent_cache.set(raw_url, entry)
+    logger.info(
+        f"inline 媒体已写 file_id 缓存: count={len(uploaded)} "
+        f"引用{quoted_items} 回复{reply_items} (下次选中零下载/零上传)"
+    )
+    return entry
+
+
 @Client.on_chosen_inline_result()
 @with_request_id
 async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult) -> None:
@@ -362,38 +407,20 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
                 f"inline 编辑为富文本: media={len(media)}, blocks={len(media_blocks)}, "
                 f"markdown={len(markdown)}, sensitive={parse_result.is_sensitive}"
             )
+            # 两条路都先自己上传拿 file_id: 编辑时就用 file_id 引用 (不再上传), 同时这条
+            # inline 消息的媒体也进了缓存 —— 以前 inline 从不写, 每次选中都得重新下载。
+            entry = await _upload_and_cache_inline_media(
+                cli, raw_url, parse_result, media, quoted_placeholders, reply_placeholders
+            )
             if parse_result.is_sensitive and media_blocks:
-                # 敏感内容: markdown+media 路径的 raw 类型没有 spoiler, 只能走 blocks
-                blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
+                # 敏感内容: markdown+media 路径的 raw 类型没有 spoiler, 只能走 blocks。
+                # 记账成功时用**缓存里那套 file_id 版 blocks** 编辑 —— 与缓存命中时同一套
+                # 渲染, 形态一致, 也不会把本地文件再上传一遍。
+                cached_blocks = cache_media_blocks(entry)[4] if entry is not None else None
+                blocks = markdown_to_blocks(markdown, media_blocks=cached_blocks or media_blocks)
                 await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, blocks=blocks)
             else:
-                # 先自己上传拿 file_id (就地换成 file_id 引用, 编辑时不再上传), 再编辑。
-                # 这样**这一条 inline 消息**的媒体也进了 file_id 缓存 —— 以前 inline 从不写,
-                # 每次选中都要重新下载 + 上传 (EditInlineBotMessage 只回 Bool, 拿不到 file_id)。
-                uploaded_media = await upload_media_for_cache(cli, media)
                 await edit_inline_rich_message(cli, inline_message_id, markdown=markdown, media=media)
-                # 只有**全部**媒体都记上账才写缓存: 部分成功时引用/回复媒体的计数会对不上,
-                # 写进去会让下次命中的消息把图放错位置 (宁可这次不写)
-                if uploaded_media and len(uploaded_media) == len(media):
-                    quoted_items = min(len(quoted_placeholders), len(uploaded_media))
-                    reply_items = min(len(reply_placeholders), len(uploaded_media) - quoted_items)
-                    await persistent_cache.set(
-                        raw_url,
-                        rich_cache_entry(
-                            parse_result,
-                            uploaded_media,
-                            quoted_media_count=quoted_items,
-                            reply_media_count=reply_items,
-                        ),
-                    )
-                    logger.info(
-                        f"inline 媒体已写 file_id 缓存: count={len(uploaded_media)} "
-                        f"引用{quoted_items} 回复{reply_items} (下次选中零下载/零上传)"
-                    )
-                elif uploaded_media:
-                    logger.warning(
-                        f"inline 媒体只记上 {len(uploaded_media)}/{len(media)} 条, 跳过写缓存 (避免引用计数错位)"
-                    )
         except Exception as e:
             logger.opt(exception=e).debug("详细堆栈")
             logger.error(f"inline 富文本编辑失败: {e}")

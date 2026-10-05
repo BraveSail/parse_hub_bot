@@ -127,16 +127,109 @@ def test_no_media_is_a_noop():
     assert asyncio.run(upload_media_for_cache(_cli(photo=_raw_photo()), [])) == []
 
 
-def test_the_media_count_mismatch_guard_exists_in_the_handler():
-    """盯住调用点的保护: 只有**全部**媒体都记上账才写缓存。
+def _inline_source() -> tuple[Path, str, "object"]:
+    import ast
 
-    这是**纯副作用**的一行判断 (删掉不会让别的测试变红), 所以用源码断言看着。
-    """
     source = Path(__file__).resolve().parent.parent / "plugins" / "parse" / "inline.py"
     text = source.read_text(encoding="utf-8")
-    assert "len(uploaded_media) == len(media)" in text, "写缓存前必须确认全部媒体都记上账"
-    assert "upload_media_for_cache" in text
-    assert "rich_cache_entry" in text
+    return source, text, ast.parse(text)
+
+
+def test_the_record_helper_is_all_or_nothing(monkeypatch):
+    """记账是 all-or-nothing: 部分成功时不写缓存 (引用/回复计数会对不上)。
+
+    这里直接测那个共用函数 —— 两条路 (markdown / 敏感的 blocks) 都走它。
+    """
+    from plugins.parse import inline as inline_mod
+
+    written: list = []
+
+    async def fake_set(key, entry):  # noqa: ANN001
+        written.append((key, entry))
+
+    monkeypatch.setattr(inline_mod, "persistent_cache", SimpleNamespace(set=fake_set))
+
+    from pyrogram.types import InputRichMessageMedia as M
+
+    media = [M(id="m0", media=InputMediaPhoto("/tmp/a.jpg")), M(id="m1", media=InputMediaPhoto("/tmp/b.jpg"))]
+    # rich_cache_entry 会读这些字段 (照 CacheParseResult 的形)
+    parse_result = SimpleNamespace(
+        is_sensitive=True,
+        title="标题",
+        content="正文",
+        author_name="名字",
+        author_handle="handle",
+        author_url="https://x.com/a",
+        published_at=None,
+        view_count=None,
+        like_count=None,
+        tags=[],
+    )
+
+    # 全部记账成功 → 写缓存并返回条目
+    async def upload_all(cli, items):  # noqa: ANN001
+        from services.cache import CacheMedia, CacheMediaType
+
+        return [CacheMedia(type=CacheMediaType.PHOTO, file_id=f"fid{i}") for i in range(len(items))]
+
+    import plugins.parse.inline_rich as ir
+
+    monkeypatch.setattr(ir, "upload_media_for_cache", upload_all)
+    monkeypatch.setattr(inline_mod, "upload_media_for_cache", upload_all)
+    entry = asyncio.run(
+        inline_mod._upload_and_cache_inline_media(None, "https://x.com/s/1", parse_result, media, [], [])
+    )
+    assert entry is not None and len(written) == 1
+
+    written.clear()
+
+    # 只记上一半 → 不写缓存, 返回 None
+    async def upload_partial(cli, items):  # noqa: ANN001
+        from services.cache import CacheMedia, CacheMediaType
+
+        return [CacheMedia(type=CacheMediaType.PHOTO, file_id="fid0")]
+
+    monkeypatch.setattr(inline_mod, "upload_media_for_cache", upload_partial)
+    assert (
+        asyncio.run(
+            inline_mod._upload_and_cache_inline_media(None, "https://x.com/s/1", parse_result, media, [], [])
+        )
+        is None
+    )
+    assert written == [], "部分成功时不能写缓存"
+
+
+def test_the_sensitive_branch_records_too():
+    """敏感内容 (blocks 路径) 也必须记账 —— 这是「每次重新下载」的根因。
+
+    那条路以前绕过了 upload_media_for_cache, 于是 file_id 缓存永远写不进,
+    每次选中都要重新下载。用 AST 盯住结构: 记账发生在 `is_sensitive` 判断**之前**,
+    也就是两条路共用同一次记账。
+    """
+    import ast
+
+    _source, _text, tree = _inline_source()
+    func = next(
+        n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == "inline_result_download"
+    )
+    record_lines = [
+        n.lineno
+        for n in ast.walk(func)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "_upload_and_cache_inline_media"
+    ]
+    sensitive_lines = [
+        n.lineno for n in ast.walk(func) if isinstance(n, ast.If) and "is_sensitive" in ast.dump(n.test)
+    ]
+    assert len(record_lines) == 1, f"记账应只有一处 (两条路共用), 实际 {len(record_lines)} 处"
+    assert sensitive_lines, "应当仍有一条敏感内容分支"
+    assert record_lines[0] < min(sensitive_lines), "记账必须在敏感分支**之前**, 否则敏感内容又不写缓存了"
+
+
+def test_the_sensitive_branch_edits_with_the_cached_blocks():
+    """敏感分支用缓存那套 file_id 版 blocks 编辑 (与缓存命中同一形态, 且不二次上传)"""
+    _source, text, _tree = _inline_source()
+    assert "cache_media_blocks(entry)[4]" in text
+    assert "cached_blocks or media_blocks" in text
 
 
 if __name__ == "__main__":
