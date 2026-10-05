@@ -27,8 +27,10 @@
 3795485677d6: Configuration du groupe
 39b75e75d433: Vignette vidéo
 39d2213b4a9a: La liste blanche est vide
+3a6fc1464f5f: Pas dans la liste blanche
 3d3eeb2bc9cd: Élément de configuration inconnu
 405ba1795958: Configuration du sujet
+421687e6f757: '{target} figure dans la configuration (ADMIN_USERS) ; modifiez .env pour le retirer'
 460ce129a523: Téléchargement en cours...
 4e9ce9dfe13d: Masquer le titre
 4fb5f29ee802: Veuillez ajouter un lien ou répondre à un message
@@ -89,6 +91,7 @@ c039b80e17dd: Analyse agrégée
 c11154582f8a: Masquer la description
 c2236f70c559: Contourner l'analyse du cache
 c25add78a072: "{t} \n```\n{error}```"
+c4638f9eedae: Retiré de la liste blanche
 c97827ba89ec: '**Envoyez un lien de partage pour analyse**
 
 
@@ -122,6 +125,7 @@ d34addb9b2f0: Cache effacé
 d5631690265c: Impossible de reconnaître la cible de configuration
 d59c948c471c: Analyse en cours...
 d5a73b0c7f2f: Téléverser
+dee5266e01a9: 'Tous les caches ont été vidés : {db_count} en base · {mem_count} en mémoire'
 e14de27e8559: '{target_label}'
 e3ab31c8d89c: Analyser et prévisualiser le contenu
 e4f6307e1c4f: 'Passé à : {LANG_MAP[selected]}'

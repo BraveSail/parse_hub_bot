@@ -26,8 +26,10 @@
 3795485677d6: Configuración del grupo
 39b75e75d433: Portada del vídeo
 39d2213b4a9a: La lista blanca está vacía
+3a6fc1464f5f: No está en la lista blanca
 3d3eeb2bc9cd: Opción de configuración desconocida
 405ba1795958: Configuración del tema
+421687e6f757: '{target} está en la configuración (ADMIN_USERS); edita .env para quitarlo'
 460ce129a523: Descargando...
 4e9ce9dfe13d: Ocultar título
 4fb5f29ee802: Por favor añade un enlace o responde a un mensaje
@@ -88,6 +90,7 @@ c039b80e17dd: Análisis agregado
 c11154582f8a: Ocultar introducción
 c2236f70c559: Analizar sin usar caché
 c25add78a072: "{t} \n```\n{error}```"
+c4638f9eedae: Eliminado de la lista blanca
 c97827ba89ec: '**Envía un enlace para analizar**
 
 
@@ -121,6 +124,7 @@ d34addb9b2f0: Caché borrada
 d5631690265c: No se puede reconocer el objetivo de configuración
 d59c948c471c: Analizando...
 d5a73b0c7f2f: Subir
+dee5266e01a9: 'Se vaciaron todas las cachés: {db_count} en la base · {mem_count} en memoria'
 e14de27e8559: '{target_label}'
 e3ab31c8d89c: Analizar y previsualizar contenido
 e4f6307e1c4f: 'Cambiado a: {LANG_MAP[selected]}'

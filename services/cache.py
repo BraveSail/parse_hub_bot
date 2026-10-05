@@ -69,6 +69,14 @@ class TTLCache:
             self.logger.debug(f"缓存 pop 命中: key={key}")
             return value
 
+    async def clear(self) -> int:
+        """清空全部条目, 返回清掉的条数。"""
+        async with self._lock:
+            count = len(self._store)
+            self._store.clear()
+        self.logger.warning(f"清空全部内存缓存: {count} 条")
+        return count
+
     def start_cleanup(self) -> None:
         """启动后台清理任务（需在事件循环运行后调用）"""
         if self._cleanup_task is None:
@@ -212,6 +220,20 @@ class PersistentCache:
         key = self._make_key(url)
         async with get_session() as session:
             await CacheRepo(session).remove_by_key(key)
+
+    async def clear(self) -> int:
+        """清空全部解析缓存 (含媒体 file_id), 返回清掉的条数。
+
+        这是**重活**: 清掉之后所有人的下一次解析都要重新走一遍完整流程
+        (重新下载/重新上传), 所以只给白名单的 ``/purge all`` 用, 且日志记 warning。
+        """
+        if self._disable:
+            return 0
+
+        async with get_session() as session:
+            removed = await CacheRepo(session).remove_all()
+        self.logger.warning(f"清空全部解析缓存: {removed} 条")
+        return removed
 
     async def _evict_overflow(self, repo: CacheRepo) -> int:
         if self._max_entries <= 0:

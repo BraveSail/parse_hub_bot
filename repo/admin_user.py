@@ -1,6 +1,6 @@
 """管理命令白名单的仓储。"""
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models.admin_user import AdminUser
@@ -27,6 +27,13 @@ class AdminUserRepo:
         self._session.add(row)
         await self._session.flush()
         return row
+
+    async def remove(self, telegram_user_id: int) -> bool:
+        """从白名单移除, 返回**是否真删掉了** (本来就不在则为 False)。"""
+        result = await self._session.execute(
+            delete(AdminUser).where(AdminUser.telegram_user_id == telegram_user_id)
+        )
+        return bool(result.rowcount)
 
     async def list_all(self) -> list[AdminUser]:
         """全部白名单行, 按加入时间排序 (列表输出稳定可读)。"""

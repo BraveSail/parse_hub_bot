@@ -44,6 +44,15 @@ class CacheRepo:
         if cache is not None:
             await self.remove(cache)
 
+    async def remove_all(self) -> int:
+        """清空整张缓存表, 返回清掉的条数。
+
+        给 ``/purge all`` 用。**不返回条数就没法告诉用户"清了多少"**,
+        而"清空全部"这种操作必须能自证做了什么。
+        """
+        result = await self._session.execute(delete(Cache))
+        return result.rowcount or 0
+
     async def count(self) -> int:
         count = await self._session.scalar(select(func.count()).select_from(Cache))
         return count or 0

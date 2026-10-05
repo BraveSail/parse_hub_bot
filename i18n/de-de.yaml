@@ -27,8 +27,10 @@
 3795485677d6: Gruppenkonfiguration
 39b75e75d433: Video-Cover
 39d2213b4a9a: Die Whitelist ist leer
+3a6fc1464f5f: Nicht in der Whitelist
 3d3eeb2bc9cd: Unbekannte Konfigurationsoption
 405ba1795958: Themen-Konfiguration
+421687e6f757: '{target} steht in der Konfiguration (ADMIN_USERS); zum Entfernen .env bearbeiten'
 460ce129a523: Herunterladen...
 4e9ce9dfe13d: Titel ausblenden
 4fb5f29ee802: Bitte füge einen Link hinzu oder antworte auf eine Nachricht
@@ -90,6 +92,7 @@ c039b80e17dd: Aggregiertes Parsing
 c11154582f8a: Einführung ausblenden
 c2236f70c559: Cache-Parsing umgehen
 c25add78a072: "{t} \n```\n{error}```"
+c4638f9eedae: Von der Whitelist entfernt
 c97827ba89ec: '**Senden Sie einen Freigabelink zur Analyse**
 
 
@@ -123,6 +126,7 @@ d34addb9b2f0: Cache gelöscht
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
 d59c948c471c: Analysiere...
 d5a73b0c7f2f: Hochladen
+dee5266e01a9: 'Alle Caches geleert: {db_count} in der Datenbank · {mem_count} im Speicher'
 e14de27e8559: '{target_label}'
 e3ab31c8d89c: Inhalt analysieren und Vorschau anzeigen
 e4f6307e1c4f: 'Wechsel zu: {LANG_MAP[selected]}'

@@ -50,6 +50,23 @@ class AdminUserService:
         logger.info(f"白名单新增: user_id={user_id} added_by={added_by}")
         return True
 
+    async def remove(self, user_id: int) -> bool:
+        """把用户移出白名单, 返回**是否真的从 DB 删掉了**。
+
+        ⚠️ 配置那层删不掉 (它在 ``.env`` 里) —— 调用方**必须**区分"删了"与
+        "他在配置里", 否则会对用户谎称"已移除"而其实还在白名单。
+        用 ``in_configured()`` 判断。
+        """
+        removed = await self._repo.remove(user_id)
+        if removed:
+            logger.info(f"白名单移除: user_id={user_id}")
+        return removed
+
+    @staticmethod
+    def in_configured(user_id: int) -> bool:
+        """该用户是不是**配置**里的 (那种删不掉, 只能改 .env)。"""
+        return user_id in AdminUserService.configured_ids()
+
     async def list_ids(self) -> list[int]:
         """全部白名单 ID。**与加入顺序无关, 排序输出** (列表稳定可读)。"""
         rows = await self._repo.list_all()

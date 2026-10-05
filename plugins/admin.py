@@ -65,7 +65,7 @@ def _target_user_id_from_reply(reply: Message) -> int | None:
 
 
 async def _resolve_target(cli: Client, msg: Message) -> int | None:
-    """``/add`` 要加的人: 命令参数优先, 否则看被回复的消息。"""
+    """``/add`` / ``/del`` 要操作的人: 命令参数优先, 否则看被回复的消息。"""
     if msg.command and len(msg.command) > 1:
         arg = msg.command[1].strip()
         if arg.lstrip("-").isdigit():
@@ -136,7 +136,23 @@ async def purge_cache(cli: Client, msg: Message) -> None:
     lang, config = await _context(msg)
     _t = t_[lang]
 
-    text = " ".join(msg.command[1:]) if msg.command and msg.command[1:] else ""
+    args = msg.command[1:] if msg.command and msg.command[1:] else []
+
+    # ``/purge all``: 清空全部。**清掉之后所有人的下一次解析都要重新下载+上传媒体**,
+    # 所以只有这一种"批量"形式 (不做 ``/purge 平台`` 之类的中间档 —— 那只会更难解释代价)。
+    if len(args) == 1 and args[0].strip().lower() == "all":
+        db_count = await persistent_cache.clear()
+        mem_count = await parse_cache.clear()
+        logger.warning(
+            f"/purge all: 清空全部缓存 db={db_count} mem={mem_count} "
+            f"by={msg.from_user.id if msg.from_user else None}"
+        )
+        await MessageSender(cli, msg, config).text(
+            _t(f"已清空全部缓存: 数据库 {db_count} 条 · 内存 {mem_count} 条")
+        )
+        return
+
+    text = " ".join(args)
     if not text and msg.reply_to_message:
         text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
     if not text:
@@ -164,3 +180,31 @@ async def purge_cache(cli: Client, msg: Message) -> None:
         lines.append(f"{_t('已清除缓存') if had else _t('没有缓存')}\n{raw_url}")
 
     await MessageSender(cli, msg, config).text("\n\n".join(lines))
+
+
+@Client.on_message(filters.command("del"))
+async def remove_admin_user(cli: Client, msg: Message) -> None:
+    """``/del <uid>`` 或回复某人的消息 —— 把他移出白名单。"""
+    if not await _require_admin(cli, msg):
+        return
+
+    lang, config = await _context(msg)
+    _t = t_[lang]
+
+    target = await _resolve_target(cli, msg)
+    if target is None:
+        await MessageSender(cli, msg, config).text(_t("请回复某人的消息，或给出用户 ID"))
+        return
+
+    # 配置那层删不掉 (它在 .env 里) —— 必须说清, 不能谎称"已移除"而其实还在白名单
+    if AdminUserService.in_configured(target):
+        await MessageSender(cli, msg, config).text(
+            _t(f"{target} 在配置 (ADMIN_USERS) 里，需改 .env 才能移除")
+        )
+        return
+
+    async with get_session() as session:
+        removed = await AdminUserService(session).remove(target)
+
+    label = _t("已移出白名单") if removed else _t("不在白名单中")
+    await MessageSender(cli, msg, config).text(f"{label}: {target}")

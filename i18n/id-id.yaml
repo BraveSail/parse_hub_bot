@@ -26,8 +26,10 @@
 3795485677d6: Konfigurasi grup
 39b75e75d433: Sampul video
 39d2213b4a9a: Daftar putih kosong
+3a6fc1464f5f: Tidak ada di daftar putih
 3d3eeb2bc9cd: Item konfigurasi tidak dikenal
 405ba1795958: Konfigurasi topik
+421687e6f757: '{target} ada di konfigurasi (ADMIN_USERS); ubah .env untuk menghapusnya'
 460ce129a523: Sedang mengunduh...
 4e9ce9dfe13d: Sembunyikan judul
 4fb5f29ee802: Harap sertakan tautan atau balas pesan
@@ -88,6 +90,7 @@ c039b80e17dd: Pemrosesan agregat
 c11154582f8a: Sembunyikan deskripsi
 c2236f70c559: Melewati parsing cache
 c25add78a072: "{t} \n```\n{error}```"
+c4638f9eedae: Dihapus dari daftar putih
 c97827ba89ec: '**Kirim tautan berbagi untuk parsing**
 
 
@@ -121,6 +124,7 @@ d34addb9b2f0: Cache dihapus
 d5631690265c: Target konfigurasi tidak dikenali
 d59c948c471c: Sedang memproses...
 d5a73b0c7f2f: Unggah
+dee5266e01a9: 'Semua cache dihapus: {db_count} di basis data · {mem_count} di memori'
 e14de27e8559: '{target_label}'
 e3ab31c8d89c: Parsing dan pratinjau konten
 e4f6307e1c4f: 'Berhasil beralih ke: {LANG_MAP[selected]}'

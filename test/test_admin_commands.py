@@ -183,6 +183,17 @@ def _sender_recorder():
     return sender
 
 
+def _session_cm():
+    """一个 get_session 的替身 (只 yield None, 不做提交/回滚)。"""
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_session():
+        yield None
+
+    return fake_session
+
+
 def test_a_non_whitelisted_user_gets_a_refusal_and_nothing_else():
     from plugins import admin
 
@@ -266,6 +277,167 @@ def test_purge_asks_for_a_link_when_given_none():
         asyncio.run(admin.purge_cache(cli, msg))
 
     assert sender.return_value.text.await_args.args[0] == "请加上链接或回复一条消息"
+
+
+# ---------------------------------------------------------------- /purge all
+
+
+def _purge_all(arg: str = "all"):
+    """跑一次 ``/purge all``。"""
+    from plugins import admin
+
+    cli, sender = MagicMock(), _sender_recorder()
+    msg = SimpleNamespace(from_user=SimpleNamespace(id=CONFIGURED), command=["purge", arg], reply_to_message=None)
+
+    parser = MagicMock()
+    parser.get_platform = MagicMock(return_value=SimpleNamespace(id="twitter"))
+    svc = MagicMock()
+    svc.get_raw_url = AsyncMock()
+    svc.parser = parser
+    persistent, memory = MagicMock(), MagicMock()
+    persistent.clear = AsyncMock(return_value=36)
+    memory.clear = AsyncMock(return_value=5)
+
+    with (
+        patch.object(admin, "is_admin_user", AsyncMock(return_value=True)),
+        patch.object(admin, "_context", AsyncMock(return_value=("zh-hans", SimpleNamespace()))),
+        patch.object(admin, "MessageSender", sender),
+        patch.object(admin, "ParseService", MagicMock(return_value=svc)),
+        patch.object(admin, "persistent_cache", persistent),
+        patch.object(admin, "parse_cache", memory),
+    ):
+        asyncio.run(admin.purge_cache(cli, msg))
+
+    return sender.return_value.text.await_args.args[0], persistent, memory, svc
+
+
+def test_purge_all_clears_both_layers_and_reports_the_counts():
+    """清空全部: 两层都清, 且**报出各清了多少** —— "清空全部"必须能自证做了什么"""
+    said, persistent, memory, _ = _purge_all()
+    persistent.clear.assert_awaited_once()
+    memory.clear.assert_awaited_once()
+    assert "36" in said and "5" in said
+
+
+def test_purge_all_does_not_touch_any_link():
+    """``all`` 分支不该去解析链接 (它跟链接无关)"""
+    _, _, _, svc = _purge_all()
+    svc.get_raw_url.assert_not_awaited()
+
+
+def test_purge_all_is_case_insensitive():
+    _, persistent, _, _ = _purge_all("ALL")
+    persistent.clear.assert_awaited_once()
+
+
+def test_purge_all_is_not_a_url_argument():
+    """只有**单独一个** ``all`` 才算清空; 跟别的词混在一起时不能当清空处理"""
+    from plugins import admin
+
+    cli, sender = MagicMock(), _sender_recorder()
+    msg = SimpleNamespace(
+        from_user=SimpleNamespace(id=CONFIGURED), command=["purge", "all", "extra"], reply_to_message=None
+    )
+    parser = MagicMock()
+    parser.get_platform = MagicMock(return_value=None)
+    svc = MagicMock()
+    svc.parser = parser
+    persistent, memory = MagicMock(), MagicMock()
+    persistent.clear, memory.clear = AsyncMock(), AsyncMock()
+
+    with (
+        patch.object(admin, "is_admin_user", AsyncMock(return_value=True)),
+        patch.object(admin, "_context", AsyncMock(return_value=("zh-hans", SimpleNamespace()))),
+        patch.object(admin, "MessageSender", sender),
+        patch.object(admin, "ParseService", MagicMock(return_value=svc)),
+        patch.object(admin, "persistent_cache", persistent),
+        patch.object(admin, "parse_cache", memory),
+    ):
+        asyncio.run(admin.purge_cache(cli, msg))
+
+    persistent.clear.assert_not_called()
+
+
+# ---------------------------------------------------------------- /del
+
+
+def _del(target_arg: str | None = "123456789", *, in_config: bool = False, removed: bool = True):
+    from plugins import admin
+
+    cli, sender = MagicMock(), _sender_recorder()
+    command = ["del"] if target_arg is None else ["del", target_arg]
+    msg = SimpleNamespace(from_user=SimpleNamespace(id=CONFIGURED), command=command, reply_to_message=None)
+
+    service = MagicMock()
+    service.in_configured = MagicMock(return_value=in_config)
+    service.return_value.remove = AsyncMock(return_value=removed)
+
+    with (
+        patch.object(admin, "is_admin_user", AsyncMock(return_value=True)),
+        patch.object(admin, "_context", AsyncMock(return_value=("zh-hans", SimpleNamespace()))),
+        patch.object(admin, "MessageSender", sender),
+        patch.object(admin, "AdminUserService", service),
+        patch.object(admin, "get_session", _session_cm()),
+    ):
+        asyncio.run(admin.remove_admin_user(cli, msg))
+
+    return sender.return_value.text.await_args.args[0], service
+
+
+def test_del_removes_a_user_added_at_runtime():
+    said, service = _del()
+    service.return_value.remove.assert_awaited_once_with(123456789)
+    assert "已移出白名单" in said
+
+
+def test_del_says_so_when_the_user_was_not_listed():
+    said, service = _del(removed=False)
+    assert "不在白名单中" in said
+
+
+def test_del_does_not_pretend_to_remove_a_configured_user():
+    """配置里的用户删不掉 —— 必须说"要改 .env", 不能回一句"已移出"骗人
+
+    (配置那层在 .env 里, 代码删不掉; 谎称删了的话用户会发现他还在白名单)
+    """
+    said, service = _del("1879026273", in_config=True)
+    service.return_value.remove.assert_not_awaited()
+    assert "ADMIN_USERS" in said and ".env" in said
+
+
+def test_del_asks_for_a_target_when_given_none():
+    said, _ = _del(None)
+    assert said == "请回复某人的消息，或给出用户 ID"
+
+
+# ---------------------------------------------------------------- 清空接口本身
+
+
+def test_ttl_clear_empties_the_store():
+    """内存层真的清空 (不只是返回个数)"""
+    from services.cache import TTLCache
+
+    cache = TTLCache()
+    asyncio.run(cache.set("a", 1))
+    asyncio.run(cache.set("b", 2))
+    assert asyncio.run(cache.clear()) == 2
+    assert asyncio.run(cache.get("a")) is None
+    assert asyncio.run(cache.get("b")) is None
+
+
+def test_persistent_clear_removes_every_row():
+    from services.cache import PersistentCache
+
+    cache = PersistentCache()
+    repo = MagicMock()
+    repo.remove_all = AsyncMock(return_value=42)
+
+    with (
+        patch("services.cache.get_session", _session_cm()),
+        patch("services.cache.CacheRepo", MagicMock(return_value=repo)),
+    ):
+        assert asyncio.run(cache.clear()) == 42
+    repo.remove_all.assert_awaited_once()
 
 
 def test_purge_reads_the_link_from_the_replied_message():

@@ -26,8 +26,10 @@
 3795485677d6: Configuração do grupo
 39b75e75d433: Capa do vídeo
 39d2213b4a9a: A lista de permissões está vazia
+3a6fc1464f5f: Não está na lista de permissões
 3d3eeb2bc9cd: Opção de configuração desconhecida
 405ba1795958: Configuração do tópico
+421687e6f757: '{target} está na configuração (ADMIN_USERS); edite o .env para removê-lo'
 460ce129a523: Baixando...
 4e9ce9dfe13d: Ocultar título
 4fb5f29ee802: Por favor, adicione um link ou responda a uma mensagem
@@ -80,6 +82,7 @@ c039b80e17dd: Análise agregada
 c11154582f8a: Ocultar resumo
 c2236f70c559: Ignorar análise de cache
 c25add78a072: "{t} \n```\n{error}```"
+c4638f9eedae: Removido da lista de permissões
 c97827ba89ec: '**Envie o link para compartilhar para análise**
 
 
@@ -113,6 +116,7 @@ d34addb9b2f0: Cache limpo
 d5631690265c: Alvo da configuração não reconhecido
 d59c948c471c: Analisando...
 d5a73b0c7f2f: Enviar
+dee5266e01a9: 'Todos os caches foram limpos: {db_count} no banco · {mem_count} na memória'
 e14de27e8559: '{target_label}'
 e3ab31c8d89c: Analisar e pré-visualizar conteúdo
 e4f6307e1c4f: 'Alterado para: {LANG_MAP[selected]}'
