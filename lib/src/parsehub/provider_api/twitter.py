@@ -101,10 +101,15 @@ class Twitter:
 
     def _parse_result(self, result: dict) -> TwitterTweet:
         """解析 tweetResult.result 结构 (顶层与内嵌的被引用推文同构)."""
+        # 响应有两种形态: `{tweet: {...}}` (包装) 与字段直接铺在 result 上 (平铺)。
+        # 字段一律从 node 取 —— 固定取顶层 result 时, 包装形态下长文正文 (note_tweet)、
+        # 作者、浏览量、article 会**全部悄悄丢失** (字段根本不在那一层)。
         if tweet := result.get("tweet"):
+            node = tweet
             tweet_id = tweet.get("rest_id", {})
             legacy: dict | None = tweet.get("legacy")
         else:
+            node = result
             tweet_id = result.get("rest_id", {})
             legacy = result.get("legacy")
 
@@ -113,18 +118,18 @@ class Twitter:
                 raise Exception("error -2: 该推文开启了限制, 匿名用户无法查看")
             raise Exception(f"error -3: {result.get('reason')}")
 
-        author_name = self._extract_author_name(result)
-        author_handle = self._extract_author_handle(result)
+        author_name = self._extract_author_name(node)
+        author_handle = self._extract_author_handle(node)
         reply_to_id = str(legacy.get("in_reply_to_status_id_str") or "")
         quoted_status_id = str(legacy.get("quoted_status_id_str") or "")
-        quoted_status = self._parse_quoted(result)
-        # 发布时间在 legacy.created_at, 浏览量在顶层的 views.count (字符串)
+        quoted_status = self._parse_quoted(node)
+        # 发布时间在 legacy.created_at, 浏览量在 views.count (字符串)
         published_at = legacy.get("created_at")
-        view_count = (result.get("views") or {}).get("count")
+        view_count = (node.get("views") or {}).get("count")
         # 点赞数在 legacy.favorite_count (匿名请求同样返回)
         like_count = legacy.get("favorite_count")
 
-        if article := result.get("article", {}):
+        if article := node.get("article", {}):
             ta = ArticleRenderer(article["article_results"]["result"]).render()
             return TwitterTweet(
                 tweet_id=tweet_id,
@@ -140,7 +145,7 @@ class Twitter:
                 is_sensitive=bool(legacy.get("possibly_sensitive")),
             )
 
-        if note_tweet := result.get("note_tweet"):
+        if note_tweet := node.get("note_tweet"):
             note_result = note_tweet.get("note_tweet_results", {}).get("result", {})
             full_text = note_result.get("text", None)
             url_entities = (note_result.get("entity_set") or {}).get("urls") or []
