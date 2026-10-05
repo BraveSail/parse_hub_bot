@@ -111,7 +111,7 @@ d34addb9b2f0: Pamięć podręczna wyczyszczona
 d5631690265c: Nie można rozpoznać celu konfiguracji
 d59c948c471c: Analizowanie...
 d5a73b0c7f2f: Przesyłanie
-dee5266e01a9: 'Wyczyszczono wszystkie pamięci podręczne: {db_count} w bazie · {mem_count} w pamięci'
+7a425880c8d8: 'Wyczyszczono wszystkie pamięci podręczne (Redis): {persistent} trwałych · {result} wyników'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 

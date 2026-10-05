@@ -112,7 +112,7 @@ d34addb9b2f0: Cache gewist
 d5631690265c: Kan configuratiedoel niet herkennen
 d59c948c471c: Bezig met ontleden...
 d5a73b0c7f2f: Uploaden
-dee5266e01a9: 'Alle caches gewist: {db_count} in de database · {mem_count} in het geheugen'
+7a425880c8d8: 'Alle caches geleegd (Redis): {persistent} persistent · {result} resultaat'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 

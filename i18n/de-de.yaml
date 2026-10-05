@@ -113,7 +113,7 @@ d34addb9b2f0: Cache gelöscht
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
 d59c948c471c: Analysiere...
 d5a73b0c7f2f: Hochladen
-dee5266e01a9: 'Alle Caches geleert: {db_count} in der Datenbank · {mem_count} im Speicher'
+7a425880c8d8: 'Alle Caches geleert (Redis): {persistent} persistent · {result} Ergebnis'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 

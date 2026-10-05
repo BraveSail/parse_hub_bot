@@ -111,7 +111,7 @@ d34addb9b2f0: Cache dihapus
 d5631690265c: Target konfigurasi tidak dikenali
 d59c948c471c: Sedang memproses...
 d5a73b0c7f2f: Unggah
-dee5266e01a9: 'Semua cache dihapus: {db_count} di basis data · {mem_count} di memori'
+7a425880c8d8: 'Semua cache dibersihkan (Redis): {persistent} persisten · {result} hasil'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 

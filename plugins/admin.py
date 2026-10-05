@@ -126,9 +126,12 @@ async def list_admin_users(cli: Client, msg: Message) -> None:
 async def purge_cache(cli: Client, msg: Message) -> None:
     """``/purge <链接>`` 或回复一条含链接的消息 —— 清掉该链接的解析缓存。
 
-    两层都要清: ``persistent_cache`` (DB 里的解析字段 + 媒体 file_id) 与
-    ``parse_cache`` (内存 TTL)。**key 必须用 ``get_raw_url`` 的结果** ——
-    写入时用的就是它, 拿用户原始输入去清会 hash 对不上、清不掉。
+    两层都要清: ``persistent_cache`` (解析字段 + 媒体 file_id, 7 天) 与
+    ``parse_cache`` (解析结果, 5 分钟)。**两层现在都在 Redis** (key 前缀
+    ``shirobako:parse:*`` / ``shirobako:result:*``) —— 文案里的层名按介质写,
+    别再叫"数据库/内存" (那是迁移到 Redis 之前的命名, 会让人以为没清干净)。
+    **key 必须用 ``get_raw_url`` 的结果** —— 写入时用的就是它, 拿用户原始输入去清会
+    hash 对不上、清不掉。
     """
     if not await _require_admin(cli, msg):
         return
@@ -141,14 +144,18 @@ async def purge_cache(cli: Client, msg: Message) -> None:
     # ``/purge all``: 清空全部。**清掉之后所有人的下一次解析都要重新下载+上传媒体**,
     # 所以只有这一种"批量"形式 (不做 ``/purge 平台`` 之类的中间档 —— 那只会更难解释代价)。
     if len(args) == 1 and args[0].strip().lower() == "all":
-        db_count = await persistent_cache.clear()
-        mem_count = await parse_cache.clear()
+        persistent_count = await persistent_cache.clear()
+        result_count = await parse_cache.clear()
         logger.warning(
-            f"/purge all: 清空全部缓存 db={db_count} mem={mem_count} "
+            f"/purge all: 清空全部缓存 persistent={persistent_count} result={result_count} "
             f"by={msg.from_user.id if msg.from_user else None}"
         )
         await MessageSender(cli, msg, config).text(
-            _t(f"已清空全部缓存: 数据库 {db_count} 条 · 内存 {mem_count} 条")
+            # 传**模板**给 _t, 再自己 format —— 传 f-string 求值后的串匹配不上词条
+            # (词条的 key 是模板的 md5), 别的语言会看到中文原文。
+            _t("已清空全部缓存（Redis）: 持久层 {persistent} 条 · 结果层 {result} 条").format(
+                persistent=persistent_count, result=result_count
+            )
         )
         return
 

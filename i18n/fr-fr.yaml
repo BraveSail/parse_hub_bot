@@ -112,7 +112,7 @@ d34addb9b2f0: Cache effacé
 d5631690265c: Impossible de reconnaître la cible de configuration
 d59c948c471c: Analyse en cours...
 d5a73b0c7f2f: Téléverser
-dee5266e01a9: 'Tous les caches ont été vidés : {db_count} en base · {mem_count} en mémoire'
+7a425880c8d8: 'Tous les caches vidés (Redis) : {persistent} persistants · {result} de résultat'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 

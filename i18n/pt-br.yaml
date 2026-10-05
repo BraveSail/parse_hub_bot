@@ -111,7 +111,7 @@ d34addb9b2f0: Cache limpo
 d5631690265c: Alvo da configuração não reconhecido
 d59c948c471c: Analisando...
 d5a73b0c7f2f: Enviar
-dee5266e01a9: 'Todos os caches foram limpos: {db_count} no banco · {mem_count} na memória'
+7a425880c8d8: 'Todos os caches limpos (Redis): {persistent} persistentes · {result} de resultado'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '\n\n>**Para garantir a experiência de uso de todos os usuários, o limite
   de taxa está atualmente ativado**\n\n>Este projeto é de código aberto. Se houver

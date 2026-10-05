@@ -111,7 +111,7 @@ d34addb9b2f0: Önbellek temizlendi
 d5631690265c: Yapılandırma hedefi tanınamadı
 d59c948c471c: Çözülüyor...
 d5a73b0c7f2f: Yükle
-dee5266e01a9: 'Tüm önbellekler temizlendi: veritabanında {db_count} · bellekte {mem_count}'
+7a425880c8d8: 'Tüm önbellekler temizlendi (Redis): {persistent} kalıcı · {result} sonuç'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '
 

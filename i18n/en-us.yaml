@@ -111,7 +111,7 @@ d34addb9b2f0: Cache cleared
 d5631690265c: Unrecognized configuration target
 d59c948c471c: Parsing...
 d5a73b0c7f2f: Upload
-dee5266e01a9: 'Cleared all caches: {db_count} in the database · {mem_count} in memory'
+7a425880c8d8: 'Cleared all caches (Redis): {persistent} persistent · {result} result'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '>**To ensure a good experience for all users, rate limiting is currently
   enabled**

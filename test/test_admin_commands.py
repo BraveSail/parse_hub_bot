@@ -462,3 +462,28 @@ def test_purge_reads_the_link_from_the_replied_message():
 
     assert svc.get_raw_url.await_args.args[0] == "https://x.com/a/status/7"
     assert memory.pop.await_args.args[0] == "https://x.com/a/status/7"
+
+
+def test_the_purge_all_message_goes_through_the_catalog():
+    """`/purge all` 的文案必须**模板交给 `_t` 再 format**。
+
+    写成 f-string 先求值的话, `_t` 拿到的是"…30 条 · …1 条", 而词条的 key 是**模板**的
+    md5 —— 匹配不上, 于是别的语言看到中文原文 (以前就是这样)。这条测试同时保证
+    16 个语言文件里都有这条词条。
+    """
+    import hashlib
+    from pathlib import Path
+
+    from i18n import t_
+
+    template = "已清空全部缓存（Redis）: 持久层 {persistent} 条 · 结果层 {result} 条"
+    for lang in ("en-us", "ja-jp", "zh-hant"):
+        rendered = t_[lang](template).format(persistent=30, result=1)
+        assert "30" in rendered and "1" in rendered, rendered
+        assert rendered != template, f"{lang} 没命中词条 (回落成了源语言原文)"
+
+    key = hashlib.md5(template.encode()).hexdigest()[:12]
+    files = sorted(Path(__file__).resolve().parent.parent.joinpath("i18n").glob("*.yaml"))
+    assert files, "找不到 i18n 文件"
+    for f in files:
+        assert f"{key}:" in f.read_text(encoding="utf-8"), f"{f.name} 缺这条词条"

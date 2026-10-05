@@ -112,7 +112,7 @@ d34addb9b2f0: Đã xóa bộ nhớ đệm
 d5631690265c: Không thể nhận diện mục tiêu cấu hình
 d59c948c471c: Đang phân tích...
 d5a73b0c7f2f: Tải lên
-dee5266e01a9: 'Đã xóa toàn bộ bộ nhớ đệm: {db_count} trong cơ sở dữ liệu · {mem_count} trong bộ nhớ'
+7a425880c8d8: 'Đã xóa toàn bộ bộ nhớ đệm (Redis): {persistent} lâu dài · {result} kết quả'
 e14de27e8559: '{target_label}'
 e3889d130a2f: '>**Để đảm bảo trải nghiệm sử dụng cho tất cả người dùng, hiện tại đã
   kích hoạt giới hạn tốc độ**
