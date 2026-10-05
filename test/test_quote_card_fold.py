@@ -99,6 +99,20 @@ def test_a_folding_quote_without_media_uses_the_same_button_form():
     assert _render(_quote(LONG_BODY)) != _render(_quote(LONG_BODY), [PLACEHOLDER])
 
 
+def test_a_body_quote_does_not_ask_for_blocks():
+    """正文里本来就有引用块 (linux.do 一篇十几个) —— 不能因此被推去走 blocks。
+
+    那次差点踩到: 判据一开始写成 `"<blockquote>" in markdown`, 于是**普通帖子**
+    (只要正文有引用块) 也会切 blocks。卡片容器的特征是"**块内**有 details"。
+    """
+    body = "<blockquote><i>@某人</i>  \n<i>正文里的一段引用</i></blockquote>\n\n后面还有正文"
+    assert markdown_needs_blocks(body) is False
+
+    # 整篇折叠的 details 在引用块**外面**, 同样不该误命中
+    whole = "<details><summary>展开全文</summary>\n\n" + body + "\n\n</details>"
+    assert markdown_needs_blocks(whole) is False
+
+
 def test_needs_blocks_or_not():
     assert markdown_needs_blocks(_render(_quote(LONG_BODY), [PLACEHOLDER])) is True
     assert markdown_needs_blocks(_render(_quote(LONG_BODY))) is True

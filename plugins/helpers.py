@@ -660,16 +660,23 @@ def fold_quote_block(quote: str, *, summary: str = "") -> str:
     return render_expandable_quote(body)
 
 
+#: **卡片容器**的特征: ``<blockquote>`` 里紧跟一个 ``<details>``。
+#: 不能只用 ``"<blockquote>" in markdown`` —— 正文里本来就有引用块
+#: (linux.do 那种帖子一篇能有十几个)，那样判据会**误命中**，把普通帖子也推去走 blocks。
+#: 正文引用块**内部不会有** details（正文的引用块不折叠），整篇折叠的 details 又在块**外**,
+#: 所以「块内出现 details」是卡片容器独有的特征。
+_QUOTE_CARD_RE = re.compile(r"<blockquote>\s*\n\s*\n(?:(?!</blockquote>).)*?<details>", re.S)
+
+
 def markdown_needs_blocks(markdown: str) -> bool:
     """这段 markdown 里有没有**只有 blocks 才表达得了**的结构。
 
-    就是``<blockquote>`` 容器 —— 折叠的引用卡片长这样
-    (容器内 [预览 + ``<details>`` + 可选图])，markdown 的 ``>`` 引用块嵌不了
-    ``<details>``，所以发送方必须切 blocks 路径。判据直接看**渲染产物**，
-    与渲染保持单一来源（``<blockquote expandable>`` 不会误命中 —— 少了那个 ``>``；
-    它只用于帮助文本这种纯文字的地方）。
+    就是**折叠的引用卡片**（容器内 [预览 + ``<details>`` + 可选图]）——
+    markdown 的 ``>`` 引用块嵌不了 ``<details>``，所以发送方必须切 blocks 路径。
+    判据直接看**渲染产物**（与渲染保持单一来源），且只认卡片容器这一种特征
+    （见 ``_QUOTE_CARD_RE``：普通的正文引用块不误命中）。
     """
-    return "<blockquote>" in markdown
+    return bool(_QUOTE_CARD_RE.search(markdown))
 
 
 def render_folded_quote_card(quote: str, media: Sequence[str] = (), *, summary: str = "") -> str:
