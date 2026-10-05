@@ -50,10 +50,37 @@ def test_a_divider_sits_between_the_author_line_and_the_body():
     assert "正文内容" in lines[2]
 
 
+def test_the_title_uses_the_largest_heading_size():
+    """帖子标题必须用**一级**标题 —— 这个 API 的标题有 6 级, **1 最大、6 最小**。
+
+    以前标题写 `###`(size 3), 而 discourse 正文里的 `# 小节` 是 size 1 —— 实测某 linux.do 帖:
+    标题 size=3、正文小节 size=1, **标题比正文的小节还小**, 看着完全不像标题。
+    """
+    markdown = _render(title="标题")
+    first = next(line for line in markdown.splitlines() if line.strip())
+    assert first == "# 标题", first
+    assert not first.startswith("##"), "二/三级会小于正文的一级小节"
+
+
+def test_the_blocks_path_gives_the_title_the_same_size():
+    """敏感内容走 blocks 路径 —— 两条路径的标题字号必须一致。
+
+    `markdown_to_blocks` 用 `#` 的个数当 size (与服务端的映射一致), 所以改源头一处即可。
+    """
+    from plugins.parse.rich_blocks import markdown_to_blocks
+
+    block = markdown_to_blocks("# 标题")[0]
+    assert type(block).__name__ == "InputRichBlockSectionHeading"
+    assert block.size == 1, "一级标题必须是 size 1"
+
+    bigger_number_is_smaller = markdown_to_blocks("### 小节")[0]
+    assert bigger_number_is_smaller.size == 3
+
+
 def test_the_divider_comes_after_the_title_and_author():
     markdown = _render(title="标题")
     lines = [ln for ln in markdown.splitlines() if ln.strip()]
-    assert lines[0] == "### 标题"
+    assert lines[0] == "# 标题"          # 一级标题 (size 1): 帖子标题要比正文小节大
     assert lines[1].startswith("**")           # 作者行
     assert lines[2] == "---"                   # 分割线在两者之后
     assert "正文内容" in lines[3]

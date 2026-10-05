@@ -277,7 +277,10 @@ def build_rich_markdown(
     # 都是内容 —— 手动遮住时整组进 details (含图, 用户明确要求"所有东西都遮")。
     meta_parts: list[str] = []
     if title and not config.hide_title:
-        meta_parts.append(f"### {title}")
+        # **一级标题** (`#`, size 1 —— 这个 API 里 1 最大、6 最小)。
+        # 以前用的是 `###`(size 3), 结果帖子标题比正文里的一级小节还小
+        # (实测某 linux.do 帖: 标题 size=3, 正文 `# 小节` size=1), 完全不像标题。
+        meta_parts.append(f"# {title}")
     if author := format_author_line(parse_result):
         meta_parts.append(author)
     parts: list[str] = []

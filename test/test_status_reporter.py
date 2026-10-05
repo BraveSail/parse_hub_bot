@@ -186,7 +186,7 @@ def test_a_stage_with_a_result_uses_the_full_layout():
     )
     asyncio.run(reporter.report_result(result, "下 载 中..."))
     markdown = msg.answer_rich.await_args.kwargs["rich_message"].markdown
-    assert "### 标题" in markdown
+    assert "# 标题" in markdown
     assert "正文内容" in markdown
     # 进度放在页尾第一段: 与最终结果的"时间 · 统计"同一个位置
     footer = markdown.split("<footer>", 1)[1]
@@ -208,7 +208,7 @@ def test_progress_refresh_reuses_the_last_result():
     reporter._last_rich_at = 0.0  # 绕过节流, 只看渲染
     asyncio.run(reporter.report_progress("下载中 3/10"))
     markdown = msg.edit_text.await_args.kwargs["rich_message"].markdown
-    assert "### 标题" in markdown, "进度刷新应保持完整排版"
+    assert "# 标题" in markdown, "进度刷新应保持完整排版"
     assert "下载中 3/10" in markdown
 
 
