@@ -144,18 +144,16 @@ async def purge_cache(cli: Client, msg: Message) -> None:
     # ``/purge all``: 清空全部。**清掉之后所有人的下一次解析都要重新下载+上传媒体**,
     # 所以只有这一种"批量"形式 (不做 ``/purge 平台`` 之类的中间档 —— 那只会更难解释代价)。
     if len(args) == 1 and args[0].strip().lower() == "all":
-        persistent_count = await persistent_cache.clear()
-        result_count = await parse_cache.clear()
+        persistent = await persistent_cache.clear()
+        result = await parse_cache.clear()
         logger.warning(
-            f"/purge all: 清空全部缓存 persistent={persistent_count} result={result_count} "
+            f"/purge all: 清空全部缓存 persistent={persistent} result={result} "
             f"by={msg.from_user.id if msg.from_user else None}"
         )
         await MessageSender(cli, msg, config).text(
-            # 传**模板**给 _t, 再自己 format —— 传 f-string 求值后的串匹配不上词条
-            # (词条的 key 是模板的 md5), 别的语言会看到中文原文。
-            _t("已清空全部缓存（Redis）: 持久层 {persistent} 条 · 结果层 {result} 条").format(
-                persistent=persistent_count, result=result_count
-            )
+            # f-string + `_t` 是本项目的写法: `_t` 从**调用点源码**取模板做词条 key
+            # (它的 AST 会把 `{persistent}` 当占位符), 所以变量名就是占位符名。
+            _t(f"已清空全部缓存（Redis）: 持久层 {persistent} 条 · 结果层 {result} 条")
         )
         return
 

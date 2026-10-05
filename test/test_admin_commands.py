@@ -476,13 +476,17 @@ def test_the_purge_all_message_goes_through_the_catalog():
 
     from i18n import t_
 
-    template = "已清空全部缓存（Redis）: 持久层 {persistent} 条 · 结果层 {result} 条"
     for lang in ("en-us", "ja-jp", "zh-hant"):
-        rendered = t_[lang](template).format(persistent=30, result=1)
-        assert "30" in rendered and "1" in rendered, rendered
-        assert rendered != template, f"{lang} 没命中词条 (回落成了源语言原文)"
+        # **字面量**调用点 —— `_t` 靠调用点源码的 AST 取模板; 把模板存进变量再传
+        # 会解析失败并回落原文, 测出来的就是假故障。
+        got = t_[lang]("已清空全部缓存（Redis）: 持久层 {persistent} 条 · 结果层 {result} 条")
+        assert "{" in got, got
+        assert got != "已清空全部缓存（Redis）: 持久层 {persistent} 条 · 结果层 {result} 条", (
+            f"{lang} 没命中词条 (回落成了源语言原文)"
+        )
+        assert got.format(persistent=30, result=1).count("30") == 1
 
-    key = hashlib.md5(template.encode()).hexdigest()[:12]
+    key = hashlib.md5("已清空全部缓存（Redis）: 持久层 {persistent} 条 · 结果层 {result} 条".encode()).hexdigest()[:12]
     files = sorted(Path(__file__).resolve().parent.parent.joinpath("i18n").glob("*.yaml"))
     assert files, "找不到 i18n 文件"
     for f in files:
