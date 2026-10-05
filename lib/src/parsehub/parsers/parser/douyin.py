@@ -18,7 +18,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import get_author_name, to_datetime, to_int
+from ...utils.helpers import get_author_name, profile_url, to_datetime, to_int
 from ..base.base import BaseParser
 
 
@@ -71,9 +71,11 @@ class DouyinParser(BaseParser):
         return DouyinVideoParseResult(
             title=result.desc,
             author_name=result.author_name,
+            author_url=profile_url(Platform.DOUYIN, user_id=result.author_sec_uid),
             video=result.video,
             published_at=result.published_at,
             view_count=result.view_count,
+            like_count=result.like_count,
         )
 
     @staticmethod
@@ -82,9 +84,11 @@ class DouyinParser(BaseParser):
         return DouyinImageParseResult(
             title=result.desc,
             author_name=result.author_name,
+            author_url=profile_url(Platform.DOUYIN, user_id=result.author_sec_uid),
             photo=result.image_list,
             published_at=result.published_at,
             view_count=result.view_count,
+            like_count=result.like_count,
         )
 
 
@@ -192,8 +196,11 @@ class DouyinApiResult:
     desc: str = ""
     image_list: list[ImageRef | LivePhotoRef] = field(default_factory=list)
     author_name: str = ""
+    #: 作者主页标识: 抖音主页要用 ``sec_uid``, 数字 ``uid`` 打不开 (实测)
+    author_sec_uid: str = ""
     published_at: datetime | None = None
     view_count: int | None = None
+    like_count: int | None = None
 
     @classmethod
     def parse(cls, json_dict: dict) -> Self:
@@ -209,10 +216,18 @@ class DouyinApiResult:
             result = cls._parse_image_post_info(image_post_info, desc)
         else:
             result = cls._parse_video(data, desc)
-        result.author_name = get_author_name(data.get("author"))
-        # create_time 是 unix 秒; 浏览量在 statistics.play_count (部分作品不带该字段)
+        author = data.get("author") or {}
+        result.author_name = get_author_name(author)
+        result.author_sec_uid = str(author.get("sec_uid") or "")
+        # create_time 是 unix 秒; 统计在 statistics 里
         result.published_at = to_datetime(data.get("create_time"))
-        result.view_count = to_int((data.get("statistics") or {}).get("play_count"))
+        stats = data.get("statistics") or {}
+        # 点赞: statistics.digg_count (以前完全没取, 用户报"点赞没有")
+        result.like_count = to_int(stats.get("digg_count"))
+        # 浏览: 移动端接口固定返回 play_count=0 (实测), 而"0 查看"是误导 ——
+        # 按项目原则"拿不到就不显示那一段", 所以 0 与缺失一并当作没有
+        views = to_int(stats.get("play_count"))
+        result.view_count = views or None
         return result
 
     @classmethod

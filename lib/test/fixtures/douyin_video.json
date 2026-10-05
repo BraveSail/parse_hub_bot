@@ -1,0 +1,51 @@
+{
+ "_comment": "真实响应的最小子集 (取自 /app/data/douyin_probe.json, 2026-10-05), 值未改动",
+ "aweme_detail": {
+  "desc": "日本官员在“美军士兵涉嫌杀害日本女性案”记者会露诡异笑容遭猛批：怎么笑得出来？#热点 #日本 #驻日美军 #国际 #日本官员在美军杀害日本女性记者会露出笑容",
+  "create_time": 1791165967,
+  "author": {
+   "nickname": "青蜂侠",
+   "sec_uid": "MS4wLjABAAAAA203AQ9dxu6_ftaFa0AjzsoW1L0SVWdIfzjr7Jv-Y_Y",
+   "uid": "71058463678"
+  },
+  "statistics": {
+   "digg_count": 391,
+   "collect_count": 36,
+   "recommend_count": 4,
+   "live_watch_count": 0,
+   "comment_count": 59,
+   "aweme_id": "7692999234357906715",
+   "lose_comment_count": 0,
+   "play_count": 0,
+   "lose_count": 0,
+   "forward_count": 0,
+   "admire_count": 0,
+   "whatsapp_share_count": 0,
+   "download_count": 1,
+   "exposure_count": 0,
+   "share_count": 10,
+   "digest": ""
+  },
+  "video": {
+   "bit_rate": [
+    {
+     "bit_rate": 352886,
+     "play_addr": {
+      "url_list": [
+       "https://v.douyin.com/example.mp4"
+      ],
+      "width": 720,
+      "height": 1280,
+      "data_size": 573617
+     }
+    }
+   ],
+   "cover": {
+    "url_list": [
+     "https://p.douyin.com/example.jpg"
+    ]
+   },
+   "duration": 13004
+  }
+ }
+}

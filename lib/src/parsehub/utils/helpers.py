@@ -64,6 +64,8 @@ def format_author_label(name: str, handle: str = "") -> str:
 PROFILE_URL_TEMPLATES: dict[Platform, str] = {
     Platform.BILIBILI: "https://space.bilibili.com/{id}",
     Platform.DOUBAN: "https://www.douban.com/people/{id}/",
+    # sec_uid (短视频平台的用户标识, 与数字 uid 不同 —— 用 uid 打不开主页)
+    Platform.DOUYIN: "https://www.douyin.com/user/{id}",
     Platform.INSTAGRAM: "https://www.instagram.com/{handle}/",
     Platform.LINUXDO: "https://linux.do/u/{handle}",
     Platform.PIXIV: "https://www.pixiv.net/users/{id}",
