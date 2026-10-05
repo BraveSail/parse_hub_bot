@@ -22,7 +22,7 @@ def test_name_is_the_link_and_handle_is_a_subscript():
     ``<sub>`` 把它压成下角标; 两个名字之间空一格。
     """
     out = format_author_link("言吾言_", "yanwuyan", "https://x.com/yanwuyan")
-    assert out == '<a href="https://x.com/yanwuyan">言吾言_</a> <sub><code>@yanwuyan</code></sub>'
+    assert out == '<a href="https://x.com/yanwuyan">言吾言_</a> <sub>@yanwuyan</sub>'
 
 
 def test_a_platform_without_a_username_falls_back_to_its_id():
@@ -33,14 +33,57 @@ def test_a_platform_without_a_username_falls_back_to_its_id():
     """
     out = format_author_link("言吾言_", "", "https://space.bilibili.com/12345")
     assert out == (
-        '<a href="https://space.bilibili.com/12345">言吾言_</a> <sub><code>@12345</code></sub>'
+        '<a href="https://space.bilibili.com/12345">言吾言_</a> <sub>@12345</sub>'
     )
+
+
+def test_the_handle_is_not_bold():
+    """`**` 不能包住 @handle —— 否则角标里的 handle 会继承粗体。
+
+    服务端块实测: 整行包 `**` 时是 `textSubscript(textBold(textPlain(@handle)))`,
+    用户要的"常规样式"是名字粗体 + handle 常规小字。
+    """
+    from parsehub.types import MultimediaParseResult, Platform
+
+    from plugins.helpers import format_author_line
+
+    result = MultimediaParseResult(content="正文")
+    result.platform = Platform.TWITTER
+    result.raw_url = "https://x.com/handle/status/1"
+    result.author_name = "名字"
+    result.author_handle = "handle"
+    result.author_url = "https://x.com/handle"
+
+    line = format_author_line(result)
+    # 粗体必须在 </a> 处收口, <sub> 在它外面
+    assert line.startswith("**<a href="), line
+    assert line.index("**", 2) < line.index("<sub>"), line
+    assert line.endswith("<sub>@handle</sub>"), line
+
+
+def test_a_name_only_author_is_still_bold():
+    """只有名字、**没有可用标识**时整行粗体 (粗体不需要收口)。
+
+    注意: 主页 URL 有末段时会拿它当标识 (B 站 mid / 抖音 sec_uid 那种),
+    所以这里必须用**没有末段**的 URL 才算真的"只有名字"。
+    """
+    from parsehub.types import MultimediaParseResult, Platform
+
+    from plugins.helpers import format_author_line
+
+    result = MultimediaParseResult(content="正文")
+    result.platform = Platform.TWITTER
+    result.raw_url = "https://x.com/handle/status/1"
+    result.author_name = "名字"
+    result.author_url = "https://x.com/"  # 末段为空 -> 没有标识
+    line = format_author_line(result)
+    assert line == '**<a href="https://x.com/">名字</a>**'
 
 
 def test_the_real_username_wins_over_the_id():
     """两者都能拿到时用真实用户名 (URL 末段只是兜底)"""
     out = format_author_link("Jason Lee", "huacnlee", "https://x.com/huacnlee")
-    assert "@huacnlee" in out and "@huacnlee</code>" in out
+    assert "@huacnlee" in out and "<sub>@huacnlee</sub>" in out
 
 
 def test_no_url_means_plain_label():
@@ -60,7 +103,7 @@ def test_author_line_links_bilibili_name():
         platform=Platform.BILIBILI,
     )
     assert format_author_line(result) == (
-        '**<a href="https://space.bilibili.com/12345">言吾言_</a> <sub><code>@12345</code></sub>**'
+        '**<a href="https://space.bilibili.com/12345">言吾言_</a>** <sub>@12345</sub>'  # 粗体只到名字
     )
 
 

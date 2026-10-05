@@ -121,10 +121,12 @@ def format_author_link(name: str, handle: str = "", url: str = "") -> str:
       会原样显示成 ``[文字](url)``。
     - **下角标用 ``<sub>``**, 服务端解析成 ``RichTextSubscript``。
       ``<tg-sub>`` / ``~波浪~`` 都**不**生效。
-    - **``@handle`` 还要再包一层 ``<code>``**: 富文本里 Telegram 会把裸 ``@名字``
-      自动识别成 **Mention 实体 (可点击)** —— 只套 ``<sub>`` 仍然可点, 而这里要的是
-      纯文本标识; 包上 ``<code>`` 它才变成普通等宽文本 (顺带就是"等宽那种"
-      的观感 —— 富文本**没有直接指定颜色的写法**, 等宽是客户端里最接近的样式)。
+    - **``@handle`` 用常规样式 + 角标**: ``<sub>@名字</sub>``
+      (用户要求「去掉等宽, 用常规样式」)。
+      ⚠️ **不要拿服务端节点类型推断客户端观感**: 这种写法服务端解析出的类型是
+      ``RichTextMention``(套在 ``RichTextSubscript`` 里), 看着像"可点击的提及",
+      但**客户端渲染出来是常规小字、不可点击、没有链接观感** —— 用户真机确认过。
+      (反过来, 以前外裹 ``<code>`` 是为了压掉"可点", 现在不需要了。)
     - 名字与 ``@handle`` 之间**空一格**。
 
     只有一个名字 (没有 ``@handle``, 或两者相同) 时, 那一个仍然做成链接 ——
@@ -139,7 +141,8 @@ def format_author_link(name: str, handle: str = "", url: str = "") -> str:
     tag = clean or profile_id_from_url(url)
     # 名字与标识是两个不同的东西: 名字可点, 标识附在后面的等宽下角标
     if display and tag and display.casefold() != tag.casefold():
-        handle_markup = f"<sub><code>@{html.escape(tag)}</code></sub>"
+        # 常规样式 + 角标 (不再外裹 <code>): 用户要求「去掉等宽, 用常规样式」
+        handle_markup = f"<sub>@{html.escape(tag)}</sub>"
         return f'<a href="{href}">{html.escape(display)}</a> {handle_markup}'
     # 只有一边 (或两边相同): 就一个, 做成链接。
     # 相同的情况沿用既有约定 —— 显示 ``@标识`` 形态 (不因为这次改动改语义)

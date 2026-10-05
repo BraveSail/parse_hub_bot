@@ -24,7 +24,7 @@ def test_profile_url_escapes_handle():
 
 def test_format_author_link_wraps_handle():
     link = format_author_link("Jason Lee", "huacnlee", "https://x.com/huacnlee")
-    assert link == '<a href="https://x.com/huacnlee">Jason Lee</a> <sub><code>@huacnlee</code></sub>'
+    assert link == '<a href="https://x.com/huacnlee">Jason Lee</a> <sub>@huacnlee</sub>'
 
 
 def test_format_author_link_without_url_is_plain():

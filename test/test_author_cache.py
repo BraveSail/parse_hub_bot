@@ -314,7 +314,7 @@ def test_author_handle_links_to_profile():
     )
     # 名字可点, @handle 是等宽下角标 (不再是可点的 Mention)
     assert '<a href="https://www.pixiv.net/users/123568955">隣人X</a>' in markdown
-    assert "<sub><code>@user_ydyj5227</code></sub>" in markdown
+    assert "<sub>@user_ydyj5227</sub>" in markdown
     assert "隣人X" in markdown
 
 

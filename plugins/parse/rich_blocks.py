@@ -115,7 +115,7 @@ _INLINE_PATTERNS: list[tuple[re.Pattern, type]] = [
     # 所以 blocks 路径必须认它们 (不认就字面显示 "<b>"/"<i>")
     (re.compile(r"<b>(.*?)</b>", re.S), RichTextBold),
     (re.compile(r"<i>(.*?)</i>", re.S), RichTextItalic),
-    # 作者行的 @用户名 = <sub><code>…</code></sub>; 块内引用块的署名也用它们
+    # 作者行的 @用户名 = <sub>…</sub> (常规小字; 不再外裹 <code>); 块内引用块的署名也用它们
     (re.compile(r"<sub>(.*?)</sub>", re.S), RichTextSubscript),
     (re.compile(r"<sup>(.*?)</sup>", re.S), RichTextSuperscript),
     (re.compile(r"<code>(.*?)</code>", re.S), RichTextCode),

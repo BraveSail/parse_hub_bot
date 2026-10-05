@@ -791,7 +791,7 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
 
 
 def format_author_line(parse_result: AnyParseResult) -> str:
-    """作者行 (markdown): ``**<a>名字</a> <sub><code>@handle</code></sub>**``。
+    """作者行 (markdown): ``**<a>名字</a> <sub>@handle</sub>**`` (常规小字, 非等宽)。
 
     拼装与链接一律交给库里的 ``format_author_link`` —— 这里不要再手写一遍替换,
     否则"作者长什么样"这件事就有了两份实现 (曾经就是如此)。
@@ -804,7 +804,15 @@ def format_author_line(parse_result: AnyParseResult) -> str:
         str(getattr(parse_result, "author_handle", "") or ""),
         str(getattr(parse_result, "author_url", "") or ""),
     )
-    return f"**{label}**" if label else ""
+    if not label:
+        return ""
+    # **粗体只包名字, 不包 @handle**: 整行包 `**` 时角标里的 handle 会**继承粗体**
+    # (服务端块实测是 textSubscript(textBold(textPlain))) —— 用户要的"常规样式"是
+    # 名字粗体 + handle 常规小字。所以把 `**` 收在链接结束标签处。
+    if "</a>" in label:
+        head, _, tail = label.partition("</a>")
+        return f"**{head}</a>**{tail}"
+    return f"**{label}**"
 
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
