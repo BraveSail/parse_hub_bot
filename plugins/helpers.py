@@ -537,14 +537,26 @@ _SETEXT_UNDERLINE_RE = re.compile(r"^([ \t]*)([-=]+)([ \t]*)$")
 
 
 def escape_setext_underlines(text: str) -> str:
-    """转义「整行只有 ``-`` 或 ``=``」的行, 防止它把上一行变成大标题。
+    r"""转义「**紧跟在一行文字下面**的 ``-`` / ``=``」行, 防止它把上一行变成大标题。
 
     markdown 的 setext 语法里「文本行 + 下一行是若干 ``=`` 或 ``-``」= 一级/二级标题,
     而 ``--`` 两个减号就够触发。实测 threads 的节目表末尾有一行 ``--``, 结果**整个正文段**
     被服务端解析成 ``section heading``(大字)。转义首个字符即可, 渲染出来仍是原来的 ``--``。
+
+    ⚠️ **判据必须带上"上一行有文字"** —— setext 不会跨空行。以前是无条件转义整行的分隔符,
+    于是 discourse 那种**独立成行的 ``---`` (分隔线)** 也被转义成 ``\---``, 服务端不再认它,
+    渲染成字面的 ``---`` 段落 (实测一篇 linux.do 长帖里 18 处)。独立行既不会触发 setext,
+    也不该被转义 —— 它就该是分隔线。
     """
     lines = text.split("\n")
-    return "\n".join(_SETEXT_UNDERLINE_RE.sub(r"\1\\\2\3", line) for line in lines)
+    out: list[str] = []
+    for index, line in enumerate(lines):
+        # 只有上一行是**有内容的文字行**时才危险 (空行/开头都安全)
+        after_text = index > 0 and bool(lines[index - 1].strip())
+        if after_text:
+            line = _SETEXT_UNDERLINE_RE.sub(r"\1\\\2\3", line)
+        out.append(line)
+    return "\n".join(out)
 
 
 def preserve_linebreaks(text: str) -> str:

@@ -159,14 +159,27 @@ def test_tags_sit_after_the_body():
 
 
 def test_setext_underlines_are_escaped():
-    """整行只有 - 或 = 会让上面整段变成大标题 (setext), 必须转义"""
+    """**紧跟文字行**的 - 或 = 会让上面整行变成大标题 (setext), 必须转义"""
     from plugins.helpers import escape_setext_underlines
 
     assert escape_setext_underlines("正文\n--") == "正文\n\\--"
-    assert escape_setext_underlines("--") == "\\--"
-    assert escape_setext_underlines("===") == "\\==="
+    assert escape_setext_underlines("正文\n===") == "正文\n\\==="
     assert escape_setext_underlines("- 列表项") == "- 列表项"
     assert escape_setext_underlines("正常行") == "正常行"
+
+
+def test_a_standalone_rule_is_not_escaped():
+    r"""**独立成行**的 `---` 不能被转义 —— 它是分隔线, 不是 setext 下划线。
+
+    setext 不会跨空行: 只有"上一行有文字"时才危险。以前是无条件转义, 于是 discourse
+    那种独立分隔线被转义成字面 `\---`, 服务端不再认它 (实测一篇 linux.do 长帖里 18 处
+    变成了字面的 `---` 段落, 用户报障「被discourse的格式影响了」)。
+    """
+    from plugins.helpers import escape_setext_underlines
+
+    assert escape_setext_underlines("---") == "---"
+    assert escape_setext_underlines("正文\n\n---\n\n后文") == "正文\n\n---\n\n后文"
+    assert escape_setext_underlines("===") == "==="
 
 
 def test_threads_body_is_not_a_heading():
