@@ -7,6 +7,9 @@ services:
       context: .
       dockerfile: Dockerfile.deploy
     restart: unless-stopped
+    # 缓存换 Redis 后要连宿主上的 redis (宝塔那个, 绑在 127.0.0.1) —— 容器网络里
+    # 看不到宿主的 loopback, 所以直接用宿主网络栈。代价: 失去容器网络隔离。
+    network_mode: host
     env_file:
       - .env
     volumes:

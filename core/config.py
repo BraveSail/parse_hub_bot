@@ -57,6 +57,15 @@ class BotSettings(BaseSettings):
         description="初始白名单用户 ID (逗号分隔), 之后用 /add 追加",
     )
 
+    #: 缓存用的 Redis 地址。**共用实例** (161 上宝塔那个 redis), 所以 key 一律带前缀。
+    redis_url: str = Field(
+        default="redis://127.0.0.1:6379/0",
+        description="缓存用 Redis 地址",
+    )
+    #: 缓存 key 前缀。共用实例上**必须**靠它隔离 —— 清空只删前缀内的 key,
+    #: 否则会删掉同一实例里别的项目的数据 (绝不能 FLUSHDB)。
+    cache_key_prefix: str = Field(default="shirobako:", description="缓存 key 前缀")
+
     debug: bool = Field(default=False)
     debug_skip_cleanup: bool = Field(default=False, description="跳过资源清理")
 

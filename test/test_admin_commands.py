@@ -413,31 +413,24 @@ def test_del_asks_for_a_target_when_given_none():
 # ---------------------------------------------------------------- 清空接口本身
 
 
-def test_ttl_clear_empties_the_store():
-    """内存层真的清空 (不只是返回个数)"""
-    from services.cache import TTLCache
+def test_result_cache_clear_only_touches_our_prefix():
+    """清空结果缓存**只能删自己前缀内的 key** ——
 
-    cache = TTLCache()
-    asyncio.run(cache.set("a", 1))
-    asyncio.run(cache.set("b", 2))
-    assert asyncio.run(cache.clear()) == 2
-    assert asyncio.run(cache.get("a")) is None
-    assert asyncio.run(cache.get("b")) is None
+    Redis 是共用实例 (161 上宝塔那个), 用 FLUSHDB 会删掉别的项目的数据。
+    """
+    from services.cache import ResultCache
+
+    with patch("services.cache.delete_by_prefix", AsyncMock(return_value=2)) as dbp:
+        assert asyncio.run(ResultCache().clear()) == 2
+    assert dbp.await_args.args[0] == "shirobako:result:*"
 
 
-def test_persistent_clear_removes_every_row():
+def test_persistent_clear_only_touches_our_prefix():
     from services.cache import PersistentCache
 
-    cache = PersistentCache()
-    repo = MagicMock()
-    repo.remove_all = AsyncMock(return_value=42)
-
-    with (
-        patch("services.cache.get_session", _session_cm()),
-        patch("services.cache.CacheRepo", MagicMock(return_value=repo)),
-    ):
-        assert asyncio.run(cache.clear()) == 42
-    repo.remove_all.assert_awaited_once()
+    with patch("services.cache.delete_by_prefix", AsyncMock(return_value=42)) as dbp:
+        assert asyncio.run(PersistentCache().clear()) == 42
+    assert dbp.await_args.args[0] == "shirobako:parse:*"
 
 
 def test_purge_reads_the_link_from_the_replied_message():

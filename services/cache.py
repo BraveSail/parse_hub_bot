@@ -1,19 +1,53 @@
+"""解析结果的缓存 —— 两层都放在 Redis 里。
+
+| 层 | 实例 | TTL | 存什么 |
+| --- | --- | --- | --- |
+| 结果层 | ``parse_cache`` | 5 分钟 | 解析结果对象 (JSON) |
+| 持久层 | ``persistent_cache`` | 7 天 | 解析字段 + 媒体 **file_id** |
+
+几个要点:
+
+- **Redis 是共用实例** (161 上宝塔那个), 所有 key 带 ``bs.cache_key_prefix`` 前缀,
+  清空只删前缀内的 key —— 见 ``services/redis_client.py``。
+- **Redis 不可用时 bot 照常工作**: 读写失败退化成"没有缓存", 继续走完整解析。
+- 持久层原来在 SQLite 表 ``cache`` 里; 换 Redis 后**序列化格式不变**
+  (``CacheEntry.model_dump``), 连"旧缓存缺字段要重新解析"的判断也一起保留 ——
+  那些检查靠 ``model_fields_set``, 与存储介质无关。
+- 结果层原来在进程内 (重启即丢), 现在的值走 ``parsehub.types.serialize`` 往返,
+  **媒体类型显式带 kind** (否则重建时区分不出动图/视频)。
+"""
+
 import asyncio
 import hashlib
+import json
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
+from parsehub.types.result import AnyParseResult
+from parsehub.types.serialize import result_from_cache_dict, result_to_cache_dict
 from pydantic import BaseModel
 
 from core import bs
-from db import get_session
 from log import logger
-from repo.cache import CacheRepo
+from services.redis_client import (
+    cache_key,
+    delete_by_prefix,
+    delete_keys,
+    get_optional,
+    set_with_ttl,
+)
 
 
 class TTLCache:
+    """轻量的**进程内** TTL 缓存 (key → 任意值)。
+
+    用途: 门禁那种"能不能用 inline/guest"的**布尔**结果 (见 ``plugins/parse/access.py``) ——
+    短 TTL、量小、重启丢了也无所谓, 不值得绕一趟 Redis。
+
+    ⚠️ **解析结果缓存不再用它** —— 那个已经换成 ``ResultCache`` (Redis), 因为要跨进程/跨重启。
+    """
     def __init__(self, ttl: float = 300, cleanup_interval: float = 60, maxsize: int = 0):
         self._ttl = ttl
         self._store: dict[str, tuple[Any, float]] = {}
@@ -95,6 +129,56 @@ class TTLCache:
                     self.logger.debug(f"定时清理过期缓存: {len(expired_keys)} 条")
 
 
+
+
+class ResultCache:
+    """解析结果缓存 (短 TTL)。
+
+    接口保持老的 ``TTLCache`` 那样 (``get`` / ``set`` / ``pop`` / ``clear``),
+    调用方不用改。区别是值要能跨进程 —— 所以存 JSON, 而不是 Python 对象。
+    """
+
+    def __init__(self, ttl: int = 5 * 60):
+        self._ttl = ttl
+        self.logger = logger.bind(name="ResultCache")
+
+    @staticmethod
+    def _key(url: str) -> str:
+        return cache_key("result", hashlib.sha256(url.encode("utf-8")).hexdigest())
+
+    async def get(self, url: str) -> AnyParseResult | None:
+        raw = await get_optional(self._key(url))
+        if raw is None:
+            self.logger.debug(f"结果缓存未命中: url={url}")
+            return None
+        try:
+            return result_from_cache_dict(json.loads(raw))
+        except Exception as e:  # noqa: BLE001 - 坏条目按未命中处理, 但别留着反复失败
+            self.logger.warning(f"结果缓存内容无效, 已删除: url={url} err={type(e).__name__}: {e}")
+            await delete_keys([self._key(url)])
+            return None
+
+    async def set(self, url: str, result: AnyParseResult, ttl: int | None = None) -> None:
+        try:
+            payload = json.dumps(result_to_cache_dict(result), ensure_ascii=False)
+        except Exception as e:  # noqa: BLE001 - 序列化失败只是没缓存, 不该打断解析
+            self.logger.warning(f"结果缓存序列化失败, 跳过写入: url={url} err={type(e).__name__}: {e}")
+            return
+        await set_with_ttl(self._key(url), payload, ttl or self._ttl)
+
+    async def pop(self, url: str) -> AnyParseResult | None:
+        result = await self.get(url)
+        if result is not None:
+            await delete_keys([self._key(url)])
+        return result
+
+    async def clear(self) -> int:
+        """清空全部结果缓存, 返回条数。"""
+        removed = await delete_by_prefix(cache_key("result", "*"))
+        self.logger.warning(f"清空全部结果缓存: {removed} 条")
+        return removed
+
+
 class CacheMediaType(StrEnum):
     PHOTO = "photo"
     VIDEO = "video"
@@ -133,93 +217,79 @@ class CacheEntry(BaseModel):
 
 
 class PersistentCache:
-    def __init__(
-        self,
-        max_entries: int = 30000,
-        stale_after: timedelta = timedelta(days=7),
-        evict_batch_size: int = 100,
-        disable: bool = False,
-    ):
-        self.logger = logger.bind(name="PersistentCache")
-        self._max_entries = max_entries
-        self._stale_after = stale_after
-        self._evict_batch_size = evict_batch_size
+    """媒体 file_id + 解析字段的缓存 (长 TTL, 跨重启)。
+
+    key: ``{prefix}parse:{sha256(raw_url)}`` —— 与写入时用的是**同一个 url**
+    (``ParseService.get_raw_url`` 的结果), 否则清不掉。
+    """
+
+    def __init__(self, ttl: int = 7 * 24 * 60 * 60, disable: bool = False):
+        self._ttl = ttl
         self._disable = disable
+        self.logger = logger.bind(name="PersistentCache")
 
     @staticmethod
-    def _make_key(url: str) -> str:
-        return hashlib.sha256(url.encode("utf-8")).hexdigest()
-
-    @staticmethod
-    def _now() -> datetime:
-        return datetime.now(UTC)
+    def _key(url: str) -> str:
+        return cache_key("parse", hashlib.sha256(url.encode("utf-8")).hexdigest())
 
     async def get(self, url: str) -> CacheEntry | None:
         if self._disable:
             return None
 
-        key = self._make_key(url)
-        async with get_session() as session:
-            repo = CacheRepo(session)
-            cache = await repo.get(key)
-            if cache is None:
-                self.logger.debug(f"缓存未命中: key={url}")
-                return None
+        raw = await get_optional(self._key(url))
+        if raw is None:
+            self.logger.debug(f"缓存未命中: key={url}")
+            return None
 
-            try:
-                entry: CacheEntry = CacheEntry.model_validate(cache.entry_json)
-            except Exception as e:
-                self.logger.warning(f"缓存内容无效, 已删除: key={url}, error={e}")
-                await repo.remove(cache)
-                return None
+        try:
+            entry: CacheEntry = CacheEntry.model_validate(json.loads(raw))
+        except Exception as e:  # noqa: BLE001 - 坏条目删掉重解析
+            self.logger.warning(f"缓存内容无效, 已删除: key={url}, error={e}")
+            await delete_keys([self._key(url)])
+            return None
 
-            if not entry.parse_result.author_name and "author_metadata_version" not in entry.model_fields_set:
-                self.logger.debug(f"旧缓存缺少作者信息, 重新解析: key={url}")
-                return None
+        if not entry.parse_result.author_name and "author_metadata_version" not in entry.model_fields_set:
+            self.logger.debug(f"旧缓存缺少作者信息, 重新解析: key={url}")
+            return None
 
-            if "published_at" not in entry.parse_result.model_fields_set:
-                # 旧缓存没有统计字段: 直接复用会让同一条链接第二次发送时缺统计行
-                self.logger.debug(f"旧缓存缺少发布时间/浏览量, 重新解析: key={url}")
-                return None
+        if "published_at" not in entry.parse_result.model_fields_set:
+            # 旧缓存没有统计字段: 直接复用会让同一条链接第二次发送时缺统计行
+            self.logger.debug(f"旧缓存缺少发布时间/浏览量, 重新解析: key={url}")
+            return None
 
-            if "like_count" not in entry.parse_result.model_fields_set:
-                # 旧缓存没有点赞数: 复用会让页脚缺那一段
-                self.logger.debug(f"旧缓存缺少点赞数, 重新解析: key={url}")
-                return None
+        if "like_count" not in entry.parse_result.model_fields_set:
+            # 旧缓存没有点赞数: 复用会让页脚缺那一段
+            self.logger.debug(f"旧缓存缺少点赞数, 重新解析: key={url}")
+            return None
 
-            if "tags" not in entry.parse_result.model_fields_set:
-                # 旧缓存没有标签: 复用会让 inline 结果缺 tag 行
-                self.logger.debug(f"旧缓存缺少标签, 重新解析: key={url}")
-                return None
+        if "tags" not in entry.parse_result.model_fields_set:
+            # 旧缓存没有标签: 复用会让 inline 结果缺 tag 行
+            self.logger.debug(f"旧缓存缺少标签, 重新解析: key={url}")
+            return None
 
-            if {"quoted_media_count", "reply_media_count"} - entry.parse_result.model_fields_set:
-                # 旧缓存不知道引用块里有没有媒体: 复用会让被引用/被回复内容的图/视频丢掉
-                self.logger.debug(f"旧缓存缺少引用媒体信息, 重新解析: key={url}")
-                return None
+        if {"quoted_media_count", "reply_media_count"} - entry.parse_result.model_fields_set:
+            # 旧缓存不知道引用块里有没有媒体: 复用会让被引用/被回复内容的图/视频丢掉
+            self.logger.debug(f"旧缓存缺少引用媒体信息, 重新解析: key={url}")
+            return None
 
-            await repo.touch(cache, self._now())
-            self.logger.debug(f"缓存命中: key={url}")
-            return entry
+        self.logger.debug(f"缓存命中: key={url}")
+        return entry
 
     async def set(self, url: str, entry: CacheEntry) -> None:
         if self._disable:
             return
 
-        key = self._make_key(url)
-        now = self._now()
-        async with get_session() as session:
-            repo = CacheRepo(session)
-            await repo.upsert(key=key, url=url, entry_json=entry.model_dump(mode="json"), accessed_at=now)
-            removed = await self._evict_overflow(repo)
-            self.logger.debug(f"缓存写入: key={url}, evicted={removed}")
+        try:
+            payload = json.dumps(entry.model_dump(mode="json"), ensure_ascii=False)
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(f"缓存序列化失败, 跳过写入: key={url}, err={type(e).__name__}: {e}")
+            return
+        await set_with_ttl(self._key(url), payload, self._ttl)
 
     async def remove(self, url: str) -> None:
         if self._disable:
             return
-
-        key = self._make_key(url)
-        async with get_session() as session:
-            await CacheRepo(session).remove_by_key(key)
+        await delete_keys([self._key(url)])
 
     async def clear(self) -> int:
         """清空全部解析缓存 (含媒体 file_id), 返回清掉的条数。
@@ -230,27 +300,11 @@ class PersistentCache:
         if self._disable:
             return 0
 
-        async with get_session() as session:
-            removed = await CacheRepo(session).remove_all()
+        removed = await delete_by_prefix(cache_key("parse", "*"))
         self.logger.warning(f"清空全部解析缓存: {removed} 条")
         return removed
 
-    async def _evict_overflow(self, repo: CacheRepo) -> int:
-        if self._max_entries <= 0:
-            return 0
 
-        count = await repo.count()
-        if count <= self._max_entries:
-            return 0
-
-        removed = await repo.remove_stale(self._now() - self._stale_after)
-        count -= removed
-        overflow = count - self._max_entries
-        if overflow <= 0:
-            return removed
-
-        return removed + await repo.remove_oldest(max(overflow, self._evict_batch_size))
-
-
-parse_cache = TTLCache(ttl=5 * 60, maxsize=1000)  # 解析结果缓存 5 分钟
-persistent_cache = PersistentCache(max_entries=bs.cache_max_entries, disable=bs.cache_disabled)
+# 解析结果缓存 5 分钟; 持久缓存 7 天 (TTL 由 Redis 管, 不再需要进程内清理任务)
+parse_cache = ResultCache(ttl=5 * 60)
+persistent_cache = PersistentCache(disable=bs.cache_disabled)

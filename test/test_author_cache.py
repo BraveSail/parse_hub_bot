@@ -1,7 +1,6 @@
 import asyncio
+import json
 import types
-from contextlib import asynccontextmanager
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -35,34 +34,18 @@ def test_cache_refreshes_only_legacy_entries_missing_author(author, versioned, h
     }
     if versioned:
         payload["author_metadata_version"] = 1
-    stored = SimpleNamespace(entry_json=payload)
-    repo = SimpleNamespace(get=AsyncMock(return_value=stored), touch=AsyncMock())
-
-    @asynccontextmanager
-    async def session():
-        yield None
-
-    with patch("services.cache.get_session", session), patch("services.cache.CacheRepo", return_value=repo):
+    with patch("services.cache.get_optional", AsyncMock(return_value=json.dumps(payload))):
         result = asyncio.run(PersistentCache().get("https://www.threads.com/@user/post/Abc"))
     assert (result is not None) == hit
-    assert repo.touch.await_count == int(hit)
 
 
 def test_cache_refreshes_entries_written_before_metadata_line():
     """没有统计字段的缓存要重新解析, 否则同一链接第二次发送就少了时间/浏览量那行"""
     payload = {"parse_result": {"title": "T", "author_name": "Author", "is_sensitive": False}}
     payload["author_metadata_version"] = 1
-    stored = SimpleNamespace(entry_json=payload)
-    repo = SimpleNamespace(get=AsyncMock(return_value=stored), touch=AsyncMock())
-
-    @asynccontextmanager
-    async def session():
-        yield None
-
-    with patch("services.cache.get_session", session), patch("services.cache.CacheRepo", return_value=repo):
+    with patch("services.cache.get_optional", AsyncMock(return_value=json.dumps(payload))):
         result = asyncio.run(PersistentCache().get("https://www.threads.com/@user/post/Abc"))
     assert result is None
-    assert repo.touch.await_count == 0
 
 
 def test_cache_refreshes_entries_written_before_like_count():
@@ -77,17 +60,9 @@ def test_cache_refreshes_entries_written_before_like_count():
         },
         "author_metadata_version": 1,
     }
-    stored = SimpleNamespace(entry_json=payload)
-    repo = SimpleNamespace(get=AsyncMock(return_value=stored), touch=AsyncMock())
-
-    @asynccontextmanager
-    async def session():
-        yield None
-
-    with patch("services.cache.get_session", session), patch("services.cache.CacheRepo", return_value=repo):
+    with patch("services.cache.get_optional", AsyncMock(return_value=json.dumps(payload))):
         result = asyncio.run(PersistentCache().get("https://www.threads.com/@a/post/x"))
     assert result is None
-    assert repo.touch.await_count == 0
 
 
 def test_metadata_line_includes_like_count():
@@ -118,17 +93,9 @@ def test_cache_refreshes_entries_written_before_tags():
         "parse_result": {"title": "T", "author_name": "Author", "published_at": None, "view_count": None},
         "author_metadata_version": 1,
     }
-    stored = SimpleNamespace(entry_json=payload)
-    repo = SimpleNamespace(get=AsyncMock(return_value=stored), touch=AsyncMock())
-
-    @asynccontextmanager
-    async def session():
-        yield None
-
-    with patch("services.cache.get_session", session), patch("services.cache.CacheRepo", return_value=repo):
+    with patch("services.cache.get_optional", AsyncMock(return_value=json.dumps(payload))):
         result = asyncio.run(PersistentCache().get("https://www.pixiv.net/artworks/1"))
     assert result is None
-    assert repo.touch.await_count == 0
 
 
 def test_new_authorless_cache_is_versioned():

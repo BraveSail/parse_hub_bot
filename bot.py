@@ -13,7 +13,6 @@ from db.init import init_db
 from i18n import ISO639_MAP
 from log import logger, setup_logging
 from plugins.helpers import COMMANDS
-from services import parse_cache
 from utils.event_loop import setup_optimized_event_loop
 
 pillow_heif.register_heif_opener()
@@ -56,7 +55,7 @@ class Bot(Client):
         await init_db()
         logger.success("数据库初始化完成")
 
-        parse_cache.start_cleanup()
+        # 缓存换 Redis 后 TTL 由 redis 自己管, 不再需要进程内的定期清理任务
         await super().start(*args, **kwargs)
         await self.set_menu()
         return self
