@@ -21,8 +21,11 @@
 30364e475d07: Esta não é a sua operação
 3065ed13e5f9: Obter link original
 33ccc7a4682a: Plataforma não suportada
+35277da314ea: Você não tem permissão para usar este comando
+373e2207fa07: Sem cache
 3795485677d6: Configuração do grupo
 39b75e75d433: Capa do vídeo
+39d2213b4a9a: A lista de permissões está vazia
 3d3eeb2bc9cd: Opção de configuração desconhecida
 405ba1795958: Configuração do tópico
 460ce129a523: Baixando...
@@ -48,6 +51,7 @@
 68957ac274c5: Baixando... | {current * 100 / total:.0f}%
 '734176584215': Você não é o proprietário deste canal, não tem permissão para modificar
   a configuração do canal
+6c6a39ac8cf3: Adicionado à lista de permissões
 75f0fa966d82: curtidas
 769d88e425e0: Concluído
 77274b54a324: 'Erro em {stage}:'
@@ -58,9 +62,11 @@
 816de50b9e0e: Por favor, insira o link na caixa de chat
 868afb493654: Selecione o alvo da configuração
 8a8672da4ab7: Opção de configuração não suportada
+91f015aa09bc: Responda à mensagem de alguém ou informe um ID de usuário
 945599b91845: Desativar progresso de análise
 9b3dbf3e3f85: Ocultar "Source" na parte inferior
 a3e3b88377c8: Iniciar
+a4acafd79982: Já está na lista de permissões
 a5eac262447d: Apenas para membros do grupo designado
 ab480060abb1: Não mostrar logs de erro
 ad4fff48f141: Sem permissão
@@ -103,6 +109,7 @@ c97827ba89ec: '**Envie o link para compartilhar para análise**
 
   **Código aberto: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Painel de configuração
+d34addb9b2f0: Cache limpo
 d5631690265c: Alvo da configuração não reconhecido
 d59c948c471c: Analisando...
 d5a73b0c7f2f: Enviar
@@ -112,4 +119,5 @@ e4f6307e1c4f: 'Alterado para: {LANG_MAP[selected]}'
 eaa3cd851501: Texto personalizado
 f047ff589a7a: Enviar em pacote, com informações de análise
 f1d192b54c3b: Mostrar o texto completo
+f6f18e097963: Lista de permissões
 ff7e330bebf8: Configuração pessoal no tópico

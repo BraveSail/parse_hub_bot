@@ -22,8 +22,11 @@
 30364e475d07: Dit is niet jouw actie
 3065ed13e5f9: Oorspronkelijke link ophalen
 33ccc7a4682a: Niet-ondersteund platform
+35277da314ea: Je mag dit commando niet gebruiken
+373e2207fa07: Geen cache
 3795485677d6: Groepsconfiguratie
 39b75e75d433: Videominiatuur
+39d2213b4a9a: De whitelist is leeg
 3d3eeb2bc9cd: Onbekende configuratieoptie
 405ba1795958: Topicconfiguratie
 460ce129a523: Bezig met downloaden...
@@ -57,6 +60,7 @@
 68957ac274c5: Bezig met downloaden... | {current * 100 / total:.0f}%
 '734176584215': Je bent geen eigenaar van dit kanaal, je hebt geen toestemming om
   de kanaalconfiguratie te wijzigen
+6c6a39ac8cf3: Toegevoegd aan de whitelist
 75f0fa966d82: vind-ik-leuks
 769d88e425e0: Voltooid
 77274b54a324: '{stage} fout:'
@@ -67,9 +71,11 @@
 816de50b9e0e: Voer een link in het chatvenster in
 868afb493654: Kies configuratiedoel
 8a8672da4ab7: Niet-ondersteunde configuratieoptie
+91f015aa09bc: Antwoord op iemands bericht, of geef een gebruikers-ID
 945599b91845: Parsing voortgang uitschakelen
 9b3dbf3e3f85: Verberg "Bron" onderaan
 a3e3b88377c8: Start
+a4acafd79982: Staat al in de whitelist
 a5eac262447d: Alleen voor leden van de aangewezen groep
 ab480060abb1: Foutlogboeken niet weergeven
 ad4fff48f141: Geen toestemming
@@ -112,6 +118,7 @@ c97827ba89ec: '**Stuur een deel-link om te parseren**
 
   **Open source adres: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Configuratiepaneel
+d34addb9b2f0: Cache gewist
 d5631690265c: Kan configuratiedoel niet herkennen
 d59c948c471c: Bezig met ontleden...
 d5a73b0c7f2f: Uploaden
@@ -121,4 +128,5 @@ e4f6307e1c4f: 'Gewisseld naar: {LANG_MAP[selected]}'
 eaa3cd851501: Aangepaste tekst
 f047ff589a7a: Verpak en stuur, inclusief parseer informatie
 f1d192b54c3b: Volledige tekst weergeven
+f6f18e097963: Whitelist
 ff7e330bebf8: Persoonlijke configuratie binnen onderwerp

@@ -21,8 +21,11 @@
 30364e475d07: Esta no es tu acción
 3065ed13e5f9: Obtener enlace original
 33ccc7a4682a: Plataforma no soportada
+35277da314ea: No tienes permiso para usar este comando
+373e2207fa07: Sin caché
 3795485677d6: Configuración del grupo
 39b75e75d433: Portada del vídeo
+39d2213b4a9a: La lista blanca está vacía
 3d3eeb2bc9cd: Opción de configuración desconocida
 405ba1795958: Configuración del tema
 460ce129a523: Descargando...
@@ -56,6 +59,7 @@
 68957ac274c5: Descargando... | {current * 100 / total:.0f}%
 '734176584215': No eres el propietario de este canal, no tienes permiso para modificar
   la configuración del canal
+6c6a39ac8cf3: Añadido a la lista blanca
 75f0fa966d82: Me gusta
 769d88e425e0: Completado
 77274b54a324: 'Error en {stage}:'
@@ -66,9 +70,11 @@
 816de50b9e0e: Por favor, introduce un enlace en el chat
 868afb493654: Seleccionar objetivo de configuración
 8a8672da4ab7: Opción de configuración no soportada
+91f015aa09bc: Responde al mensaje de alguien, o indica un ID de usuario
 945599b91845: Desactivar progreso de análisis
 9b3dbf3e3f85: Ocultar "Fuente" en la parte inferior
 a3e3b88377c8: Iniciar
+a4acafd79982: Ya está en la lista blanca
 a5eac262447d: Solo para miembros del grupo designado
 ab480060abb1: No mostrar registros de errores
 ad4fff48f141: Sin permiso
@@ -111,6 +117,7 @@ c97827ba89ec: '**Envía un enlace para analizar**
 
   **Código abierto: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Panel de configuración
+d34addb9b2f0: Caché borrada
 d5631690265c: No se puede reconocer el objetivo de configuración
 d59c948c471c: Analizando...
 d5a73b0c7f2f: Subir
@@ -120,4 +127,5 @@ e4f6307e1c4f: 'Cambiado a: {LANG_MAP[selected]}'
 eaa3cd851501: Texto personalizado
 f047ff589a7a: Enviar empaquetado con información de análisis
 f1d192b54c3b: Mostrar todo el texto
+f6f18e097963: Lista blanca
 ff7e330bebf8: Configuración personal en el tema

@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -47,10 +48,33 @@ class BotSettings(BaseSettings):
         ),
     )
 
+    #: 初始白名单: 可用管理命令 (/add /list /purge) 的用户 ID, **逗号分隔**。
+    #:
+    #: 这是"永远允许"的一层 —— 写在 .env 里, 不用改代码; 运行时加的人存 DB 表
+    #: ``admin_users``, 两处取并集。**第一人必须从这里来**, 否则 /add 谁也调不了。
+    admin_users: str = Field(
+        default="",
+        description="初始白名单用户 ID (逗号分隔), 之后用 /add 追加",
+    )
+
     debug: bool = Field(default=False)
     debug_skip_cleanup: bool = Field(default=False, description="跳过资源清理")
 
     demo_mode: bool = Field(default=False, description="启用演示模式")
+
+    @property
+    def admin_user_ids(self) -> list[int]:
+        """解析 ``admin_users``: 逗号或空白分隔, 非数字项跳过。
+
+        宽容解析 —— 配置写错一个片段不该让整个 bot 起不来 (与"平台配置留空是合法状态"
+        同一原则)。
+        """
+        out: list[int] = []
+        for part in re.split(r"[,\s]+", self.admin_users or ""):
+            part = part.strip()
+            if part.lstrip("-").isdigit():
+                out.append(int(part))
+        return out
 
     def model_post_init(self, __context: Any) -> None:
         """模型初始化后的操作"""

@@ -22,8 +22,11 @@
 30364e475d07: Das ist nicht Ihre Aktion
 3065ed13e5f9: Original-Link abrufen
 33ccc7a4682a: Nicht unterstützte Plattform
+35277da314ea: Sie sind nicht berechtigt, diesen Befehl zu verwenden
+373e2207fa07: Kein Cache
 3795485677d6: Gruppenkonfiguration
 39b75e75d433: Video-Cover
+39d2213b4a9a: Die Whitelist ist leer
 3d3eeb2bc9cd: Unbekannte Konfigurationsoption
 405ba1795958: Themen-Konfiguration
 460ce129a523: Herunterladen...
@@ -57,6 +60,7 @@
 68957ac274c5: Herunterladen... | {current * 100 / total:.0f}%
 '734176584215': Sie sind nicht der Besitzer dieses Kanals und dürfen die Kanal-Konfiguration
   nicht ändern.
+6c6a39ac8cf3: Zur Whitelist hinzugefügt
 75f0fa966d82: Likes
 769d88e425e0: Fertig
 77274b54a324: '{stage} Fehler:'
@@ -67,9 +71,11 @@
 816de50b9e0e: Bitte geben Sie den Link im Chatfenster ein
 868afb493654: Konfigurationsziel wählen
 8a8672da4ab7: Nicht unterstützte Konfigurationsoption
+91f015aa09bc: Antworte auf die Nachricht von jemandem oder gib eine Benutzer-ID an
 945599b91845: Parsing-Fortschritt deaktivieren
 9b3dbf3e3f85: Untere "Quelle" ausblenden
 a3e3b88377c8: Start
+a4acafd79982: Bereits in der Whitelist
 a5eac262447d: Nur für Mitglieder der festgelegten Gruppe
 ab480060abb1: Fehlerprotokolle nicht anzeigen
 ad4fff48f141: Keine Berechtigung
@@ -113,6 +119,7 @@ c97827ba89ec: '**Senden Sie einen Freigabelink zur Analyse**
 
   **Open-Source-Adresse: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Konfigurationspanel
+d34addb9b2f0: Cache gelöscht
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
 d59c948c471c: Analysiere...
 d5a73b0c7f2f: Hochladen
@@ -122,4 +129,5 @@ e4f6307e1c4f: 'Wechsel zu: {LANG_MAP[selected]}'
 eaa3cd851501: Benutzerdefinierter Text
 f047ff589a7a: Paket senden, inklusive Analyseinformationen
 f1d192b54c3b: Vollständigen Text anzeigen
+f6f18e097963: Whitelist
 ff7e330bebf8: Persönliche Konfiguration im Thema

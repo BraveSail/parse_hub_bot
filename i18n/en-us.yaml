@@ -22,8 +22,11 @@
 30364e475d07: This is not your operation
 3065ed13e5f9: Get original link
 33ccc7a4682a: Unsupported platform
+35277da314ea: You are not allowed to use this command
+373e2207fa07: No cache
 3795485677d6: Group Configuration
 39b75e75d433: Video cover
+39d2213b4a9a: The whitelist is empty
 3d3eeb2bc9cd: Unknown configuration item
 405ba1795958: Topic Configuration
 460ce129a523: Downloading...
@@ -53,6 +56,7 @@
 68957ac274c5: Downloading... | {current * 100 / total:.0f}%
 '734176584215': You are not the owner of this channel, no permission to modify channel
   configuration
+6c6a39ac8cf3: Added to the whitelist
 75f0fa966d82: likes
 769d88e425e0: Done
 77274b54a324: '{stage} error:'
@@ -63,9 +67,11 @@
 816de50b9e0e: Please enter the link in the chat box
 868afb493654: Select configuration target
 8a8672da4ab7: Unsupported configuration item
+91f015aa09bc: Reply to someone's message, or give a user ID
 945599b91845: Disable parsing progress
 9b3dbf3e3f85: Hide bottom "Source"
 a3e3b88377c8: Start
+a4acafd79982: Already in the whitelist
 a5eac262447d: Available to members of the designated group only
 ab480060abb1: Do not display error logs
 ad4fff48f141: No permission
@@ -108,6 +114,7 @@ c97827ba89ec: '**Send share link for parsing**
 
   **Open source: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Configuration panel
+d34addb9b2f0: Cache cleared
 d5631690265c: Unrecognized configuration target
 d59c948c471c: Parsing...
 d5a73b0c7f2f: Upload
@@ -117,4 +124,5 @@ e4f6307e1c4f: 'Switched to: {LANG_MAP[selected]}'
 eaa3cd851501: Custom Copy
 f047ff589a7a: Pack and send with parsing information
 f1d192b54c3b: Show full text
+f6f18e097963: Whitelist
 ff7e330bebf8: Individual configuration within topic

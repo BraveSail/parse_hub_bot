@@ -21,8 +21,11 @@
 30364e475d07: Ini bukan tindakan Anda
 3065ed13e5f9: Dapatkan tautan asli
 33ccc7a4682a: Platform tidak didukung
+35277da314ea: Anda tidak diizinkan menggunakan perintah ini
+373e2207fa07: Tidak ada cache
 3795485677d6: Konfigurasi grup
 39b75e75d433: Sampul video
+39d2213b4a9a: Daftar putih kosong
 3d3eeb2bc9cd: Item konfigurasi tidak dikenal
 405ba1795958: Konfigurasi topik
 460ce129a523: Sedang mengunduh...
@@ -55,6 +58,7 @@
 68957ac274c5: Sedang mengunduh... | {current * 100 / total:.0f}%
 '734176584215': Anda bukan pemilik saluran ini, tidak berwenang mengubah konfigurasi
   saluran
+6c6a39ac8cf3: Ditambahkan ke daftar putih
 75f0fa966d82: suka
 769d88e425e0: Selesai
 77274b54a324: 'Kesalahan {stage}:'
@@ -65,9 +69,11 @@
 816de50b9e0e: Silakan masukkan tautan di kotak obrolan
 868afb493654: Pilih target konfigurasi
 8a8672da4ab7: Opsi konfigurasi tidak didukung
+91f015aa09bc: Balas pesan seseorang, atau berikan ID pengguna
 945599b91845: Nonaktifkan progres parsing
 9b3dbf3e3f85: Sembunyikan "Sumber" di bagian bawah
 a3e3b88377c8: Mulai
+a4acafd79982: Sudah ada di daftar putih
 a5eac262447d: Hanya untuk anggota grup yang ditentukan
 ab480060abb1: Jangan tampilkan log kesalahan
 ad4fff48f141: Tidak ada izin
@@ -111,6 +117,7 @@ c97827ba89ec: '**Kirim tautan berbagi untuk parsing**
 
   **Sumber terbuka: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Panel konfigurasi
+d34addb9b2f0: Cache dihapus
 d5631690265c: Target konfigurasi tidak dikenali
 d59c948c471c: Sedang memproses...
 d5a73b0c7f2f: Unggah
@@ -120,4 +127,5 @@ e4f6307e1c4f: 'Berhasil beralih ke: {LANG_MAP[selected]}'
 eaa3cd851501: Teks kustom
 f047ff589a7a: Kirim paket, sertakan informasi parsing
 f1d192b54c3b: Tampilkan seluruh teks
+f6f18e097963: Daftar putih
 ff7e330bebf8: Konfigurasi pribadi dalam topik

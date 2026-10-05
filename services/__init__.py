@@ -1,3 +1,4 @@
+from .admin_user import AdminUserService, is_admin_user
 from .cache import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult, parse_cache, persistent_cache
 from .chat import ChatService
 from .forum_topic import ForumTopicService
@@ -17,6 +18,8 @@ from .settings import (
 from .user import UserService
 
 __all__ = [
+    "AdminUserService",
+    "is_admin_user",
     "UserService",
     "ChatService",
     "ForumTopicService",

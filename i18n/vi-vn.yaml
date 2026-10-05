@@ -21,8 +21,11 @@
 30364e475d07: Đây không phải thao tác của bạn
 3065ed13e5f9: Lấy liên kết gốc
 33ccc7a4682a: Nền tảng không được hỗ trợ
+35277da314ea: Bạn không có quyền sử dụng lệnh này
+373e2207fa07: Không có bộ nhớ đệm
 3795485677d6: Cấu hình nhóm
 39b75e75d433: Ảnh bìa video
+39d2213b4a9a: Danh sách trắng trống
 3d3eeb2bc9cd: Mục cấu hình không xác định
 405ba1795958: Cấu hình chủ đề
 460ce129a523: Đang tải xuống...
@@ -53,6 +56,7 @@
 68957ac274c5: Đang tải xuống... | {current * 100 / total:.0f}%
 '734176584215': Bạn không phải là chủ sở hữu của kênh này, không có quyền thay đổi
   cấu hình kênh
+6c6a39ac8cf3: Đã thêm vào danh sách trắng
 75f0fa966d82: lượt thích
 769d88e425e0: Hoàn thành
 77274b54a324: 'Lỗi {stage}:'
@@ -63,9 +67,11 @@
 816de50b9e0e: Vui lòng nhập liên kết trong hộp chat
 868afb493654: Chọn mục tiêu cấu hình
 8a8672da4ab7: Mục cấu hình không được hỗ trợ
+91f015aa09bc: Hãy trả lời tin nhắn của ai đó, hoặc cho biết ID người dùng
 945599b91845: Vô hiệu hóa tiến trình phân tích
 9b3dbf3e3f85: Ẩn "Nguồn" ở dưới cùng
 a3e3b88377c8: Bắt đầu
+a4acafd79982: Đã có trong danh sách trắng
 a5eac262447d: Chỉ dành cho thành viên của nhóm được chỉ định
 ab480060abb1: Không hiển thị nhật ký lỗi
 ad4fff48f141: Không có quyền
@@ -109,6 +115,7 @@ c97827ba89ec: '**Gửi liên kết chia sẻ để phân tích**
 
   **Mã nguồn mở: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Bảng cấu hình
+d34addb9b2f0: Đã xóa bộ nhớ đệm
 d5631690265c: Không thể nhận diện mục tiêu cấu hình
 d59c948c471c: Đang phân tích...
 d5a73b0c7f2f: Tải lên
@@ -118,4 +125,5 @@ e4f6307e1c4f: 'Đã chuyển sang: {LANG_MAP[selected]}'
 eaa3cd851501: Tùy chỉnh văn bản
 f047ff589a7a: Gửi gói kèm thông tin phân tích
 f1d192b54c3b: Hiện toàn bộ văn bản
+f6f18e097963: Danh sách trắng
 ff7e330bebf8: Cấu hình cá nhân trong chủ đề

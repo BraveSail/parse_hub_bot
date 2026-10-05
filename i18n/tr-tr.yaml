@@ -20,8 +20,11 @@
 30364e475d07: Bu senin işlemin değil
 3065ed13e5f9: Orijinal bağlantıyı al
 33ccc7a4682a: Desteklenmeyen platform
+35277da314ea: Bu komutu kullanma yetkiniz yok
+373e2207fa07: Önbellek yok
 3795485677d6: Grup yapılandırması
 39b75e75d433: Video kapağı
+39d2213b4a9a: İzin listesi boş
 3d3eeb2bc9cd: Bilinmeyen yapılandırma öğesi
 405ba1795958: Konu yapılandırması
 460ce129a523: İndiriliyor...
@@ -54,6 +57,7 @@
 68957ac274c5: İndiriliyor... | {current * 100 / total:.0f}%
 '734176584215': Bu kanalın sahibi değilsiniz, kanal yapılandırmasını değiştirme yetkiniz
   yok
+6c6a39ac8cf3: İzin listesine eklendi
 75f0fa966d82: beğeni
 769d88e425e0: Tamamlandı
 77274b54a324: '{stage} hata:'
@@ -64,9 +68,11 @@
 816de50b9e0e: Lütfen sohbet kutusuna bağlantı girin
 868afb493654: Yapılandırma hedefi seçin
 8a8672da4ab7: Desteklenmeyen yapılandırma öğesi
+91f015aa09bc: Birinin mesajını yanıtlayın veya bir kullanıcı ID'si verin
 945599b91845: Çözümleme ilerlemesini devre dışı bırak
 9b3dbf3e3f85: Alt "Kaynak"u gizle
 a3e3b88377c8: Başlat
+a4acafd79982: Zaten izin listesinde
 a5eac262447d: Yalnızca belirlenen grubun üyeleri için
 ab480060abb1: Hata günlüklerini gösterme
 ad4fff48f141: Yetki yok
@@ -110,6 +116,7 @@ c97827ba89ec: '**Çözümleme için paylaşım bağlantısı gönderin**
 
   **Açık kaynak adresi: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Yapılandırma paneli
+d34addb9b2f0: Önbellek temizlendi
 d5631690265c: Yapılandırma hedefi tanınamadı
 d59c948c471c: Çözülüyor...
 d5a73b0c7f2f: Yükle
@@ -119,4 +126,5 @@ e4f6307e1c4f: '{LANG_MAP[selected]} olarak değiştirildi'
 eaa3cd851501: Özel metin
 f047ff589a7a: Paket halinde gönder, çözümleme bilgisi ile birlikte
 f1d192b54c3b: Tüm metni göster
+f6f18e097963: İzin listesi
 ff7e330bebf8: Konu içi kişisel yapılandırma

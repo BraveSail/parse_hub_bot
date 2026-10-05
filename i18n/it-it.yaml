@@ -21,8 +21,11 @@
 30364e475d07: Questa non è la tua operazione
 3065ed13e5f9: Ottieni link originale
 33ccc7a4682a: Piattaforma non supportata
+35277da314ea: Non sei autorizzato a usare questo comando
+373e2207fa07: Nessuna cache
 3795485677d6: Configurazione gruppo
 39b75e75d433: Copertina video
+39d2213b4a9a: La whitelist è vuota
 3d3eeb2bc9cd: Opzione di configurazione sconosciuta
 405ba1795958: Configurazione topic
 460ce129a523: Download in corso...
@@ -56,6 +59,7 @@
 68957ac274c5: Download in corso... | {current * 100 / total:.0f}%
 '734176584215': Non sei il proprietario di questo canale, non hai il permesso di modificare
   la configurazione del canale
+6c6a39ac8cf3: Aggiunto alla whitelist
 75f0fa966d82: Mi piace
 769d88e425e0: Completato
 77274b54a324: 'Errore {stage}:'
@@ -66,9 +70,11 @@
 816de50b9e0e: Inserisci il link nella chat
 868afb493654: Seleziona obiettivo configurazione
 8a8672da4ab7: Opzione di configurazione non supportata
+91f015aa09bc: Rispondi al messaggio di qualcuno, oppure indica un ID utente
 945599b91845: Disabilita progresso analisi
 9b3dbf3e3f85: Nascondi "Fonte" in basso
 a3e3b88377c8: Inizia
+a4acafd79982: Già nella whitelist
 a5eac262447d: Solo per i membri del gruppo designato
 ab480060abb1: Non mostrare i log degli errori
 ad4fff48f141: Nessuna autorizzazione
@@ -111,6 +117,7 @@ c97827ba89ec: '**Invia un link di condivisione per l''analisi**
 
   **Codice sorgente: [GitHub](https://github.com/z-mio/parse_hub_bot)**'
 d2282636abc7: Pannello di configurazione
+d34addb9b2f0: Cache cancellata
 d5631690265c: Obiettivo di configurazione non riconosciuto
 d59c948c471c: Analisi in corso...
 d5a73b0c7f2f: Carica
@@ -120,4 +127,5 @@ e4f6307e1c4f: 'Passato a: {LANG_MAP[selected]}'
 eaa3cd851501: Testo personalizzato
 f047ff589a7a: Invia pacchettizzato con informazioni di analisi
 f1d192b54c3b: Mostra tutto il testo
+f6f18e097963: Whitelist
 ff7e330bebf8: Configurazione personale nell'argomento
