@@ -11,7 +11,7 @@ from core import bs, on_connect, on_disconnect, ws
 from db.engine import close_db
 from db.init import init_db
 from i18n import ISO639_MAP
-from log import logger, setup_logging
+from log import enable_library_diagnostics, logger, setup_logging
 from plugins.helpers import COMMANDS
 from utils.event_loop import setup_optimized_event_loop
 
@@ -20,6 +20,8 @@ pillow_heif.register_heif_opener()
 setup_logging(debug=bs.debug)
 if bs.debug:
     logger.enable("parsehub")
+# 即使不开 debug 也要放开下载器的诊断日志 (库默认把自己静默, 见 log.py 的说明)
+enable_library_diagnostics()
 
 setup_optimized_event_loop()
 loop = asyncio.new_event_loop()
