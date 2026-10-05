@@ -186,23 +186,21 @@ def test_split_fold_preview_returns_unfolded_for_short_content():
 def test_long_quote_block_is_folded():
     """被回复/被引用的长卡片也要折 —— 以前它们直接拼进 parts, 1294 字的回复块整屏铺开。
 
-    引用块用**老折叠**（整体一个 <blockquote expandable>），不是正文那套 details：
-    后者会把「预览 / 按钮 / 折起部分」切成三段，用户反馈「引用块被按钮分割,
-    割裂感太强了」。块内换行必须写成 <br> —— 真换行会被并成空格，真空行则让
-    expandable 退化成普通引用块（完全不折叠）。
+    旧形态是整块一个 `<blockquote expandable>`（块内换行还得写成 `<br>`，否则真空行会让
+    它退化成不可折叠）；现在**统一成容器 + 按钮**（`render_folded_quote_card`），
+    与带媒体的卡片同一形态。
     """
-    from plugins.helpers import fold_quote_block
+    from plugins.helpers import render_quote_card
 
     quote = "\n".join(["> <i>作者 @handle</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
-    out = fold_quote_block(quote, summary="展开全文")
-    assert out.startswith("<blockquote expandable>")
-    assert out.endswith("</blockquote>")
-    assert "<details>" not in out                       # 不用 details, 避免割裂
-    assert "<i>作者 @handle</i>" in out                # 斜体走 HTML 标签 (块内 markdown 不解析)
+    out = render_quote_card(quote, [], summary="展开全文")[0]
+    assert out.startswith("<blockquote>"), out[:40]
+    assert out.rstrip().endswith("</blockquote>")
+    assert "<details><summary>展开全文</summary>" in out   # 统一用按钮折叠
+    assert "<i>作者 @handle</i>" in out                     # 斜体走 HTML 标签
     assert "<i>第19行内容</i>" in out
-    assert "*" not in out                               # 不留字面星号
-    assert out.count("<br>") == 19                      # 换行走 <br>
-    assert "> " not in out                              # '>' 前缀已剥掉
+    assert "*" not in out                                    # 不留字面星号
+    assert not any(line.startswith("> ") for line in out.splitlines()), "'>' 前缀已剥掉"
 
 
 def test_quote_style_comes_from_the_source_not_a_conversion():
@@ -219,7 +217,10 @@ def test_quote_style_comes_from_the_source_not_a_conversion():
 
 
 def test_unfolded_quote_passes_through_unchanged():
-    """不折叠的引用块原样透传 (样式已在源头写好, 渲染层不该再动它)"""
+    """不折叠的引用块原样透传 (样式已在源头写好, 渲染层不该再动它)
+
+    `fold_quote_block` 是独立的折叠形态, 卡片不再调它 —— 这里直接测它本身的行为。
+    """
     from plugins.helpers import fold_quote_block
 
     quote = "> <i>作者</i>\n> 短内容"
@@ -227,13 +228,13 @@ def test_unfolded_quote_passes_through_unchanged():
 
 
 def test_short_quote_block_is_not_folded():
-    """短引用块不折叠"""
-    from plugins.helpers import fold_quote_block
+    """短引用块不折叠 (卡片路径也不折)"""
+    from plugins.helpers import render_quote_card
 
-    out = fold_quote_block("> <i>作者</i>\n> 短内容", summary="展开全文")
-    assert "<blockquote expandable>" not in out
+    out = render_quote_card("> <i>作者</i>\n> 短内容", [], summary="展开全文")[0]
     assert "<details>" not in out
-    assert out.startswith("> ")
+    assert out.startswith("> "), out
+    assert not out.startswith("<blockquote>")
 
 
 def test_media_goes_inside_a_short_quote():
@@ -291,8 +292,10 @@ def test_build_rich_markdown_folds_a_long_reply_block():
     )
     config = types.SimpleNamespace(hide_title=False, hide_desc=False, hide_source=True)
     md = build_rich_markdown(result, config=config, lang="zh-hans")
-    assert "<blockquote expandable>" in md
-    assert "<details>" not in md                 # 引用块不切成三段
+    # 折叠形态统一: 引用卡片 = 容器 + 按钮 (与带媒体的卡片同一形态)
+    assert "<blockquote>" in md
+    assert "<details><summary>" in md
+    assert "<blockquote expandable>" not in md
     assert "<i>第1行</i>" in md and "<i>第17行</i>" in md
 
 

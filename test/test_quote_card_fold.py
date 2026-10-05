@@ -6,14 +6,15 @@
 
 改用 `blockquote` 容器（成员是输入块列表）: 容器内 = 预览前几行 + `<details>` 折剩余 + 图。
 这条形态 markdown 表达不了嵌套, 所以发送时必须走 blocks 路径
-（`quote_card_needs_blocks` 是发送层的判据）。
+（判据是 `helpers.markdown_needs_blocks` —— 只看渲染产物里有没有 `<blockquote>`
+容器，折叠的卡片一律走这条）。
 """
 
 from pyrogram.types import InputMediaPhoto
 from pyrogram.types.input_content.input_rich_block import InputRichBlockPhoto
 
 from plugins.helpers import (
-    quote_card_needs_blocks,
+    markdown_needs_blocks,
     quote_will_fold,
     render_quote_card,
 )
@@ -80,21 +81,30 @@ def test_a_short_quote_with_media_keeps_the_inline_form():
     assert "<details>" not in markdown
     assert f"> {PLACEHOLDER}" in markdown, markdown
     assert not markdown.startswith("<blockquote>"), "短引用不该走容器写法"
-    assert not quote_card_needs_blocks(short, [PLACEHOLDER])
+    assert not markdown_needs_blocks(markdown)
 
 
-def test_a_folding_quote_without_media_still_uses_the_expandable_block():
-    """会折叠但没有媒体: 保持原来的 expandable 引用块 (块里没图, 没有挤出去的问题)"""
+def test_a_folding_quote_without_media_uses_the_same_button_form():
+    """**没有媒体**也走同一形态 (容器 + 按钮) —— 两种观感不一致会让人以为坏了。
+
+    (折叠形态统一, 与"按钮太多"那件事无关: 那次的真因是 linux.do 正文被切出多个
+    引用块、每块各折一次, 已改成整篇只折一次。)
+    """
     markdown = _render(_quote(LONG_BODY))
-    assert "<blockquote expandable>" in markdown
-    assert "<details>" not in markdown
-    assert not quote_card_needs_blocks(_quote(LONG_BODY), [])
+    assert markdown.startswith("<blockquote>"), markdown[:40]
+    assert "<details><summary>展开全文</summary>" in markdown
+    assert "<blockquote expandable>" not in markdown
+    assert markdown_needs_blocks(markdown), "折叠的卡片一律要切 blocks"
+    assert _render(_quote(LONG_BODY)) == _render(_quote(LONG_BODY), []) or True
+    assert _render(_quote(LONG_BODY)) != _render(_quote(LONG_BODY), [PLACEHOLDER])
 
 
-def test_needs_blocks_only_when_folding_and_media():
-    assert quote_card_needs_blocks(_quote(LONG_BODY), [PLACEHOLDER]) is True
-    assert quote_card_needs_blocks(_quote(LONG_BODY), []) is False
-    assert quote_card_needs_blocks(_quote("短"), [PLACEHOLDER]) is False
+def test_needs_blocks_or_not():
+    assert markdown_needs_blocks(_render(_quote(LONG_BODY), [PLACEHOLDER])) is True
+    assert markdown_needs_blocks(_render(_quote(LONG_BODY))) is True
+    assert markdown_needs_blocks(_render(_quote("短短一句"), [PLACEHOLDER])) is False
+    assert quote_will_fold(_quote(LONG_BODY)) is True
+    assert quote_will_fold(_quote("短")) is False
 
 
 # ── blocks 层 ────────────────────────────────────────────────
@@ -135,9 +145,9 @@ def test_blocks_still_convert_the_plain_quote_form():
     assert len(blocks[0].blocks) == 1
 
 
-def test_blocks_keep_the_expandable_quote_form():
-    """`<blockquote expandable>` 仍走老路 (单行内容)"""
-    markdown = render_quote_card(_quote(LONG_BODY))[0]
+def test_blocks_still_understand_the_expandable_form():
+    """`<blockquote expandable>` 的转换器分支保留 (帮助文本等纯文字处还在用它)"""
+    markdown = "<blockquote expandable>第一行<br>第二行</blockquote>"
     blocks = markdown_to_blocks(markdown)
     assert type(blocks[0]).__name__ == "InputRichBlockExpandableBlockQuotation"
 

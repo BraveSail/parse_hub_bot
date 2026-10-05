@@ -639,16 +639,18 @@ def _quote_body(quote: str) -> str:
 
 
 def quote_will_fold(quote: str) -> bool:
-    """引用块会不会被折叠 (调用方据此决定媒体放块内还是块外)。"""
+    """引用块会不会被折叠 (折叠形态见 ``render_folded_quote_card``)。"""
     return bool(quote) and _should_fold(_quote_body(quote))
 
 
 def fold_quote_block(quote: str, *, summary: str = "") -> str:
-    """把过长的引用块折起来。
+    """把过长的引用块整体折成 ``<blockquote expandable>``（客户端自显前几行）。
 
-    引用块的老折叠形态是**整体一个 `<blockquote expandable>`**（客户端自己
-    显示开头几行），不像正文那样用 ``<details>`` 切成「预览 / 按钮 / 折起部分」
-    三段 —— 用户明确反馈后者「引用块被按钮分割, 割裂感太强了」。
+    ⚠️ 引用卡片**不走这条路**（``render_quote_card`` 统一用容器 + 按钮）。
+    这里留着是因为它是个独立的、可复用的折叠形态（纯文字引用块用得上），
+    与卡片形态无关 —— 别把「按钮太多」这类问题归到它头上：
+    那次的真因是 linux.do 正文被切出多个引用块、**每块各折一次**
+    （已改成整篇只折一次，见 ``format_text``）。
     """
     if not quote:
         return quote
@@ -658,29 +660,20 @@ def fold_quote_block(quote: str, *, summary: str = "") -> str:
     return render_expandable_quote(body)
 
 
-def quote_card_needs_blocks(quote: str, media: Sequence[str]) -> bool:
-    """引用卡片是否**必须**走 blocks 路径（markdown 表达不了这种结构）。
-
-    会折叠 + 带媒体时，卡片要长成「`<blockquote>` 容器内 [预览 + `<details>` 折剩余 + 图]」
-    —— markdown 的 ``>`` 引用块里既嵌不了 ``<details>``，图也会被挤到块外；
-    只有 blocks（块成员可以是任意输入块）做得到。发送方据此选路。
-    """
-    return bool(media) and quote_will_fold(quote)
-
-
 def markdown_needs_blocks(markdown: str) -> bool:
     """这段 markdown 里有没有**只有 blocks 才表达得了**的结构。
 
-    目前只有一种: 折叠的引用卡片带媒体 —— 它长成 ``<blockquote>`` 容器
-    (容器内 [预览 + ``<details>`` + 图])。markdown 的 ``>`` 引用块嵌不了这些,
-    发送方必须切 blocks 路径。判据直接看**渲染产物**, 与渲染保持单一来源
-    (``<blockquote expandable>`` 不会误命中 —— 少了那个 ``>``)。
+    就是``<blockquote>`` 容器 —— 折叠的引用卡片长这样
+    (容器内 [预览 + ``<details>`` + 可选图])，markdown 的 ``>`` 引用块嵌不了
+    ``<details>``，所以发送方必须切 blocks 路径。判据直接看**渲染产物**，
+    与渲染保持单一来源（``<blockquote expandable>`` 不会误命中 —— 少了那个 ``>``；
+    它只用于帮助文本这种纯文字的地方）。
     """
     return "<blockquote>" in markdown
 
 
-def render_folded_quote_card(quote: str, media: Sequence[str], *, summary: str = "") -> str:
-    """会折叠的引用卡片：容器内 = **预览前几行** + ``<details>`` 折剩余 + 图。
+def render_folded_quote_card(quote: str, media: Sequence[str] = (), *, summary: str = "") -> str:
+    """会折叠的引用卡片：容器内 = **预览前几行** + ``<details>`` 折剩余 (+ 图)。
 
     为什么不用 ``<blockquote expandable>``：那个块**只吃 RichText**，而 RichText 里
     **没有任何图片类型**（Bot API 文档的成员表可查），块内 ``![]()`` 也不解析 ——
@@ -690,7 +683,7 @@ def render_folded_quote_card(quote: str, media: Sequence[str], *, summary: str =
     预览沿用正文那套折叠逻辑（``split_fold_preview``）：开头几行留在外面，
     否则收起时只剩一个「展开全文」按钮，看不到一点内容。
     """
-    if not quote or not media:
+    if not quote:
         return quote
     body = _quote_body(quote)
     preview, rest = split_fold_preview(body)
@@ -719,11 +712,14 @@ def render_quote_card(quote: str, media: Sequence[str] = (), *, summary: str = "
     """
     if not quote:
         return []
-    if media and quote_will_fold(quote):
+    if quote_will_fold(quote):
+        # 统一: 长引用一律「容器 + 按钮」, 不论有没有媒体 —— 两种形态的观感不一致
+        # 会让人以为坏了 (用户要求全部统一)。容器内留前几行当预览, 不用 expandable
+        # 那种"整块一起折"的老形态。
         return [render_folded_quote_card(quote, media, summary=summary)]
     if media:
         return [attach_quote_media(quote, media)]
-    return [fold_quote_block(quote, summary=summary)]
+    return [quote]
 
 
 def wrap_collage(placeholders: Sequence[str]) -> list[str]:
