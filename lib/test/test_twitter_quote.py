@@ -168,7 +168,7 @@ def test_quoted_block_uses_handle_only_when_name_matches():
 def test_quoted_block_shows_name_and_handle():
     tweet = TwitterTweet(tweet_id="1", quoted_status=quoted_tweet("x", handle="huacnlee", name="Jason Lee"))
     assert TwitterParser._build_quoted_block(tweet) == (
-        '> <i><a href="https://x.com/huacnlee">Jason Lee</a> <sub>@huacnlee</sub></i>\n> <i>x</i>\n\n'
+        '> <i><a href="https://x.com/huacnlee">Jason Lee</a> <code>@huacnlee</code></i>\n> <i>x</i>\n\n'
     )
 
 
@@ -232,7 +232,7 @@ def test_quote_end_to_end_from_payload():
     assert result.content == (
         "往代码仓库里拉屎的就这些人\n\n"
         '> <i><a href="https://x.com/huacnlee">Jason Lee</a>'
-        ' <sub>@huacnlee</sub></i>\n> <i>Vibe coding 的时候…</i>'
+        ' <code>@huacnlee</code></i>\n> <i>Vibe coding 的时候…</i>'
     )
 
 

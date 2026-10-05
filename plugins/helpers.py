@@ -791,7 +791,7 @@ def get_parse_author_name(parse_result: AnyParseResult) -> str:
 
 
 def format_author_line(parse_result: AnyParseResult) -> str:
-    """作者行 (markdown): ``**<a>名字</a> <sub>@handle</sub>**`` (常规小字, 非等宽)。
+    """作者行 (markdown): ``**<a>名字</a> <code>@handle</code>**`` (常规小字, 非等宽)。
 
     拼装与链接一律交给库里的 ``format_author_link`` —— 这里不要再手写一遍替换,
     否则"作者长什么样"这件事就有了两份实现 (曾经就是如此)。

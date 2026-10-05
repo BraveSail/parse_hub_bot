@@ -119,14 +119,18 @@ def format_author_link(name: str, handle: str = "", url: str = "") -> str:
 
     - **超链接必须用 HTML ``<a href>``**: 富文本里 markdown 链接语法不生效,
       会原样显示成 ``[文字](url)``。
-    - **下角标用 ``<sub>``**, 服务端解析成 ``RichTextSubscript``。
-      ``<tg-sub>`` / ``~波浪~`` 都**不**生效。
-    - **``@handle`` 用常规样式 + 角标**: ``<sub>@名字</sub>``
-      (用户要求「去掉等宽, 用常规样式」)。
-      ⚠️ **不要拿服务端节点类型推断客户端观感**: 这种写法服务端解析出的类型是
-      ``RichTextMention``(套在 ``RichTextSubscript`` 里), 看着像"可点击的提及",
-      但**客户端渲染出来是常规小字、不可点击、没有链接观感** —— 用户真机确认过。
-      (反过来, 以前外裹 ``<code>`` 是为了压掉"可点", 现在不需要了。)
+    - **``@handle`` = 等宽、不带角标**: ``<code>@handle</code>`` (用户定稿)。
+      历程（都真发过、读回过服务端节点 —— 记下来免得再绕一圈）:
+
+      | 写法 | 服务端节点 | 可点? | 观感 |
+      | --- | --- | --- | --- |
+      | ``<sub>@h</sub>`` | ``textMention`` | **可点** | 常规小字但**下沉** |
+      | ``<sub><code>@h</code></sub>`` | ``textCode`` | 不可点 | 等宽 + 下沉 |
+      | **``<code>@h</code>``** | ``textCode`` | 不可点 | **等宽、同基线** ← 现行 |
+      | 整条 ``skip_entity_detection`` | ``textPlain`` | 不可点 | 常规同基线 (要自己链化裸 URL, 已撤) |
+
+      ⇒ 用户结论: ``<sub>`` 会把 handle **压到名字基线以下**、看着不齐; 所以**不要角标**。
+      ``<code>`` 恰好同时满足"不可点"(压掉 ``@提及`` 自动识别) 与"同基线"。
     - 名字与 ``@handle`` 之间**空一格**。
 
     只有一个名字 (没有 ``@handle``, 或两者相同) 时, 那一个仍然做成链接 ——
@@ -139,10 +143,11 @@ def format_author_link(name: str, handle: str = "", url: str = "") -> str:
     href = html.escape(url, quote=True)
     # 标识: 优先真实用户名; 没有就取主页 URL 末段当 ID (B 站 mid / 抖音 sec_uid / pixiv id)
     tag = clean or profile_id_from_url(url)
-    # 名字与标识是两个不同的东西: 名字可点, 标识附在后面的等宽下角标
+    # 名字与标识是两个不同的东西: 名字可点, 标识是后面的等宽标识
     if display and tag and display.casefold() != tag.casefold():
-        # 常规样式 + 角标 (不再外裹 <code>): 用户要求「去掉等宽, 用常规样式」
-        handle_markup = f"<sub>@{html.escape(tag)}</sub>"
+        # 等宽、**不带角标** (`<sub>` 会把 handle 压到名字基线以下, 用户不要):
+        # `<code>` 同时满足"不可点击"(压掉 @提及 自动识别) 与"同基线"。
+        handle_markup = f"<code>@{html.escape(tag)}</code>"
         return f'<a href="{href}">{html.escape(display)}</a> {handle_markup}'
     # 只有一边 (或两边相同): 就一个, 做成链接。
     # 相同的情况沿用既有约定 —— 显示 ``@标识`` 形态 (不因为这次改动改语义)

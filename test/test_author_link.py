@@ -22,7 +22,7 @@ def test_name_is_the_link_and_handle_is_a_subscript():
     ``<sub>`` 把它压成下角标; 两个名字之间空一格。
     """
     out = format_author_link("言吾言_", "yanwuyan", "https://x.com/yanwuyan")
-    assert out == '<a href="https://x.com/yanwuyan">言吾言_</a> <sub>@yanwuyan</sub>'
+    assert out == '<a href="https://x.com/yanwuyan">言吾言_</a> <code>@yanwuyan</code>'
 
 
 def test_a_platform_without_a_username_falls_back_to_its_id():
@@ -33,7 +33,7 @@ def test_a_platform_without_a_username_falls_back_to_its_id():
     """
     out = format_author_link("言吾言_", "", "https://space.bilibili.com/12345")
     assert out == (
-        '<a href="https://space.bilibili.com/12345">言吾言_</a> <sub>@12345</sub>'
+        '<a href="https://space.bilibili.com/12345">言吾言_</a> <code>@12345</code>'
     )
 
 
@@ -55,10 +55,11 @@ def test_the_handle_is_not_bold():
     result.author_url = "https://x.com/handle"
 
     line = format_author_line(result)
-    # 粗体必须在 </a> 处收口, <sub> 在它外面
+    # 粗体在 </a> 处收口, handle 在它外面; handle 是**等宽、不带角标**
     assert line.startswith("**<a href="), line
-    assert line.index("**", 2) < line.index("<sub>"), line
-    assert line.endswith("<sub>@handle</sub>"), line
+    assert line.index("**", 2) < line.index("<code>"), line
+    assert line.endswith("<code>@handle</code>"), line
+    assert "<sub>" not in line, "不要角标 (会把 handle 压到名字基线以下)"
 
 
 def test_a_name_only_author_is_still_bold():
@@ -83,7 +84,7 @@ def test_a_name_only_author_is_still_bold():
 def test_the_real_username_wins_over_the_id():
     """两者都能拿到时用真实用户名 (URL 末段只是兜底)"""
     out = format_author_link("Jason Lee", "huacnlee", "https://x.com/huacnlee")
-    assert "@huacnlee" in out and "<sub>@huacnlee</sub>" in out
+    assert "@huacnlee" in out and "<code>@huacnlee</code>" in out
 
 
 def test_no_url_means_plain_label():
@@ -103,7 +104,7 @@ def test_author_line_links_bilibili_name():
         platform=Platform.BILIBILI,
     )
     assert format_author_line(result) == (
-        '**<a href="https://space.bilibili.com/12345">言吾言_</a>** <sub>@12345</sub>'  # 粗体只到名字
+        '**<a href="https://space.bilibili.com/12345">言吾言_</a>** <code>@12345</code>'  # 粗体只到名字
     )
 
 
