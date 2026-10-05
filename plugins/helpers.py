@@ -863,20 +863,6 @@ def _strip_quote_prefix(match: re.Match) -> str:
     return _strip_quote_markers(match.group(0))
 
 
-def _split_quote_segments(text: str) -> list[tuple[bool, str]]:
-    """把文本切成 (是否引用块, 片段) 序列; 引用块与其间文本各自独立成段。"""
-    segments: list[tuple[bool, str]] = []
-    pos = 0
-    for match in _QUOTE_BLOCK_RE.finditer(text):
-        if match.start() > pos:
-            segments.append((False, text[pos : match.start()]))
-        segments.append((True, match.group(0)))
-        pos = match.end()
-    if pos < len(text):
-        segments.append((False, text[pos:]))
-    return segments
-
-
 #: 折叠块的默认摘要文案 (源码语言), 调用方按 locale 传译文进来
 _DEFAULT_FOLD_SUMMARY = "展开全文"
 
@@ -935,6 +921,45 @@ def render_expandable_quote(content: str) -> str:
     return f"<blockquote expandable>{use_br_linebreaks(content)}</blockquote>"
 
 
+#: 独占一行的分隔线 (markdown / discourse 的 hr)。
+#: 服务端**要求前后有空行**才认它是分隔线: 紧贴上一行时会被当普通文本 (实测一篇 linux.do
+#: 长帖里 18 处变成了字面 '---' 段落), 更糟的是紧跟文字行时会被当成 setext 标题语法
+#: (把上一行整行变成 H2)。所以渲染前统一补空行。
+_HR_LINE_RE = re.compile(r"^(?:-{3,}|\*{3,}|_{3,})$")
+
+
+def _normalize_hr(text: str) -> str:
+    """把独占一行的分隔线前后规范成空行, 让它稳定解析成分隔线。
+
+    只动"整行只有分隔符"的行 —— ``**粗体**``、``***粗斜体***``、列表项里的短横线、
+    表格的 ``|---|`` 都不是独占一行的纯分隔符, 不会被误伤。
+    """
+    lines = text.splitlines()
+    if not any(_HR_LINE_RE.match(line.strip()) for line in lines):
+        return text
+
+    out: list[str] = []
+    for line in lines:
+        if _HR_LINE_RE.match(line.strip()):
+            if out and out[-1].strip():
+                out.append("")
+            out.append("---")
+            out.append("")
+        else:
+            out.append(line)
+    # 补空行可能撑出连续空行: 合并回一个空行, 避免块之间出现大段空白
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _fold_whole(content: str, *, summary: str = "") -> str:
+    """把**整段**内容包成一个可折叠块 (全收起, 不留预览)。
+
+    与 ``_render_foldable`` 的区别: 那个会留开头几行当预览 —— 那适合"一段长正文",
+    但整篇折叠时预览本身就是一大段内容, 而用户要的是"收起时一行展开全文"。
+    """
+    return f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{content}\n\n</details>"
+
+
 def _render_foldable(content: str, *, summary: str = "") -> str:
     """包成可折叠块 (长内容展示用): 开头几行留外面当预览, 其余折进 details。
 
@@ -988,8 +1013,12 @@ def format_text(
 ) -> str:
     """格式化输出内容, 按需限制长度, 添加折叠块样式。
 
-    折叠规则统一: 引用块与正文各段共用同一阈值 (字符数或行数任一超出即折叠),
-    且各段独立折叠、互不外包 (Telegram 不支持嵌套 blockquote)。
+    **折叠只做一次, 对象是整段内容** (用户要求「整篇只折叠一次」)。
+
+    以前是按引用块把正文切成多段、**每段各自判断**是否超阈值 —— 对引用多的长帖
+    (discourse 的楼层引用动辄十几个) 会切出十几个片段, 于是产生一堆「展开全文」按钮
+    (实测一篇 linux.do 长帖出了 7 个), 碎得没法读。现在改成: 整段超阈值就整段折一次,
+    引用块不再单独折叠 (也不做"折叠里再折叠"——客户端对嵌套折叠没有保证)。
 
     :param max_length: 超过就截断 (在 markdown 阶段截, 避免切断后面生成的 blockquote 标签)。
         **默认不截断** —— 让"忘了传"时的行为是安全的 (完整渲染), 而不是静默砍掉内容。
@@ -997,7 +1026,8 @@ def format_text(
         ``send_raw`` / ``send_zip`` / GIF 过多时的纯文字提示。
         富文本正文没有这个限制, 不传即可 (超长靠折叠收起)。
     """
-    text = text.strip()
+    # 分隔线先规范化: 原文里紧贴上一行的 '---' 在服务端不会被认成分隔线
+    text = _normalize_hr(text.strip())
     if max_length is not None and len(text) > max_length:
         text = text[: max_length - 100] + "......"
 
@@ -1005,25 +1035,16 @@ def format_text(
         # 该通道不支持引用块: 剥掉前缀后按普通文本处理
         text = _QUOTE_BLOCK_RE.sub(_strip_quote_prefix, text)
         if allow_expandable and _should_fold(text):
-            return _render_foldable(text, summary=fold_summary)
+            return _fold_whole(text, summary=fold_summary)
         return text
 
-    out: list[str] = []
-    for is_quote, segment in _split_quote_segments(text):
-        if is_quote:
-            out.append(
-                convert_markdown_quote(segment, allow_expandable=allow_expandable, fold_summary=fold_summary)
-            )
-            continue
-        core = segment.strip()
-        if allow_expandable and core and _should_fold(core):
-            # 保留片段两侧空白 (块间分隔), 只折叠核心内容
-            lead = segment[: len(segment) - len(segment.lstrip())]
-            trail = segment[len(segment.rstrip()) :]
-            out.append(f"{lead}{_render_foldable(core, summary=fold_summary)}{trail}")
-        else:
-            out.append(segment)
-    return "".join(out)
+    # 先按"引用块不折叠"把引用块转换好, 再拿**整篇**判断是否要折。
+    # 引用块的长度算在整篇里, 所以"整篇没超阈值、单个引用块却超"不可能出现 ——
+    # 整篇折叠是唯一的折叠点 (也就不会有嵌套折叠)。
+    converted = convert_markdown_quote(text, allow_expandable=False, fold_summary=fold_summary)
+    if allow_expandable and _should_fold(converted):
+        return _fold_whole(converted, summary=fold_summary)
+    return converted
 
 
 def replace_url(platform: Platform | None, v: str) -> str:

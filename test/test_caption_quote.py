@@ -70,12 +70,16 @@ def test_multiple_quote_blocks():
     assert convert_markdown_quote(text) == "<blockquote>one</blockquote>\n\ntext\n\n<blockquote>two</blockquote>"
 
 
-def test_format_text_folds_long_quote_without_nesting():
-    """超长引用块自行折叠, 但不外包第二层 blockquote (TG 不支持嵌套)."""
+def test_a_long_quote_folds_the_whole_text_once():
+    """超长引用块**不再自己折** —— 折叠点只有"整篇"这一个。
+
+    以前是引用块整块折成 <blockquote expandable>; 改成整篇折一次后, 引用块留在
+    details 里当普通引用块 (也就不会有嵌套折叠)。
+    """
     out = format_text("> \u56de\u590d @user\uff1a\n> " + "x" * 600)
-    assert out.count("<blockquote expandable>") == 1   # 整块一起折叠, 不外包第二层
+    assert out.count("<details>") == 1
+    assert "<blockquote expandable>" not in out
     assert out.count("<blockquote") == 1
-    assert "<details>" not in out
 
 
 def test_format_text_keeps_short_quote_unfolded():
@@ -85,12 +89,16 @@ def test_format_text_keeps_short_quote_unfolded():
     assert "<details>" not in out
 
 
-def test_quote_and_body_fold_independently():
-    """引用块与正文各自按同一阈值折叠, 互不外包 (总长控制在截断线内)."""
+def test_quote_and_body_fold_together_once():
+    """引用块与正文**一起折一次**, 不再各自独立折。
+
+    用户要求「整篇只折叠一次」: 逐段独立折叠对引用多的长帖会切出一堆折叠按钮
+    (实测一篇 linux.do 长帖出了 7 个)。
+    """
     n = _FOLD_CHAR_THRESHOLD + 100   # 引用块与正文各自都超过阈值
     out = format_text("> \u56de\u590d @u\uff1a\n> " + "q" * n + "\n\n" + "b" * n)
-    assert out.count("<blockquote expandable>") == 1   # 引用块: 整块折
-    assert out.count("<details>") == 1                 # 正文: 预览 + 折起
+    assert out.count("<details>") == 1                 # 整篇一个折叠块
+    assert "<blockquote expandable>" not in out
     assert "......" not in out  # 未触发截断
 
 
@@ -101,12 +109,11 @@ def test_quote_not_folded_when_expandable_disabled():
 
 
 def test_format_text_folds_long_plain_text():
-    """折叠 = 开头留预览 + 其余折进 details (收起时只显示摘要, 不留预览就看不到内容)"""
+    """折叠 = **整段进 details, 不留预览** (用户要「收起时一行展开全文」)"""
     out = format_text("y" * 600)
-    assert out.startswith("y" * 100)                     # 预览在外
-    assert "<details><summary>\u5c55\u5f00\u5168\u6587</summary>" in out
+    assert out.startswith("<details><summary>\u5c55\u5f00\u5168\u6587</summary>")
     assert out.endswith("</details>")
-    assert "y" * 500 in out                              # 折起的部分一个字没丢
+    assert "y" * 600 in out                              # 一个字没丢
     assert "......" not in out
 
 
@@ -146,14 +153,17 @@ def test_folded_body_keeps_paragraph_breaks():
     assert out.count("\n\n") >= 4
 
 
-def test_folded_body_leaves_a_visible_preview():
-    """折叠块收起时只显示摘要, 所以开头必须留在外面 —— 否则一个字都看不到"""
+def test_the_fold_hides_everything_behind_the_summary():
+    """整篇折叠是**全收起**: 开头那段也在 details 里面 (不再留预览)。
+
+    与 <blockquote expandable> 的"整块一起折"不同 —— details 收起时只显示 summary,
+    所以这里必须把整段都放进去, 否则开头会露在按钮外面 (那就不是"整篇折一次"了)。
+    """
     n = _FOLD_CHAR_THRESHOLD // 2 + 50
-    body = "\n\n".join(["开头这一段要能看见", "中间内容" * n, "结尾内容" * n])
+    body = "\n\n".join(["开头这一段", "中间内容" * n, "结尾内容" * n])
     out = format_text(body)
-    assert out.startswith("开头这一段要能看见")     # 预览在折叠块外
-    assert "<details>" in out
-    assert out.index("开头这一段要能看见") < out.index("<details>")
+    assert out.startswith("<details>")
+    assert out.index("开头这一段") > out.index("<details>")
 
 
 def test_single_line_long_text_still_folds():
@@ -391,8 +401,8 @@ def test_truncation_happens_before_html_conversion():
     """要求截断时, 截断发生在 HTML 转换之前 —— 否则会切断 blockquote 闭合标签"""
     out = format_text("> " + "z" * 1500, max_length=1000)
     assert "......" in out
-    assert out.endswith("</blockquote>")    # 截断没有切断闭合标签
-    assert out.count("<blockquote expandable>") == 1
+    assert out.count("<details>") == 1      # 截断后仍是整篇一个折叠块
+    assert out.endswith("</details>")       # 截断没有切断闭合标签
 
 
 def test_format_text_without_expandable_does_not_wrap_long_text():
