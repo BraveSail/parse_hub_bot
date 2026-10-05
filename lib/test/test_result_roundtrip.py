@@ -8,6 +8,7 @@ import json
 import unittest
 from datetime import datetime, timedelta, timezone
 
+from parsehub.parsers.base.ytdlp import YtVideoParseResult
 from parsehub.types.media_ref import AniRef, ImageRef, LivePhotoRef, VideoRef
 from parsehub.types.platform import Platform
 from parsehub.types.result import (
@@ -144,6 +145,86 @@ class RoundtripTest(unittest.TestCase):
         result.media = "https://cdn.example/x.jpg"  # 故意塞错
         with self.assertRaises(TypeError):
             result_to_cache_dict(result)
+
+    def test_a_platform_subclass_survives_the_roundtrip(self):
+        """**平台子类必须原样回来** —— 平台专属行为挂在它上面。
+
+        实例: `PixivParseResult._do_download` 注入 `Referer`（`i.pximg.net` 按它判,
+        没有就 403）。往返后若降级成 `MultimediaParseResult`, 那个覆盖不再执行 ——
+        症状是"缓存命中时图床 403、现场解析却正常"(2026-10-05 实际发生的回归)。
+        """
+        from parsehub.parsers.parser.pixiv import PixivParseResult
+
+        result = PixivParseResult(
+            title="标题",
+            media=[ImageRef(url="https://i.pximg.net/img/a.jpg")],
+            content="正文",
+        )
+        back = _roundtrip(result)
+
+        self.assertIs(type(back), PixivParseResult, "平台子类丢了 —— 平台专属下载头会失效")
+        self.assertIs(type(back)._do_download, PixivParseResult._do_download)
+
+    def test_the_impl_name_is_recorded(self):
+        """缓存字典要带上具体类名（按 PostType 重建只能得到通用类）"""
+        from parsehub.parsers.parser.pixiv import PixivParseResult
+
+        data = result_to_cache_dict(PixivParseResult(title="t"))
+        self.assertEqual(data["impl"], "PixivParseResult")
+        self.assertEqual(data["type"], "multimedia")  # PostType 仍然照旧
+
+    def test_every_platform_subclass_roundtrips(self):
+        """把**所有已注册的平台子类**都过一遍往返 —— 任何一个降级都是隐患"""
+        from parsehub.types.serialize import _all_result_classes
+
+        base = {
+            VideoParseResult: {"title": "t"},
+            ImageParseResult: {"title": "t"},
+            MultimediaParseResult: {"title": "t"},
+            RichTextParseResult: {"title": "t", "markdown_content": "m"},
+        }
+        checked = 0
+        for name, cls in _all_result_classes().items():
+            if not cls.__module__.startswith("parsehub.parsers.parser."):
+                continue  # 只看平台子类
+            kwargs = next(
+                (kw for parent, kw in base.items() if issubclass(cls, parent) and parent is not cls),
+                None,
+            )
+            if kwargs is None:
+                continue
+            # 有些类**故意**不能重建 (yt-dlp 系的必填 dl), 那类只要求"不崩、不丢缓存"
+            try:
+                instance = cls(**kwargs)
+            except TypeError:
+                continue  # 需要运行期句柄的类不参与往返 (另有专门的兜底测试)
+
+            with self.subTest(platform_result=name):
+                back = _roundtrip(instance)
+                self.assertIsInstance(
+                    back,
+                    cls if not issubclass(cls, YtVideoParseResult) else VideoParseResult,
+                    f"{name} 降级成了 {type(back).__name__}",
+                )
+                checked += 1
+        self.assertGreater(checked, 5, f"只检查到 {checked} 个平台子类, 断言没覆盖到位")
+
+    def test_a_class_that_needs_runtime_state_falls_back(self):
+        """yt-dlp 系的结果类带必填的 `dl`(下载器句柄), 缓存里不可能有 —— 必须退回通用类,
+        而不是抛异常 (抛了就等于这些平台的缓存**永远读不出来**)。"""
+        data = result_to_cache_dict(VideoParseResult(title="t", content="c"))
+        data["impl"] = YtVideoParseResult.__name__
+        back = result_from_cache_dict(data)
+        self.assertIsInstance(back, VideoParseResult)
+        self.assertEqual(back.title, "t")
+
+    def test_an_unknown_impl_falls_back_to_the_generic_class(self):
+        """平台子类被移除后 (老缓存) 退回通用类, 而不是抛异常"""
+        data = result_to_cache_dict(VideoParseResult(title="t", content="c"))
+        data["impl"] = "SomeRemovedPlatformResult"
+        back = result_from_cache_dict(data)
+        self.assertIsInstance(back, VideoParseResult)
+        self.assertEqual(back.title, "t")
 
     def test_an_unknown_type_is_refused(self):
         with self.assertRaises(ValueError):

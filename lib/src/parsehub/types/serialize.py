@@ -19,6 +19,8 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
+from loguru import logger
+
 from .media_ref import AniRef, ImageRef, LivePhotoRef, MediaRef, VideoRef
 from .platform import Platform
 from .post import PostType
@@ -26,6 +28,7 @@ from .result import (
     AnyParseResult,
     ImageParseResult,
     MultimediaParseResult,
+    ParseResult,
     RichTextParseResult,
     VideoParseResult,
 )
@@ -45,6 +48,47 @@ _TYPE_TO_CLASS: dict[str, type] = {
     PostType.MULTIMEDIA.value: MultimediaParseResult,
     PostType.RICHTEXT.value: RichTextParseResult,
 }
+
+#: 各"具体结果类"对应的**构造参数名**。平台子类都没有自己的 ``__init__``
+#: (只覆盖 ``_do_download`` 或声明类属性), 所以按 MRO 里第一个命中的具体类构造即可。
+_KIND_TO_PARAM = {
+    VideoParseResult: "video",
+    ImageParseResult: "photo",
+    RichTextParseResult: "richtext",
+    MultimediaParseResult: "media",
+}
+
+
+def _all_result_classes() -> dict[str, type]:
+    """所有已注册的结果类 (含平台子类), 名字 → 类。
+
+    ⚠️ **必须能恢复平台子类**: 平台专属的下载/渲染行为挂在子类上 —— 例如
+    ``PixivParseResult._do_download`` 注入 ``Referer``(i.pximg.net 按它判, 没有就 403)。
+    只按 ``PostType`` 重建会把对象降级成通用类, 那些覆盖就不再执行 ——
+    症状是"缓存命中时行为变了"(2026-10-05 的 pixiv 403 就是这么来的)。
+    """
+    # 平台 parser 的 import 会注册子类; 延迟 import 避免循环依赖
+    from ..parsers import parser as _parsers  # noqa: F401
+
+    classes: dict[str, type] = {}
+    stack: list[type] = [ParseResult]
+    seen: set[type] = set()
+    while stack:
+        cls = stack.pop()
+        if cls in seen:
+            continue
+        seen.add(cls)
+        classes[cls.__name__] = cls
+        stack.extend(cls.__subclasses__())
+    return classes
+
+
+def _constructor_param(cls: type) -> str | None:
+    """按 MRO 找这个类该用哪个构造参数名 (video / photo / richtext / media)。"""
+    for base in cls.__mro__:
+        if (param := _KIND_TO_PARAM.get(base)) is not None:
+            return param
+    return None
 
 
 def _platform_from_id(platform_id: str) -> Platform | None:
@@ -105,16 +149,32 @@ def _as_list(payload: Any) -> list[Any]:
 
 
 def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
-    """结果对象 → 可 JSON 化的字典 (媒体带 ``kind``)。"""
-    return {**result.to_dict(), "media": _media_to_payload(result.media)}
+    """结果对象 → 可 JSON 化的字典 (媒体带 ``kind``, 且记录**具体类名**)。
+
+    ``impl`` 是这套缓存格式自己的字段 (``to_dict()`` 是公开格式, 不动它):
+    少了它就只能按 ``type`` 重建, 平台子类会被降级 (见 ``_all_result_classes``)。
+    """
+    return {
+        **result.to_dict(),
+        "media": _media_to_payload(result.media),
+        "impl": type(result).__name__,
+    }
 
 
 def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
     """字典 → 结果对象。``result_to_cache_dict`` 的逆运算。"""
-    try:
-        cls = _TYPE_TO_CLASS[data["type"]]
-    except KeyError as e:
-        raise ValueError(f"缓存里的结果类型不认识: {data.get('type')!r}") from e
+    # 优先按**具体类名**重建 (平台子类带着平台专属的下载/渲染行为);
+    # 老缓存没有 impl, 才退回按 PostType 的通用类
+    cls: type | None = None
+    if impl := data.get("impl"):
+        cls = _all_result_classes().get(impl)
+        if cls is None:
+            logger.warning(f"缓存里的结果类已不存在, 退回通用类: impl={impl!r}")
+    if cls is None:
+        try:
+            cls = _TYPE_TO_CLASS[data["type"]]
+        except KeyError as e:
+            raise ValueError(f"缓存里的结果类型不认识: {data.get('type')!r}") from e
 
     media = _media_payload(data.get("media"))
     published_at = data.get("published_at")
@@ -136,20 +196,31 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
     # (由 markdown_content 算), 喂回去会被 __init__ 静默覆盖
     content = data.get("content", "")
 
-    match cls:
-        case _ if cls is VideoParseResult:
+    def build(target: type) -> AnyParseResult:
+        param = _constructor_param(target)
+        if param == "video":
             # 视频是唯一可能是**单个** ref 的类型
-            result = VideoParseResult(video=media, content=content, **common)
-        case _ if cls is ImageParseResult:
-            result = ImageParseResult(photo=_as_list(media), content=content, **common)
-        case _ if cls is RichTextParseResult:
-            result = RichTextParseResult(
-                media=media,
-                markdown_content=data.get("markdown_content", ""),
-                **common,
-            )
-        case _:
-            result = MultimediaParseResult(media=media, content=content, **common)
+            return target(video=media, content=content, **common)
+        if param == "photo":
+            return target(photo=_as_list(media), content=content, **common)
+        if param == "richtext":
+            # content 是派生属性: 只喂 markdown_content, 由它算 content
+            return target(media=media, markdown_content=data.get("markdown_content", ""), **common)
+        if param == "media":
+            return target(media=media, content=content, **common)
+        raise ValueError(f"不认识的结果类型, 无法重建: {target.__name__}")
+
+    try:
+        result = build(cls)
+    except TypeError:
+        # 有些平台子类**不能**用这套参数重建 —— yt-dlp 系的 `YtVideoParseResult` 要求
+        # 必填的 `dl`(下载器实例), 那是运行期句柄, 缓存里不可能有。
+        # 退回通用类: 平台专属行为会退化, 但**不丢缓存、不报错**(与恢复子类之前的行为一致)。
+        generic = _TYPE_TO_CLASS[data["type"]]
+        if cls is generic:
+            raise
+        logger.warning(f"结果类无法重建, 退回通用类: impl={cls.__name__} → {generic.__name__}")
+        result = build(generic)
 
     # raw_url 不在构造参数里 (基类里初始为空串), 重建后单独赋回
     result.raw_url = data.get("raw_url", "")
