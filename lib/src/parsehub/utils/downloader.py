@@ -11,11 +11,61 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 import aiofiles
+from loguru import logger
 
 from ..errors import DownloadError
 from . import http
 
 ProgressCallback = Callable[..., Awaitable[None]]
+
+#: 图床/CDN 的**限流**状态码。403 也要算进来: pixiv 的 i.pximg.net 在被短时高频请求
+#: 时返回 403(正常防盗链也是 403), 实测同一出口隔 23 秒就能恢复 —— 所以它值得等一等重试,
+#: 而不是立刻放弃(用户报「还是 403」的那次, 三次重试都在 1~2 秒内做完, 窗口没过)。
+_RATE_LIMIT_STATUS = frozenset({403, 429})
+
+#: 限流退避序列 (秒)。**故意比普通故障长**: 限流窗口通常几十秒, 2**attempt 那种
+#: 1s/2s 的节奏在结构上就等不到恢复。
+#:
+#: 403 与 429 分开: 429 是明确的限流信号, 值得多等; 403 也可能是**稳定**的拒绝
+#: (比如 Referer 不对), 等太久会让真正的错误延迟一分钟才报出来。
+_BACKOFF_429 = (5.0, 15.0, 45.0)
+_BACKOFF_403 = (3.0, 10.0)
+
+
+def _is_rate_limited(status_code: int) -> bool:
+    return status_code in _RATE_LIMIT_STATUS
+
+
+def _request_headers_of(response: Any) -> dict:
+    """从 curl_cffi 的响应里取**真实发出的请求头**。
+
+    curl_cffi 的异常**不带** `.request`（只有 `.response`），但 `Response.request`
+    是有的 —— 所以必须从 response 上取。全部用 getattr 兜底: **日志自己抛异常会掩盖
+    原始错误**, 那就比没有日志更糟。
+    """
+    request = getattr(response, "request", None)
+    return dict(getattr(request, "headers", None) or {})
+
+
+def _response_headers_of(response: Any) -> dict:
+    return dict(getattr(response, "headers", None) or {})
+
+
+def _retry_delay(attempt: int, *, status_code: int | None = None) -> float:
+    """重试前等多久。
+
+    403/429 走**专用退避** (限流窗口通常几十秒), 其余可重试故障保持指数退避
+    (2**attempt) —— 不给普通抖动引入几十秒的等待。
+    """
+    if status_code == 403:
+        return _BACKOFF_403[min(attempt, len(_BACKOFF_403) - 1)]
+    if status_code == 429:
+        return _BACKOFF_429[min(attempt, len(_BACKOFF_429) - 1)]
+    return float(2**attempt)
+
+
+def _is_retryable_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code < 600
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +134,8 @@ class SegmentDownloader:
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             self._reset_progress()
+            rate_limited = False
+            status: int | None = None
             try:
                 async with self._client() as client:
                     self.resolved_path = await self._resolve_path(client)
@@ -94,11 +146,22 @@ class SegmentDownloader:
                 if attempt == self.max_retries:
                     raise
             except http.HTTPStatusError as e:
+                status = e.response.status_code
                 last_error = e
-                if attempt == self.max_retries or not _is_retryable_status(e.response.status_code):
-                    raise DownloadError(f"HTTP错误: {e.response.status_code}") from e
+                rate_limited = _is_rate_limited(status)
+                # 失败一定要留下 **URL + 状态 + 响应头**: 以前这里一行日志都没有, 出问题只能靠猜
+                # (响应头是判断限流/CDN 节点的关键线索: server / via / cf-ray / retry-after)
+                logger.warning(
+                    f"下载请求被拒: url={getattr(e.response, 'url', self.url)} status={status} "
+                    f"attempt={attempt + 1}/{self.max_retries + 1} rate_limited={rate_limited}\n"
+                    f"    请求头 = {_request_headers_of(e.response)}\n"
+                    f"    响应头 = {_response_headers_of(e.response)}"
+                )
+                if attempt == self.max_retries or not (_is_retryable_status(status) or rate_limited):
+                    raise DownloadError(f"HTTP错误: {status}") from e
             except (http.TimeoutException, http.NetworkError, http.RemoteProtocolError, http.ReadError) as e:
                 last_error = e
+                logger.warning(f"下载网络错误: url={self.url} attempt={attempt + 1}/{self.max_retries + 1} err={e}")
                 if attempt == self.max_retries:
                     raise DownloadError(f"网络连接错误: {e}") from e
             except Exception as e:
@@ -106,7 +169,7 @@ class SegmentDownloader:
                 if attempt == self.max_retries:
                     raise DownloadError(f"下载失败: {e}") from e
 
-            await asyncio.sleep(2**attempt)
+            await asyncio.sleep(_retry_delay(attempt, status_code=status))
 
         raise DownloadError(f"达到最大重试次数，下载失败: {last_error}")
 
@@ -264,6 +327,8 @@ class SegmentDownloader:
     async def _download_part(self, client: http.AsyncClient, part: RangePart, total_size: int) -> None:
         for attempt in range(self.max_retries + 1):
             received = 0
+            rate_limited = False
+            status: int | None = None
             try:
                 if part.path.exists():
                     part.path.unlink()
@@ -299,15 +364,25 @@ class SegmentDownloader:
             except FallbackToSingle:
                 raise
             except http.HTTPStatusError as e:
-                if attempt == self.max_retries or not _is_retryable_status(e.response.status_code):
-                    raise DownloadError(f"分片下载失败: HTTP {e.response.status_code}") from e
+                status = e.response.status_code
+                rate_limited = _is_rate_limited(status)
+                logger.warning(
+                    f"分片请求被拒: url={getattr(e.response, 'url', self.url)} "
+                    f"Range=bytes={part.start}-{part.end} status={status} "
+                    f"attempt={attempt + 1}/{self.max_retries + 1} rate_limited={rate_limited}\n"
+                    f"    请求头 = {_request_headers_of(e.response)}\n"
+                    f"    响应头 = {_response_headers_of(e.response)}"
+                )
+                if attempt == self.max_retries or not (_is_retryable_status(status) or rate_limited):
+                    raise DownloadError(f"分片下载失败: HTTP {status}") from e
             except (http.TimeoutException, http.NetworkError, http.RemoteProtocolError, http.ReadError) as e:
+                logger.warning(f"分片网络错误: url={self.url} attempt={attempt + 1}/{self.max_retries + 1} err={e}")
                 if attempt == self.max_retries:
                     raise DownloadError(f"分片网络错误: {e}") from e
             except DownloadError:
                 if attempt == self.max_retries:
                     raise
-            await asyncio.sleep(2**attempt)
+            await asyncio.sleep(_retry_delay(attempt, status_code=status))
 
     async def _merge_parts(self, parts: list[RangePart], total_size: int) -> None:
         complete_path = self._require_complete_path()
@@ -527,10 +602,6 @@ def _has_non_identity_encoding(content_encoding: str | None) -> bool:
     if not content_encoding:
         return False
     return content_encoding.lower().strip() not in {"identity", ""}
-
-
-def _is_retryable_status(status_code: int) -> bool:
-    return status_code == 429 or 500 <= status_code < 600
 
 
 def _parse_content_disposition(header: str) -> str | None:
