@@ -71,6 +71,8 @@ class DouyinParser(BaseParser):
         return DouyinVideoParseResult(
             title=result.desc,
             author_name=result.author_name,
+            # @标识 用数字 uid (sec_uid 太长); 主页地址仍用 sec_uid
+            author_handle=result.author_uid,
             author_url=profile_url(Platform.DOUYIN, user_id=result.author_sec_uid),
             video=result.video,
             published_at=result.published_at,
@@ -84,6 +86,7 @@ class DouyinParser(BaseParser):
         return DouyinImageParseResult(
             title=result.desc,
             author_name=result.author_name,
+            author_handle=result.author_uid,
             author_url=profile_url(Platform.DOUYIN, user_id=result.author_sec_uid),
             photo=result.image_list,
             published_at=result.published_at,
@@ -198,6 +201,10 @@ class DouyinApiResult:
     author_name: str = ""
     #: 作者主页标识: 抖音主页要用 ``sec_uid``, 数字 ``uid`` 打不开 (实测)
     author_sec_uid: str = ""
+    #: 数字 uid: **仅用于展示** (作者行的 ``@标识``)。
+    #: 抖音没有 @用户名, 而 ``sec_uid`` 太长 (60+ 字符) —— 用户选了数字 id 当标识。
+    #: 它点不开主页, 主页地址仍由 ``author_sec_uid`` 生成。
+    author_uid: str = ""
     published_at: datetime | None = None
     view_count: int | None = None
     like_count: int | None = None
@@ -219,6 +226,7 @@ class DouyinApiResult:
         author = data.get("author") or {}
         result.author_name = get_author_name(author)
         result.author_sec_uid = str(author.get("sec_uid") or "")
+        result.author_uid = str(author.get("uid") or "")
         # create_time 是 unix 秒; 统计在 statistics 里
         result.published_at = to_datetime(data.get("create_time"))
         stats = data.get("statistics") or {}

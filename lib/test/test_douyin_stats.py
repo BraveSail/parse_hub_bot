@@ -76,6 +76,23 @@ def test_sec_uid_is_captured():
     assert DouyinApiResult.parse(_payload()).author_sec_uid == SEC_UID
 
 
+def test_the_numeric_uid_is_captured_for_display():
+    """用户选了数字 uid 当作者行的 ``@标识`` —— 抖音没有 @用户名,
+
+    而 ``sec_uid`` 太长 (60+ 字符) 会拖满整行。
+    """
+    assert DouyinApiResult.parse(_payload()).author_uid == "71058463678"
+
+
+def test_the_uid_is_the_handle_but_sec_uid_is_the_url():
+    """两者分工: **uid 只用于展示, 主页地址仍用 sec_uid** (uid 打不开主页)"""
+    from parsehub.parsers.parser.douyin import DouyinParser
+
+    built = DouyinParser._build_video_result(DouyinApiResult.parse(_payload()))
+    assert built.author_handle == "71058463678", "@标识 用数字 uid"
+    assert built.author_url == f"https://www.douyin.com/user/{SEC_UID}", "主页仍用 sec_uid"
+
+
 def test_douyin_profile_url_uses_sec_uid():
     """抖音主页要用 sec_uid; 数字 uid 打不开"""
     assert profile_url(Platform.DOUYIN, user_id=SEC_UID) == f"https://www.douyin.com/user/{SEC_UID}"
