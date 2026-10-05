@@ -12,6 +12,13 @@ from db.base import Base
 
 
 class Cache(Base):
+    """**已停用**: 解析缓存换到 Redis 了 (见 ``services/cache.py``)。
+
+    保留这个模型与表是因为 alembic 的历史迁移引用它 —— 删模型会让迁移链断掉。
+    表里的旧数据不再被读写 (缓存可再生, 所以没做迁移); 想清干净可以直接删表,
+    但要在 alembic 那边一起处理。
+    """
+
     __tablename__ = "cache"
     __table_args__ = (Index("ix_cache_lru", "accessed_at", "updated_at", "created_at"),)
 
