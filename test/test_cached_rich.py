@@ -202,10 +202,16 @@ def test_sensitive_entry_produces_spoiler_blocks():
     assert kinds == {"SpoilerPhotoBlock", "SpoilerVideoBlock"}
 
 
-def test_non_sensitive_entry_produces_no_blocks():
-    """不敏感时保持原样 (走 markdown + media, 少一层转换)"""
+def test_non_sensitive_entry_produces_unspoiled_blocks():
+    """不敏感时**也**产出 blocks 映射, 但 spoiler=False。
+
+    映射不再只服务于打码: "折叠的引用卡片带媒体"也只有 blocks 能表达
+    (helpers.markdown_needs_blocks), 那条路要靠这份映射把占位符换成图。
+    走不走 blocks 由 cached_rich_message 的判据决定, 这里只管映射齐不齐。
+    """
     _media, _placeholders, _quoted, _reply, blocks = cache_media_blocks(_entry())
-    assert blocks == {}
+    assert blocks, "非敏感也要有映射 (引用卡片带媒体时需要它)"
+    assert all(getattr(v, "spoiler", True) is False for v in blocks.values()), "非敏感不该打码"
 
 
 def test_cached_rich_message_takes_the_blocks_path_when_sensitive():
@@ -214,7 +220,7 @@ def test_cached_rich_message_takes_the_blocks_path_when_sensitive():
     markdown, media, blocks = build_cached_rich_content(
         entry, "https://x.com/a/status/1", lang="zh-hans", config=_config()
     )
-    rich = cached_rich_message(markdown, media, blocks)
+    rich = cached_rich_message(markdown, media, blocks, sensitive=True)
     assert rich.blocks, "敏感内容应该走 blocks 路径"
     assert rich.markdown is None
 

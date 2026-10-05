@@ -32,6 +32,7 @@ from plugins.helpers import (
     build_caption,
     build_rich_markdown,
     format_label,
+    markdown_needs_blocks,
 )
 from plugins.parse.cache import cache_media_from_message
 from plugins.parse.covers import prepare_video_thumbs
@@ -515,7 +516,11 @@ async def send_cached(
         spoiler_tag=spoiler_tag,
     )
     # 敏感内容走 blocks 路径才打得了码 (以前这里直接用 markdown, 缓存命中就没遮罩)
-    await sender.rich_message(rich_message=cached_rich_message(markdown, media, media_blocks))
+    await sender.rich_message(
+        rich_message=cached_rich_message(
+            markdown, media, media_blocks, sensitive=bool(entry.parse_result.is_sensitive)
+        )
+    )
 
 
 def media_input(media: PathType | BinaryIO | None) -> PathType | BinaryIO:
@@ -571,9 +576,11 @@ async def send_rich_media(
         reply_media_placeholders=reply_placeholders,
         hide_content=spoiler_tag,
     )
-    if parse_result.is_sensitive and media_blocks:
-        # 敏感内容的媒体必须打码: 官方 API 的富文本媒体块没有 spoiler 字段,
-        # 只能自己构造 raw blocks (PageBlockPhoto/Video 带 spoiler)
+    if (parse_result.is_sensitive and media_blocks) or markdown_needs_blocks(markdown):
+        # 两种情况只能走 blocks:
+        #  1. 敏感内容的媒体必须打码 —— 官方 API 的富文本媒体块没有 spoiler 字段,
+        #     只能自己构造 raw blocks (PageBlockPhoto/Video 带 spoiler);
+        #  2. 折叠的引用卡片带媒体 —— 图要留在引用块内 (markdown 的 `>` 块做不到)。
         blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
         logger.debug(f"富文本(blocks): media={len(media_blocks)}, blocks={len(blocks)}")
         rich = InputRichMessage(blocks=blocks)

@@ -247,22 +247,25 @@ def test_media_goes_inside_a_short_quote():
     assert "<blockquote expandable>" not in parts[0]
 
 
-def test_media_moves_outside_a_folded_quote():
-    """**折叠**的引用块: 媒体必须放块外。
+def test_media_stays_inside_a_folded_quote():
+    """**折叠**的引用块: 媒体留在块**内**（旧做法把它挤出块外, 用户不接受）。
 
-    实测折叠块内 `![]()` 不解析 (原样显示成 `![]()` 加一个链接 = 图片格式坏掉);
-    块内改用 `<img>` 能出图但会把块退化成不可折叠的普通引用块。
+    折叠块内 `![]()` 确实不解析, 但解法不是把图搬出去 —— 而是换成 **blockquote 容器**
+    (成员是输入块列表): 容器内 = 预览几行 + `<details>` 折剩余 + 图。
+    这条形态 markdown 表达不了嵌套, 发送时切 blocks（`helpers.markdown_needs_blocks`）。
     """
-    from plugins.helpers import render_quote_card
+    from plugins.helpers import markdown_needs_blocks, render_quote_card
 
     quote = "\n".join(["> <i>作者</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
     parts = render_quote_card(quote, ["![](tg://photo?id=m0)"], summary="展开全文")
-    assert len(parts) == 2
-    folded, media_part = parts
-    assert folded.startswith("<blockquote expandable>")     # 文字折起来
-    assert "![](tg://" not in folded                        # 折叠块内没有媒体占位符
-    assert media_part == "![](tg://photo?id=m0)"            # 媒体独立成段 (块外)
-    assert not media_part.startswith(">")
+    assert len(parts) == 1
+    card = parts[0]
+    assert card.startswith("<blockquote>"), card[:60]
+    assert card.rstrip().endswith("</blockquote>"), card[-40:]
+    assert "<details><summary>展开全文</summary>" in card           # 文字照旧折起
+    assert card.index("![](tg://") < card.index("</blockquote>")    # 图在块内
+    assert not card.startswith("<blockquote expandable>")
+    assert markdown_needs_blocks(card), "这种形态必须让发送方切 blocks"
 
 
 def test_no_media_means_a_single_part():

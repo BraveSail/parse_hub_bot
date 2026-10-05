@@ -261,6 +261,31 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
             i += 1
             continue
 
+        # 引用块**容器**: 成员是输入块列表 (与 expandable 只吃 RichText 不同), 所以
+        # 「引用块内嵌图 + 长文字用 details 折起」只能走这条 —— 见 helpers.render_folded_quote_card。
+        if stripped.startswith("<blockquote>"):
+            flush_paragraph(paragraph)
+            inner_lines: list[str] = []
+            one_line = re.match(r"<blockquote>(.*)</blockquote>\s*$", stripped, re.S)
+            if one_line:
+                inner_lines.append(one_line.group(1))
+                i += 1
+            else:
+                inner_lines.append(stripped[len("<blockquote>") :])
+                i += 1
+                while i < len(lines) and "</blockquote>" not in lines[i]:
+                    inner_lines.append(lines[i])
+                    i += 1
+                if i < len(lines):
+                    inner_lines.append(lines[i].split("</blockquote>", 1)[0])
+                    i += 1
+            blocks.append(
+                InputRichBlockBlockQuotation(
+                    markdown_to_blocks("\n".join(inner_lines).strip(), media_blocks=media_blocks)
+                )
+            )
+            continue
+
         # 图集: <tg-collage> 包住的若干媒体占位
         if stripped.startswith("<tg-collage>"):
             flush_paragraph(paragraph)

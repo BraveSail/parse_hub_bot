@@ -1,0 +1,148 @@
+"""会折叠的引用卡片: 图必须留在引用块**内**, 长文字用 `<details>` 折起。
+
+背景（2026-10-05）: 用户报障「图片是引用里面的 放外面了」。旧实现里, 引用块一旦要折叠
+就退化成 `<blockquote expandable>` —— 而那个块**只吃 RichText**, RichText 的成员表里
+**没有图片类型**, 块内的 `![]()` 也不解析, 所以图只能被挪到块**外**。
+
+改用 `blockquote` 容器（成员是输入块列表）: 容器内 = 预览前几行 + `<details>` 折剩余 + 图。
+这条形态 markdown 表达不了嵌套, 所以发送时必须走 blocks 路径
+（`quote_card_needs_blocks` 是发送层的判据）。
+"""
+
+from pyrogram.types import InputMediaPhoto
+from pyrogram.types.input_content.input_rich_block import InputRichBlockPhoto
+
+from plugins.helpers import (
+    quote_card_needs_blocks,
+    quote_will_fold,
+    render_quote_card,
+)
+from plugins.parse.rich_blocks import markdown_to_blocks
+
+PLACEHOLDER = "![](tg://photo?id=m0)"
+LONG_BODY = "\n".join(
+    [
+        "【特区庁広報課からのご案内】",
+        "✦クローズドβテスト(CBT)で体験できるコンテンツをご紹介します！",
+        "少女たちの新たな物語から「アスタロト」との戦闘まで",
+        "CBTで楽しめるコンテンツをまとめてご紹介します！",
+        "✧メインストーリー",
+        "プロローグ / 港区編1章 / 新宿区編1章",
+        "✧ミニストーリー",
+        "「ユルコ・トリオ」 / 「アキナ怪談研究所」",
+        "✧SSR「花盛百杏」ピックアップ",
+        "✧スコア✦トライアル「アスタロト」",
+        "東京で繰り広げられる新たな物語を、CBTでいち早く体験してください！",
+    ]
+)
+
+
+def _quote(body: str) -> str:
+    """把裸文字变成引用块写法 (每行加 `> `)。"""
+    return "\n".join(f"> {line}" if line.strip() else ">" for line in body.split("\n"))
+
+
+def _render(quote: str, media=()) -> str:
+    return "\n\n".join(render_quote_card(quote, list(media), summary="展开全文"))
+
+
+# ── markdown 层 ──────────────────────────────────────────────
+
+
+def test_a_folding_quote_with_media_keeps_the_media_inside_the_block():
+    """会折叠 + 有媒体: 产出 `blockquote` 容器, 图在容器**内**"""
+    markdown = _render(_quote(LONG_BODY), [PLACEHOLDER])
+    assert quote_will_fold(_quote(LONG_BODY))
+    assert markdown.startswith("<blockquote>"), markdown
+    assert markdown.rstrip().endswith("</blockquote>"), markdown
+    assert PLACEHOLDER in markdown
+    # 图必须在容器内 (在 `</blockquote>` 之前), 这就是本次要修的位置
+    assert markdown.index(PLACEHOLDER) < markdown.index("</blockquote>"), markdown
+
+
+def test_the_folding_quote_still_folds_with_the_preview_left_outside():
+    """折叠按钮沿用正文那套: 开头几行留在外面, 否则收起后一个字都看不到"""
+    markdown = _render(_quote(LONG_BODY), [PLACEHOLDER])
+    assert "<details><summary>展开全文</summary>" in markdown
+    head, rest = markdown.split("<details><summary>", 1)
+    preview = head.split("<blockquote>", 1)[1].strip()
+    assert preview, "details 之前必须有预览"
+    assert preview.splitlines()[0].strip() == "【特区庁広報課からのご案内】", preview
+    # 被折起来的剩余部分不该和预览重复
+    assert "CBTでいち早く体験してください！" in rest
+    assert "CBTでいち早く体験してください！" not in preview
+
+
+def test_a_short_quote_with_media_keeps_the_inline_form():
+    """不折叠的短引用不变: 媒体用 `> ` 前缀接进引用块 (现状, 别改坏)"""
+    short = _quote("短短一句话")
+    markdown = _render(short, [PLACEHOLDER])
+    assert "<details>" not in markdown
+    assert f"> {PLACEHOLDER}" in markdown, markdown
+    assert not markdown.startswith("<blockquote>"), "短引用不该走容器写法"
+    assert not quote_card_needs_blocks(short, [PLACEHOLDER])
+
+
+def test_a_folding_quote_without_media_still_uses_the_expandable_block():
+    """会折叠但没有媒体: 保持原来的 expandable 引用块 (块里没图, 没有挤出去的问题)"""
+    markdown = _render(_quote(LONG_BODY))
+    assert "<blockquote expandable>" in markdown
+    assert "<details>" not in markdown
+    assert not quote_card_needs_blocks(_quote(LONG_BODY), [])
+
+
+def test_needs_blocks_only_when_folding_and_media():
+    assert quote_card_needs_blocks(_quote(LONG_BODY), [PLACEHOLDER]) is True
+    assert quote_card_needs_blocks(_quote(LONG_BODY), []) is False
+    assert quote_card_needs_blocks(_quote("短"), [PLACEHOLDER]) is False
+
+
+# ── blocks 层 ────────────────────────────────────────────────
+
+
+def _photo_block():
+    return InputRichBlockPhoto(InputMediaPhoto("AgACAgUAAxUAAWrCRY1FAKE"))
+
+
+def test_blocks_turn_the_container_into_a_quotation_with_children():
+    """容器 → `BlockQuotation[段落(预览), Details(剩余), Photo]`"""
+    markdown = _render(_quote(LONG_BODY), [PLACEHOLDER])
+    blocks = markdown_to_blocks(markdown, media_blocks={"m0": _photo_block()})
+
+    assert len(blocks) == 1, [type(b).__name__ for b in blocks]
+    quote = blocks[0]
+    assert type(quote).__name__ == "InputRichBlockBlockQuotation"
+    kinds = [type(child).__name__ for child in quote.blocks]
+    assert "InputRichBlockDetails" in kinds, kinds
+    assert "InputRichBlockPhoto" in kinds, kinds
+    # 图在引用块内 (blocks 层的等价断言)
+    assert kinds[-1] == "InputRichBlockPhoto", kinds
+
+
+def test_blocks_put_the_rest_inside_the_details():
+    markdown = _render(_quote(LONG_BODY), [PLACEHOLDER])
+    blocks = markdown_to_blocks(markdown, media_blocks={"m0": _photo_block()})
+    details = next(b for b in blocks[0].blocks if type(b).__name__ == "InputRichBlockDetails")
+    assert details.blocks, "细节块里应有被折起来的正文"
+    assert type(details.blocks[0]).__name__ == "InputRichBlockParagraph"
+
+
+def test_blocks_still_convert_the_plain_quote_form():
+    """`> ` 前缀的普通引用块不回归 (既有多数引用帖走这条)"""
+    blocks = markdown_to_blocks(_quote("第一行\n第二行"))
+    assert len(blocks) == 1
+    assert type(blocks[0]).__name__ == "InputRichBlockBlockQuotation"
+    assert len(blocks[0].blocks) == 1
+
+
+def test_blocks_keep_the_expandable_quote_form():
+    """`<blockquote expandable>` 仍走老路 (单行内容)"""
+    markdown = render_quote_card(_quote(LONG_BODY))[0]
+    blocks = markdown_to_blocks(markdown)
+    assert type(blocks[0]).__name__ == "InputRichBlockExpandableBlockQuotation"
+
+
+if __name__ == "__main__":
+    import pytest
+
+    raise SystemExit(pytest.main([__file__, "-q"]))

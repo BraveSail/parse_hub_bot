@@ -30,7 +30,7 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label
+from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label, markdown_needs_blocks
 from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
@@ -245,8 +245,13 @@ async def _answer(
             description=_clip(pr.content, 200),
             markdown=markdown,
             media=cached_media or None,
-            # 敏感内容走 blocks 才打得了码 (缓存里带着 is_sensitive, 以前没用上)
-            blocks=markdown_to_blocks(markdown, media_blocks=cached_blocks) if cached_blocks else None,
+            # 敏感内容走 blocks 才打得了码; 折叠的引用卡片带媒体也只能走 blocks。
+            # (缓存里带着 is_sensitive, 以前没用上)
+            blocks=(
+                markdown_to_blocks(markdown, media_blocks=cached_blocks)
+                if cached_blocks and (pr.is_sensitive or markdown_needs_blocks(markdown))
+                else None
+            ),
         )
         return True
 

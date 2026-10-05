@@ -233,14 +233,16 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], di
         media_id = f"m{index}"
         media.append(InputRichMessageMedia(media_id, item))
         placeholders.append(f"![](tg://{kind}?id={media_id})")
-        if sensitive:
-            from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
+        # 映射**总是**产出 (spoiler 由 sensitive 决定): 需要它的不只有打码 ——
+        # "折叠的引用卡片带媒体"也必须走 blocks 才能把图留在引用块内
+        # (见 helpers.markdown_needs_blocks)。
+        from plugins.parse.rich_blocks import SpoilerPhotoBlock, SpoilerVideoBlock
 
-            match m.type:
-                case CacheMediaType.PHOTO:
-                    media_blocks[media_id] = SpoilerPhotoBlock(item)
-                case CacheMediaType.VIDEO | CacheMediaType.ANIMATION:
-                    media_blocks[media_id] = SpoilerVideoBlock(item)
+        match m.type:
+            case CacheMediaType.PHOTO:
+                media_blocks[media_id] = SpoilerPhotoBlock(item, spoiler=sensitive)
+            case CacheMediaType.VIDEO | CacheMediaType.ANIMATION:
+                media_blocks[media_id] = SpoilerVideoBlock(item, spoiler=sensitive)
 
     pr = entry.parse_result
     quoted_count = max(0, min(int(getattr(pr, "quoted_media_count", 0) or 0), len(placeholders)))
@@ -339,7 +341,11 @@ def build_cached_rich_content(
 
 
 def cached_rich_message(
-    markdown: str, media: list[InputRichMessageMedia], media_blocks: dict | None = None
+    markdown: str,
+    media: list[InputRichMessageMedia],
+    media_blocks: dict | None = None,
+    *,
+    sensitive: bool = False,
 ) -> InputRichMessage:
     """按"是否敏感"选渲染路径 —— **敏感内容必须走 blocks 才能打码**。
 
@@ -350,8 +356,13 @@ def cached_rich_message(
     **缓存路径以前漏了这一步, 于是"第二次发同一个链接"就是没打码的**。
 
     抽成一个函数给三条缓存路径 (私聊/群、inline、guest) 共用, 免得三处再各写一遍。
+
+    另外: "折叠的引用卡片带媒体"同样只能走 blocks (``markdown_needs_blocks``) ——
+    那条形态 markdown 表达不了 (块内嵌不了 details 与图)。
     """
-    if media_blocks:
+    from plugins.helpers import markdown_needs_blocks
+
+    if media_blocks and (sensitive or markdown_needs_blocks(markdown)):
         from plugins.parse.rich_blocks import markdown_to_blocks
 
         return InputRichMessage(blocks=markdown_to_blocks(markdown, media_blocks=media_blocks))

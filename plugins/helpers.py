@@ -658,6 +658,52 @@ def fold_quote_block(quote: str, *, summary: str = "") -> str:
     return render_expandable_quote(body)
 
 
+def quote_card_needs_blocks(quote: str, media: Sequence[str]) -> bool:
+    """引用卡片是否**必须**走 blocks 路径（markdown 表达不了这种结构）。
+
+    会折叠 + 带媒体时，卡片要长成「`<blockquote>` 容器内 [预览 + `<details>` 折剩余 + 图]」
+    —— markdown 的 ``>`` 引用块里既嵌不了 ``<details>``，图也会被挤到块外；
+    只有 blocks（块成员可以是任意输入块）做得到。发送方据此选路。
+    """
+    return bool(media) and quote_will_fold(quote)
+
+
+def markdown_needs_blocks(markdown: str) -> bool:
+    """这段 markdown 里有没有**只有 blocks 才表达得了**的结构。
+
+    目前只有一种: 折叠的引用卡片带媒体 —— 它长成 ``<blockquote>`` 容器
+    (容器内 [预览 + ``<details>`` + 图])。markdown 的 ``>`` 引用块嵌不了这些,
+    发送方必须切 blocks 路径。判据直接看**渲染产物**, 与渲染保持单一来源
+    (``<blockquote expandable>`` 不会误命中 —— 少了那个 ``>``)。
+    """
+    return "<blockquote>" in markdown
+
+
+def render_folded_quote_card(quote: str, media: Sequence[str], *, summary: str = "") -> str:
+    """会折叠的引用卡片：容器内 = **预览前几行** + ``<details>`` 折剩余 + 图。
+
+    为什么不用 ``<blockquote expandable>``：那个块**只吃 RichText**，而 RichText 里
+    **没有任何图片类型**（Bot API 文档的成员表可查），块内 ``![]()`` 也不解析 ——
+    所以旧做法只能把图挪到块**外**（用户反馈「图片是引用里面的，放外面了」）。
+    改用 ``blockquote`` 容器（成员是输入块列表）+ ``details`` 折文字，图就留在引用块内。
+
+    预览沿用正文那套折叠逻辑（``split_fold_preview``）：开头几行留在外面，
+    否则收起时只剩一个「展开全文」按钮，看不到一点内容。
+    """
+    if not quote or not media:
+        return quote
+    body = _quote_body(quote)
+    preview, rest = split_fold_preview(body)
+    parts: list[str] = []
+    if preview:
+        parts.append(preview)
+    if rest:
+        folded_summary = summary or _DEFAULT_FOLD_SUMMARY
+        parts.append(f"<details><summary>{folded_summary}</summary>\n\n{rest}\n\n</details>")
+    parts.extend(wrap_collage(media))
+    return "<blockquote>\n\n" + "\n\n".join(parts) + "\n\n</blockquote>"
+
+
 def render_quote_card(quote: str, media: Sequence[str] = (), *, summary: str = "") -> list[str]:
     """渲染一张引用卡片（含它自己的媒体），返回若干段。
 
@@ -667,17 +713,17 @@ def render_quote_card(quote: str, media: Sequence[str] = (), *, summary: str = "
       虽然能出图，却会把块**退化成不可折叠**的普通引用块。
     - 普通 ``<blockquote>`` 内 ``![]()`` **正常出图**。
 
-    ⇒ 会折叠时把媒体放到块**外**（文字折起来、图片在下面正常显示）；
-    不折叠时留在块**内**（语义上属于引用内容）。
+    ⇒ 会折叠 + 带媒体时改用容器写法（图留在块内，见 ``render_folded_quote_card``）；
+    不折叠时把媒体接进块**内**（语义上属于引用内容）；
+    不带媒体时只用折叠块（块里没图，没有上面的问题）。
     """
     if not quote:
         return []
-    if media and not quote_will_fold(quote):
-        return [attach_quote_media(quote, media)]
-    parts = [fold_quote_block(quote, summary=summary)]
+    if media and quote_will_fold(quote):
+        return [render_folded_quote_card(quote, media, summary=summary)]
     if media:
-        parts.extend(wrap_collage(media))
-    return parts
+        return [attach_quote_media(quote, media)]
+    return [fold_quote_block(quote, summary=summary)]
 
 
 def wrap_collage(placeholders: Sequence[str]) -> list[str]:

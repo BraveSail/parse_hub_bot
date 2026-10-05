@@ -35,6 +35,7 @@ from plugins.filters import platform_filter
 from plugins.helpers import (
     build_rich_markdown,
     build_start_text,
+    markdown_needs_blocks,
 )
 from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
@@ -412,7 +413,7 @@ async def inline_result_download(cli: Client, chosen_result: ChosenInlineResult)
             entry = await _upload_and_cache_inline_media(
                 cli, raw_url, parse_result, media, quoted_placeholders, reply_placeholders
             )
-            if parse_result.is_sensitive and media_blocks:
+            if (parse_result.is_sensitive and media_blocks) or markdown_needs_blocks(markdown):
                 # 敏感内容: markdown+media 路径的 raw 类型没有 spoiler, 只能走 blocks。
                 # 记账成功时用**缓存里那套 file_id 版 blocks** 编辑 —— 与缓存命中时同一套
                 # 渲染, 形态一致, 也不会把本地文件再上传一遍。
@@ -453,7 +454,11 @@ def build_cached_rich_result(
         id=RICH_RESULT_ID,
         title=clip_inline_text(entry.parse_result.title, INLINE_TITLE_LIMIT) or "-",
         description=clip_inline_text(entry.parse_result.content, INLINE_DESC_LIMIT),
-        input_message_content=InputRichMessageContent(cached_rich_message(markdown, media, media_blocks)),
+        input_message_content=InputRichMessageContent(
+            cached_rich_message(
+                markdown, media, media_blocks, sensitive=bool(entry.parse_result.is_sensitive)
+            )
+        ),
         reply_markup=reply_markup,
     )
 
