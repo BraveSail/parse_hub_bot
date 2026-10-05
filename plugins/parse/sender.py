@@ -576,10 +576,13 @@ async def send_rich_media(
         # 只能自己构造 raw blocks (PageBlockPhoto/Video 带 spoiler)
         blocks = markdown_to_blocks(markdown, media_blocks=media_blocks)
         logger.debug(f"富文本(blocks): media={len(media_blocks)}, blocks={len(blocks)}")
-        rich = InputRichMessage(blocks=blocks)
+        rich = InputRichMessage(blocks=blocks, skip_entity_detection=True)
     else:
         logger.debug(f"富文本: media={len(media)}, markdown_len={len(markdown)}")
-        rich = InputRichMessage(markdown=markdown, media=media or None)
+        # skip_entity_detection: 关掉服务端的实体自动识别 —— 这是让作者行 `@handle`
+        # **不可点击**的唯一手段 (开着时 `<sub>@h</sub>` 会被识别成 Mention)。
+        # 代价是裸 URL/#标签 不再自动变可点, 所以正文由 linkify_bare_urls 自己写成链接。
+        rich = InputRichMessage(markdown=markdown, media=media or None, skip_entity_detection=True)
 
     message = await _post_rich(sender, rich, reporter=reporter)
 

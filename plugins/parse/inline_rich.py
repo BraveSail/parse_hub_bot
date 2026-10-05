@@ -174,11 +174,11 @@ async def edit_inline_rich_message(
     unpacked = utils.unpack_inline_message_id(inline_message_id)
     session = await cli.get_session(unpacked.dc_id, is_media=True)
     if blocks:
-        rich = InputRichMessage(blocks=blocks)
+        rich = InputRichMessage(blocks=blocks, skip_entity_detection=True)
         # blocks 里的媒体由各 block 自己上传 (_get_input_photo/Document, peer=self)
         raw_rich = await rich.write(client=cli, chat_id=None)
     else:
-        rich = InputRichMessage(markdown=markdown, media=media or None)
+        rich = InputRichMessage(markdown=markdown, media=media or None, skip_entity_detection=True)
         # 走 InputRichMessage.write: 它负责把媒体上传/复用成 InputRichFile*
         raw_rich = await rich.write(client=cli, chat_id=None)
     await session.invoke(
@@ -354,8 +354,10 @@ def cached_rich_message(
     if media_blocks:
         from plugins.parse.rich_blocks import markdown_to_blocks
 
-        return InputRichMessage(blocks=markdown_to_blocks(markdown, media_blocks=media_blocks))
-    return InputRichMessage(markdown=markdown, media=media or None)
+        return InputRichMessage(
+        blocks=markdown_to_blocks(markdown, media_blocks=media_blocks), skip_entity_detection=True
+    )
+    return InputRichMessage(markdown=markdown, media=media or None, skip_entity_detection=True)
 
 
 async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]) -> list:

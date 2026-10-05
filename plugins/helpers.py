@@ -362,10 +362,11 @@ def build_rich_markdown(
         href = html.escape(parse_result.raw_url, quote=True)
         footer_parts.append(f'<a href="{href}">{html.escape(label)}</a>')
 
+    # 裸 URL 自己包成链接 (发送时关掉了服务端的实体自动识别, 见 linkify_bare_urls)
     if not footer_parts:
-        return body
+        return linkify_bare_urls(body)
     footer = f"<footer>{_METADATA_SEPARATOR.join(footer_parts)}</footer>"
-    return f"{body}\n\n---\n\n{footer}" if body else footer
+    return linkify_bare_urls(f"{body}\n\n---\n\n{footer}" if body else footer)
 
 
 def build_progress_markdown(
@@ -420,6 +421,48 @@ def build_progress_markdown(
         label = "Source" if href else ""
     footer = f'<footer><a href="{href}">{html.escape(label)}</a></footer>' if href else ""
     return f"{progress}\n\n---\n\n{footer}" if footer else progress
+
+
+#: 正文里**已经是链接**的片段 (显式锚点) —— 链接化时要跳过, 免得把 URL 包第二层。
+_ANCHOR_SEGMENT_RE = re.compile(r"<a\b[^>]*>.*?</a>", re.S)
+#: 裸 URL。**不匹配** markdown 链接的目标 (`](url)`) —— 那是已经写好的链接。
+_BARE_URL_RE = re.compile(r"""(?<!\]\()https?://[^\s<>"']+""")
+
+
+def _linkify_segment(segment: str) -> str:
+    """把一段文本里的裸 URL 包成显式锚点 (末尾标点留在锚点外)。"""
+
+    def repl(match: re.Match) -> str:
+        url, tail = match.group(0), ""
+        while url and url[-1] in ".,;:!?）)，。！？、：；」』】":
+            tail = url[-1] + tail
+            url = url[:-1]
+        if not url:
+            return match.group(0)
+        safe = html.escape(url, quote=True)
+        return f'<a href="{safe}">{html.escape(url)}</a>{tail}'
+
+    return _BARE_URL_RE.sub(repl, segment)
+
+
+def linkify_bare_urls(text: str) -> str:
+    """正文里的**裸 URL 变成可点链接**。
+
+    为什么需要: 富文本发送开了 ``skip_entity_detection``（关掉服务端的实体自动识别，
+    这是让作者行的 ``@handle`` **不可点击**的唯一手段）。代价就是裸 URL / ``#标签``
+    不再被自动识别成链接 —— 那就**自己写成链接**（显式 ``<a href>`` 不受该开关影响,
+    已实测）。已经写好的链接（``<a>`` / ``[文字](url)``）原样保留, 不重复包裹。
+    """
+    if "http" not in text:
+        return text
+    out: list[str] = []
+    pos = 0
+    for match in _ANCHOR_SEGMENT_RE.finditer(text):
+        out.append(_linkify_segment(text[pos : match.start()]))
+        out.append(match.group(0))  # 已是链接, 原样保留
+        pos = match.end()
+    out.append(_linkify_segment(text[pos:]))
+    return "".join(out)
 
 
 def build_rich_markdown_by_str(
