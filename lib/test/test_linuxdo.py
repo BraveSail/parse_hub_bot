@@ -200,10 +200,12 @@ def test_a_poll_renders_as_a_vote_block_not_as_loose_text():
     # 投票标题带**真实**参与人数（来自同一次响应的 post["polls"]，不是 cooked 里那个 0）
     assert "📊 投票（222 人参与）" in md, md
     assert "0 人参与" not in md, md
-    # 每个选项带票数与占比（222 为分母）
-    assert "还在用a/感觉良好 — 71 票（32%）" in md, md
-    assert "一直觉得a/比o/恶心 — 80 票（36%）" in md, md
-    assert md.count("\n* ") == 4, md
+    # 选项渲染成**表格**（服务端解析 markdown 表格 → RichBlockTable, 已实测）
+    assert "| 选项 | 票数 | 占比 |" in md, md
+    assert "| --- | --- | --- |" in md, md
+    assert "| 还在用a/感觉良好 | 71 | 32% |" in md, md
+    assert "| 一直觉得a/比o/恶心 | 80 | 36% |" in md, md
+    assert md.count("\n| ") == 6, md  # 表头 + 分隔 + 4 行数据
 
 
 def test_a_poll_without_structured_data_falls_back_to_a_bare_list():

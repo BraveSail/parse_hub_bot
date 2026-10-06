@@ -368,16 +368,42 @@ class LinuxDoTopic:
             head.string = parts[0] + (f"（{' · '.join(parts[1:])}）" if len(parts) > 1 else "")
             block.append(head)
 
-            options_list = soup.new_tag("ul")
-            for text, votes in rows:
-                item = soup.new_tag("li")
-                if votes is None or voters <= 0:
+            if all(votes is not None for _, votes in rows) and voters > 0:
+                # 有真实票数 ⇒ 表格（markdownify 会转成 markdown 表格语法, 服务端
+                # 解析成 RichBlockTable —— 已实测）
+                block.append(LinuxDoTopic._poll_table(soup, rows, voters))
+            else:
+                # 没有结构化数据（老站点）: 只列选项, **不显示那个恒为 0 的占位人数**
+                options_list = soup.new_tag("ul")
+                for text, _votes in rows:
+                    item = soup.new_tag("li")
                     item.string = text
-                else:
-                    item.string = f"{text} — {votes} 票（{round(votes * 100 / voters)}%）"
-                options_list.append(item)
-            block.append(options_list)
+                    options_list.append(item)
+                block.append(options_list)
             poll.replace_with(block)
+
+    @staticmethod
+    def _poll_table(soup: BeautifulSoup, rows: list[tuple[str, int | None]], voters: int):
+        """把投票选项构造成 HTML 表格（→ markdown 表格 → 服务端的 Table 块）。"""
+        table = soup.new_tag("table")
+        thead = soup.new_tag("thead")
+        head_row = soup.new_tag("tr")
+        for label in ("选项", "票数", "占比"):
+            th = soup.new_tag("th")
+            th.string = label
+            head_row.append(th)
+        thead.append(head_row)
+        table.append(thead)
+        tbody = soup.new_tag("tbody")
+        for text, votes in rows:
+            tr = soup.new_tag("tr")
+            for value in (text, str(votes), f"{round((votes or 0) * 100 / voters)}%"):
+                td = soup.new_tag("td")
+                td.string = value
+                tr.append(td)
+            tbody.append(tr)
+        table.append(tbody)
+        return table
 
     @staticmethod
     def _option_text(option: dict[str, Any]) -> str:

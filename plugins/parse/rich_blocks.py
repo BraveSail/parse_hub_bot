@@ -28,6 +28,7 @@ from pyrogram.types import (
     InputRichBlockParagraph,
     InputRichBlockPreformatted,
     InputRichBlockSectionHeading,
+    InputRichBlockTable,
 )
 from pyrogram.types.input_content.input_rich_block import (
     InputRichBlock,
@@ -35,6 +36,7 @@ from pyrogram.types.input_content.input_rich_block import (
     _get_input_photo,
     _write_caption,
 )
+from pyrogram.types.messages_and_media.rich_block import RichBlockTableCell
 from pyrogram.types.messages_and_media.rich_text import (
     RichTextBold,
     RichTextCode,
@@ -349,6 +351,42 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
             else:
                 blocks.extend(items)
             continue
+
+        # markdown 表格 (连续以 | 开头的行) —— 服务端只认 markdown 语法,
+        # blocks 路径得自己转成 Table 块 (首行当表头, 第二行的 |---| 是分隔行)
+        if stripped.startswith("|") and stripped.endswith("|"):
+            # 先看一眼: **必须有 |---|---| 分隔行**才算表格 (markdown 的规矩) ——
+            # 否则正文里孤零零一行 `| x |` 会被误判成表格。
+            look = i
+            candidate: list[list[str]] = []
+            has_separator = False
+            while (
+                look < len(lines)
+                and lines[look].strip().startswith("|")
+                and lines[look].strip().endswith("|")
+            ):
+                cells = [cell.strip() for cell in lines[look].strip().strip("|").split("|")]
+                if all(not cell or re.fullmatch(r":?-{2,}:?", cell) for cell in cells):
+                    has_separator = True
+                else:
+                    candidate.append(cells)
+                look += 1
+            if has_separator and candidate:
+                flush_paragraph(paragraph)
+                i = look
+                blocks.append(
+                    InputRichBlockTable(
+                        [
+                            [
+                                RichBlockTableCell(parse_inline(cell), is_header=(row_index == 0))
+                                for cell in cells
+                            ]
+                            for row_index, cells in enumerate(candidate)
+                        ]
+                    )
+                )
+                continue
+            # 不是表格 (没有分隔行): 落到下面按普通文本处理
 
         # 分隔线
         if stripped in ("---", "***", "___"):
