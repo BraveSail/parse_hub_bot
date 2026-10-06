@@ -17,7 +17,7 @@ from ..utils.helpers import get_author_name
 #:
 #: 所以话题名（与边界）直接从 ``q=`` 参数解出来即可 —— 不必用正则去正文里猜:
 #: 正文里出现**单个** ``#`` 时正则会误配（``C# 与 Python# 都`` 会被当成一个话题）。
-_TOPIC_ANCHOR_RE = re.compile(r'//s\.weibo\.com/weibo\?q=%23([^&"]+?)%23')
+_TOPIC_ANCHOR_RE = re.compile(r'(//s\.weibo\.com/weibo\?q=%23([^&"]+?)%23)')
 
 
 class WeiboAPI:
@@ -343,19 +343,24 @@ class Data:
     author_name: str = ""
 
     @property
-    def topic_names(self) -> list[str]:
-        """正文里的话题名（**不含 ``#``**, 去重保序）—— 取自服务端给的锚点。
+    def topics(self) -> list[dict[str, str]]:
+        """正文里的话题: ``[{"name": 名字(不含#), "url": 话题页地址}, …]``。
 
-        见 ``_TOPIC_ANCHOR_RE``: 话题边界由微博自己算好, 不用正则猜。
-        拿不到（老接口 / 字段缺失）时为空列表, 调用方退回正则。
+        ``url`` 直接取自服务端锚点的 ``href``（``//s.weibo.com/weibo?q=%23…%23``）——
+        比按名字自己拼更权威。拿不到（老接口 / 字段缺失）时为空列表, 调用方退回正则。
         """
-        out: list[str] = []
+        out: list[dict[str, str]] = []
         seen: set[str] = set()
         for match in _TOPIC_ANCHOR_RE.finditer(self.text or ""):
-            name = unquote(match.group(1)).strip().strip("#").strip()
-            if name and name not in seen:
-                seen.add(name)
-                out.append(name)
+            name = unquote(match.group(2)).strip().strip("#").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            url = match.group(1)
+            if url.startswith("//"):
+                # 协议相对地址直接塞进 ``<a href>`` 会被当成站内相对路径 —— 补 https:
+                url = f"https:{url}"
+            out.append({"name": name, "url": url})
         return out
 
     @classmethod

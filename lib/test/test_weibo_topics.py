@@ -36,7 +36,7 @@ def test_only_anchored_topics_are_taken():
     这里用的是**手写片段**（只给一个锚点），所以只应取到那一个。
     真实响应里三个话题**都有锚点**，见 ``test_the_real_fixture_yields_all_topics``。
     """
-    assert _data().topic_names == ["海大数"]
+    assert [t["name"] for t in _data().topics] == ["海大数"]
 
 
 def test_the_real_fixture_yields_all_topics():
@@ -49,22 +49,25 @@ def test_the_real_fixture_yields_all_topics():
     from pathlib import Path
 
     raw = json.loads((Path(__file__).parent / "fixtures" / "weibo_topic_struct.json").read_text(encoding="utf-8"))
-    names = Data.from_kwargs(**{k: v for k, v in raw.items() if k in {"id", "mid", "text", "text_raw"}}).topic_names
+    topics = Data.from_kwargs(**{k: v for k, v in raw.items() if k in {"id", "mid", "text", "text_raw"}}).topics
+    names = [t["name"] for t in topics]
     assert names == ["从“苏大强”到全国“X大Y”话题矩阵", "海大数", "中小冉"], names
 
 
-def test_two_anchors_give_two_topics_in_order():
-    """多个锚点：按出现顺序、URL 解码、去掉 ``#``"""
+def test_two_anchors_give_two_topics_with_their_urls():
+    """多个锚点：按出现顺序、URL 解码、去掉 ``#``；``url`` 补上 https:"""
     text = (
         '<a href="//s.weibo.com/weibo?q=%23%E7%94%B2%23">#甲#</a> 与 '
         '<a href="//s.weibo.com/weibo?q=%23%E4%B9%99%23">#乙#</a>'
     )
-    assert _data(text=text).topic_names == ["甲", "乙"]
+    topics = _data(text=text).topics
+    assert [t["name"] for t in topics] == ["甲", "乙"]
+    assert all(t["url"].startswith("https://s.weibo.com/weibo?q=") for t in topics), topics
 
 
-def test_topic_names_are_empty_without_the_html_field():
+def test_topics_are_empty_without_the_html_field():
     """拿不到 ``text``（老接口/字段缺失）时是空列表 —— 调用方退回正则"""
-    assert _data(text=None).topic_names == []
+    assert _data(text=None).topics == []
 
 
 def test_an_unknown_card_type_no_longer_kills_the_post():
@@ -91,7 +94,8 @@ def test_a_single_hash_does_not_break_the_text():
     正则版本会把 ``C# 与 Python# 都常用`` 误配成 ``# 与 Python#`` 并剥掉，
     把 ``C#`` 破坏成 ``C #``。
     """
-    out = WeiboParser.hashtag_handler("形成#海大数# 。C# 与 Python# 都常用", ["海大数"])
+    topics = [{"name": "海大数", "url": "https://s.weibo.com/weibo?q=%23x%23"}]
+    out = WeiboParser.hashtag_handler("形成#海大数# 。C# 与 Python# 都常用", topics)
     assert "C# 与 Python# 都常用" in out, out
 
 
@@ -101,20 +105,22 @@ def test_the_regex_fallback_is_unchanged_without_topics():
     assert out == "形成 #海大数 ，坚守 #中小冉 。", out
 
 
-def test_known_topics_look_byte_for_byte_like_the_regex_path():
-    """**铁则**: 这次只换边界判据，**可见输出必须与正则路径逐字一致**。
+def test_known_topics_become_links():
+    """**核心改进**: 服务端给了话题，就做成**可点的链接**（与其它平台形态一致）。
 
-    差别只应出现在"正则误伤的地方"（单个 ``#``），真话题的处理形态不变。
+    以前这里剥壳成纯文本（话题不可点）—— 那是唯一与其它平台不一致的地方。
+    链接地址用服务端的 ``href``（``//s.weibo.com/…`` → 补 https:）。
     """
-    src = "形成#海大数# ，坚守#中小冉# 。"
-    assert WeiboParser.hashtag_handler(src, ["海大数", "中小冉"]) == WeiboParser.hashtag_handler(src)
+    topics = [{"name": "海大数", "url": "https://s.weibo.com/weibo?q=%23%E6%B5%B7%E5%A4%A7%E6%95%B0%23"}]
+    out = WeiboParser.hashtag_handler("形成#海大数# 。", topics)
+    assert '<a href="https://s.weibo.com/weibo?q=%23%E6%B5%B7%E5%A4%A7%E6%95%B0%23">#海大数#</a>' in out, out
 
 
 def test_the_longest_topic_name_wins():
     """两个话题名互为前缀时，先替换长的，别把短名嵌进去"""
-    out = WeiboParser.hashtag_handler("#海大数# #海大#", ["海大", "海大数"])
-    out_long_first = WeiboParser.hashtag_handler("#海大数# #海大#", ["海大数", "海大"])
-    assert out == out_long_first, out
+    topics = [{"name": "海大", "url": "https://a"}, {"name": "海大数", "url": "https://b"}]
+    out = WeiboParser.hashtag_handler("#海大数# #海大#", topics)
+    assert 'href="https://b">#海大数#</a>' in out, out
 
 
 if __name__ == "__main__":

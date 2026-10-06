@@ -1,5 +1,7 @@
+import html
 import re
 from collections.abc import Sequence
+from urllib.parse import quote
 
 from ...provider_api.weibo import MediaType, MixMediaInfoItem, PicInfo, WeiboAPI, WeiboTVContent
 from ...types import (
@@ -35,7 +37,7 @@ class WeiboParser(BaseParser):
             )
 
         data = weibo.data
-        text = self.f_text(data.content, data.topic_names)
+        text = self.f_text(data.content, data.topics)
         media: list[VideoRef | ImageRef | LivePhotoRef | AniRef] = []
 
         if not data.pic_infos and data.page_info and data.page_info.object_type == MediaType.VIDEO:
@@ -108,19 +110,22 @@ class WeiboParser(BaseParser):
     def hashtag_handler(desc: str, topics: Sequence[str] | None = None) -> str:
         """把 ``#话题#`` 剥成 ``话题``（保留原有的可见形态，只换边界判据）。
 
-        :param topics: **服务端给的**话题名（不含 ``#``，见 ``Data.topic_names``）。
+        :param topics: **服务端给的**话题（``Data.topics``: name + 话题页 url）。
             给了就按名字精确匹配 —— 正文里出现**单个** ``#`` 时正则会把不相干的
             一段当成话题（``C# 与 Python# 都`` → 误配成 ``# 与 Python#``）。
             没给（老接口/字段缺失）时退回正则，行为与本参数引入前一致。
         """
         if topics:
-            # 替换形态与下面的正则版**逐字一致**（`#名字#` → ` #名字 `）——
-            # 这次只换边界判据，不擅自改可见输出。
-            # 先吃掉尾随空格: 正则版匹配的是 ``#名字# ``（` ?` 贪婪含尾空格），
-            # 不这么做会多留一个空格（`#中小冉# 。` → ` #中小冉  。` 双空格）。
-            for name in sorted((t for t in topics if t), key=len, reverse=True):
-                desc = desc.replace(f"#{name}# ", " #" + name + " ")
-                desc = desc.replace(f"#{name}#", " #" + name + " ")
+            # 用服务端给的话题页地址做成链接（与其它平台的标签形态一致: 保留 `#`
+            # 且**可点**）。以前这里是"剥壳成纯文本"——话题不可点, 是唯一与其它
+            # 平台不一致的地方。
+            named = [t for t in topics if (t or {}).get("name")]
+            for topic in sorted(named, key=lambda t: len(t["name"]), reverse=True):
+                name = topic["name"]
+                url = topic.get("url") or f"https://s.weibo.com/weibo?q=%23{quote(name)}%23"
+                desc = desc.replace(
+                    f"#{name}#", f'<a href="{html.escape(url, quote=True)}">#{html.escape(name)}#</a>'
+                )
             return desc
 
         hashtags = re.findall(r" ?#[^#]+# ?", desc)
