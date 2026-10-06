@@ -470,6 +470,10 @@ class YtVideoParseResult(VideoParseResult):
             author_name=author_name or dl.author_name,
             published_at=dl.published_at,
             view_count=dl.view_count,
+            # 作者行的 `@handle` 与主页链接也来自 yt-dlp 的元数据 —— 以前**没传**,
+            # 于是 YouTube 的作者行只有名字、没有 @用户名, 也没主页链接, 与其它平台不一致。
+            author_handle=dl.author_handle,
+            author_url=dl.author_url,
         )
 
     @property
@@ -580,3 +584,23 @@ class YtVideoInfo:
     def view_count(self) -> int | None:
         """yt-dlp 的 view_count; 不同站点可用性不一 (facebook 实测有, 点赞/评论通常没有)"""
         return to_int(self.info_json.get("view_count"))
+
+    @property
+    def author_handle(self) -> str:
+        """作者的 ``@handle``（不含 ``@``, 由上层统一加）。
+
+        取 ``uploader_id``: 新视频是 ``@BlueArchive_JP`` 这种 handle 形态, 老视频是用户名
+        (``JoHannesWingsuit``), 两者去掉 ``@`` 后都能直接拼 ``youtube.com/@<handle>``。
+        都没有就退回空串 —— 作者行会只显示名字（与拿不到 handle 的其它平台一致）。
+        """
+        return str(self.info_json.get("uploader_id") or "").lstrip("@").strip()
+
+    @property
+    def author_url(self) -> str:
+        """作者主页。
+
+        直接用 yt-dlp 给的 ``uploader_url`` / ``channel_url``, **不自己拼模板**:
+        ``uploader_id`` 缺失时只剩 ``channel_id``(``UC...``), 套 ``youtube.com/@{handle}``
+        会拼出一个打不开的地址; 而这两个字段是平台自己给的、一定可打开。
+        """
+        return str(self.info_json.get("uploader_url") or self.info_json.get("channel_url") or "")

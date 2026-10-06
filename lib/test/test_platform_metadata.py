@@ -134,6 +134,53 @@ def test_ytdlp_parse_result_carries_metadata():
     assert result.view_count == 2823887
 
 
+# ── 作者行: @handle 与主页（以前 yt-dlp 系完全不传, YouTube 作者行只有名字）──
+
+
+def test_ytdlp_handle_is_stripped_of_its_at_sign():
+    """``uploader_id`` 是 ``@BlueArchive_JP`` 形态 —— 去掉 @ 由上层统一加"""
+    dl = yt_info(uploader_id="@BlueArchive_JP")
+    assert dl.author_handle == "BlueArchive_JP"
+
+
+def test_ytdlp_handle_accepts_a_plain_username():
+    """老视频的 ``uploader_id`` 是纯用户名（没有 @），别把它当异常"""
+    dl = yt_info(uploader_id="JoHannesWingsuit")
+    assert dl.author_handle == "JoHannesWingsuit"
+
+
+def test_ytdlp_handle_is_empty_when_absent():
+    """拿不到 handle 不能崩 —— 作者行退化成只显示名字"""
+    assert yt_info().author_handle == ""
+
+
+def test_ytdlp_prefers_the_real_profile_url():
+    """主页用 yt-dlp 给的真实 URL（一定可打开），不自己拼模板"""
+    dl = yt_info(uploader_url="https://www.youtube.com/@BlueArchive_JP")
+    assert dl.author_url == "https://www.youtube.com/@BlueArchive_JP"
+
+
+def test_ytdlp_falls_back_to_the_channel_url():
+    """只有 channel_url 时用它 —— 自己拼 ``youtube.com/@{channel_id}`` 会打不开"""
+    dl = yt_info(channel_url="https://www.youtube.com/channel/UCmgf8DJrAXFnU7j3u0kklUQ")
+    assert dl.author_url == "https://www.youtube.com/channel/UCmgf8DJrAXFnU7j3u0kklUQ"
+
+
+def test_ytdlp_result_carries_the_handle_and_profile_url():
+    """**核心**: 结果对象要带上 handle 与主页 —— 以前这两个字段一直是空的,
+    于是 YouTube 的作者行只有名字, 与其它平台（名字 + @用户名, 可点）不一致"""
+    from parsehub.parsers.base.ytdlp import YtVideoParseResult
+
+    dl = yt_info(
+        uploader="ブルーアーカイブ-Blue Archive-",
+        uploader_id="@BlueArchive_JP",
+        uploader_url="https://www.youtube.com/@BlueArchive_JP",
+    )
+    result = YtVideoParseResult(dl=dl, title="T")
+    assert result.author_handle == "BlueArchive_JP"
+    assert result.author_url == "https://www.youtube.com/@BlueArchive_JP"
+
+
 @pytest.mark.parametrize(
     "url",
     [
