@@ -16,6 +16,7 @@ from pyrogram.types.input_content.input_rich_block import InputRichBlockPhoto
 from plugins.helpers import (
     markdown_needs_blocks,
     quote_will_fold,
+    quote_with_divider,
     render_quote_card,
 )
 from plugins.parse.rich_blocks import markdown_to_blocks
@@ -159,6 +160,49 @@ def test_a_quote_without_an_author_line_is_unchanged():
     head = markdown.split("<details>", 1)[0]
     assert "第1行の内容" in head
     assert "第11行の内容" in markdown
+
+
+def test_the_byline_is_separated_from_the_body_by_a_divider():
+    """署名行与正文之间要有分割线 —— 与主帖那条同一形态（用户要"统一"）。
+
+    块内写法是独立一行的 ``---``（容器路径）与 ``> ---``（短引用路径），
+    服务端都解析成 ``RichBlockDivider``（实测）。
+    """
+    author = '<i><a href="https://x.com/a">作者名</a> <code>@handle</code></i>'
+
+    # 折叠(容器)路径
+    long_body = "\n\n".join(f"<i>第{i}行内容</i>" for i in range(1, 20))
+    folded = _render(_quote(f"{author}\n{long_body}"), [PLACEHOLDER])
+    assert f"{author}\n\n---\n\n" in folded, folded[:200]
+
+    # 短引用路径
+    short = _render(_quote(f"{author}\n<i>一句话正文</i>"))
+    assert f"> {author}\n>\n> ---\n>\n> <i>一句话正文</i>" in short, short
+
+
+def test_no_divider_without_a_byline():
+    """没有署名行的引用块不凭空加线（没东西可分）"""
+    body = "\n\n".join(f"<i>第{i}行内容</i>" for i in range(1, 20))
+    markdown = _render(_quote(body), [PLACEHOLDER])
+    head = markdown.split("<details>", 1)[0]
+    assert "---" not in head, head
+
+
+def test_blocks_keep_the_divider_and_the_media():
+    """切 blocks 时: 分隔线变成 Divider, 引用块内的图**不能丢**"""
+    from pyrogram.types import InputMediaPhoto
+    from pyrogram.types.input_content.input_rich_block import InputRichBlockPhoto
+
+    author = '<i><a href="https://x.com/a">作者名</a> <code>@handle</code></i>'
+    quote = _quote(f"{author}\n<i>一句话正文</i>")
+    marked = quote_with_divider(quote)
+    from plugins.helpers import attach_quote_media
+
+    with_media = attach_quote_media(marked, [PLACEHOLDER])
+    blocks = markdown_to_blocks(with_media, media_blocks={"m0": InputRichBlockPhoto(InputMediaPhoto("AgAC"))})
+    kinds = [type(c).__name__ for c in blocks[0].blocks]
+    assert "InputRichBlockDivider" in kinds, kinds
+    assert "InputRichBlockPhoto" in kinds, f"引用块内的图丢了: {kinds}"
 
 
 def test_a_body_quote_does_not_ask_for_blocks():

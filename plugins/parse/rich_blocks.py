@@ -174,6 +174,51 @@ def parse_inline(text: str) -> str | list:
 _MEDIA_PLACEHOLDER_RE = re.compile(r"^!\[\]\(tg://(?:photo|video)\?id=([\w-]+)\)$")
 
 
+def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) -> list[InputRichBlock]:
+    """引用块（``>`` 行）内的子块。
+
+    三种行各有归属: 独立的分隔线 → ``Divider``（署名行与正文之间的那条线,
+    与主帖同一形态）; 媒体占位 → 调用方给的媒体块（**以前这里会把它当普通文字,
+    切 blocks 时引用块里的图就丢了**）; 其余合并成段落。
+
+    没有分隔线也没有媒体时保持老行为: **整段合成一个段落**，不改动既有渲染。
+    """
+    has_special = any(
+        line.strip() in ("---", "***", "___") or _MEDIA_PLACEHOLDER_RE.match(line.strip()) for line in quoted
+    )
+    if not has_special:
+        text = "\n".join(quoted).strip()
+        return [InputRichBlockParagraph(parse_inline(text))] if text else []
+
+    children: list[InputRichBlock] = []
+    buf: list[str] = []
+
+    def flush() -> None:
+        text = "\n".join(buf).strip()
+        if text:
+            children.append(InputRichBlockParagraph(parse_inline(text)))
+        buf.clear()
+
+    for line in quoted:
+        stripped = line.strip()
+        if stripped in ("---", "***", "___"):
+            flush()
+            children.append(InputRichBlockDivider())
+        elif m := _MEDIA_PLACEHOLDER_RE.match(stripped):
+            flush()
+            if (block := media_blocks.get(m.group(1))) is not None:
+                children.append(block)
+        else:
+            buf.append(line)
+    flush()
+    # 首尾多余的分隔线去掉 (块边界不需要线)
+    while children and type(children[0]).__name__ == "InputRichBlockDivider":
+        children.pop(0)
+    while children and type(children[-1]).__name__ == "InputRichBlockDivider":
+        children.pop()
+    return children
+
+
 def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock] | None = None) -> list[InputRichBlock]:
     """把富文本 markdown 转成 blocks 列表。
 
@@ -346,8 +391,7 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
             while i < len(lines) and lines[i].strip().startswith(">"):
                 quoted.append(re.sub(r"^\s*>\s?", "", lines[i]))
                 i += 1
-            text = "\n".join(quoted).strip()
-            blocks.append(InputRichBlockBlockQuotation([InputRichBlockParagraph(parse_inline(text))]))
+            blocks.append(InputRichBlockBlockQuotation(_quote_children(quoted, media_blocks)))
             continue
 
         # 列表 (连续 - / * / 数字项合并成一个 list)

@@ -670,6 +670,22 @@ def quote_will_fold(quote: str) -> bool:
     return _should_fold(text)
 
 
+def quote_with_divider(quote: str) -> str:
+    """在引用块的署名行与正文之间插一条分割线（与主帖的作者分割线同一形态）。
+
+    块内写法是独立一行的 ``> ---``（服务端认它, 实测产出 ``RichBlockDivider``）。
+    没有署名行、或署名行后面没内容时原样返回 —— 不给光秃秃的引用加线。
+    """
+    if not quote:
+        return quote
+    author, text = _split_quote_author(_quote_body(quote))
+    if not author or not text:
+        return quote
+    lines = [f"> {author}", ">", "> ---", ">"]
+    lines.extend(f"> {line}" if line.strip() else ">" for line in text.split("\n"))
+    return "\n".join(lines)
+
+
 def fold_quote_block(quote: str, *, summary: str = "") -> str:
     """把过长的引用块整体折成 ``<blockquote expandable>``（客户端自显前几行）。
 
@@ -726,6 +742,9 @@ def render_folded_quote_card(quote: str, media: Sequence[str] = (), *, summary: 
     parts: list[str] = []
     if author_line:
         parts.append(author_line)
+        if text:
+            # 与主帖同一条规矩: 作者行与内容之间隔一道分割线 (用户要"统一")
+            parts.append("---")
     if preview:
         parts.append(preview)
     if rest:
@@ -755,9 +774,10 @@ def render_quote_card(quote: str, media: Sequence[str] = (), *, summary: str = "
         # 会让人以为坏了 (用户要求全部统一)。容器内留前几行当预览, 不用 expandable
         # 那种"整块一起折"的老形态。
         return [render_folded_quote_card(quote, media, summary=summary)]
+    marked = quote_with_divider(quote)
     if media:
-        return [attach_quote_media(quote, media)]
-    return [quote]
+        return [attach_quote_media(marked, media)]
+    return [marked]
 
 
 def wrap_collage(placeholders: Sequence[str]) -> list[str]:
