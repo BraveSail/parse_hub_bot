@@ -16,11 +16,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from curl_cffi.const import CurlOpt
 from curl_cffi.requests import AsyncSession, Cookies, Headers
 from curl_cffi.requests import exceptions as _curl_errors
 
 #: 浏览器指纹 —— 集中一处，升级只改这里（curl_cffi 0.16 支持到 chrome150）
 IMPERSONATE = "chrome150"
+
+#: 强制**只用 IPv4** 解析（``CurlOpt.IPRESOLVE``: 1=V4, 2=V6, 0=默认）。
+#:
+#: 为什么默认只用 IPv4：本机 DNS 是 **IPv6 优先**，而有些 CDN/视频资源在 **IPv6 路径上
+#: 会被拒**、IPv4 正常。实测推特一条视频：IPv4 → 200、IPv6 → 403
+#: （同一条视频、同一客户端、同一 IP 的两种地址族）。
+#: 站点普遍仍同时提供 A 与 AAAA；纯 IPv6 的站点极罕见，真遇到再单独放开。
+FORCE_IPV4: dict[Any, Any] = {CurlOpt.IPRESOLVE: 1}
 
 # ── 异常别名 ─────────────────────────────────────────────────────────────
 # curl_cffi 的异常粒度比 httpx 粗（NetworkError/RemoteProtocolError/ReadError 都归到少数几类），
@@ -87,6 +96,11 @@ class AsyncClient(AsyncSession):
     ) -> None:
         params: dict[str, Any] = {"impersonate": IMPERSONATE}
         params.update(kwargs)
+        # 调用方没显式指定时, 默认只用 IPv4 (见 FORCE_IPV4 的原因)
+        opts = dict(params.get("curl_options") or {})
+        for key, value in FORCE_IPV4.items():
+            opts.setdefault(key, value)
+        params["curl_options"] = opts
 
         target = proxy if proxy is not None else proxies
         if target:
@@ -145,6 +159,7 @@ def new_client(**kwargs: Any) -> AsyncClient:
 
 __all__ = [
     "DEFAULT_TIMEOUT",
+    "FORCE_IPV4",
     "IMPERSONATE",
     "AsyncClient",
     "ConnectTimeout",
