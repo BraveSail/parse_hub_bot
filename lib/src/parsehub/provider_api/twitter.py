@@ -146,6 +146,7 @@ class Twitter:
                 like_count=like_count,
                 is_sensitive=bool(legacy.get("possibly_sensitive")),
                 hashtags=hashtags,
+                poll=self._parse_poll(node),
             )
 
         if note_tweet := node.get("note_tweet"):
@@ -204,6 +205,9 @@ class Twitter:
             # 外链卡片的预览图排在推文自带媒体**之后** (与 X 上的显示顺序一致)
             media_list.append(card_photo)
 
+        # 投票的选项与票数在卡片里, legacy 上没有 —— 不取就只剩作者写的那句话
+        poll = self._parse_poll(node)
+
         # 长推文的标签在 note_tweet 的 entity_set 里, 与 legacy 的合并（去重保序）
         hashtags = self._extract_hashtags(
             legacy.get("entities") or {},
@@ -224,6 +228,47 @@ class Twitter:
             like_count=like_count,
             is_sensitive=bool(legacy.get("possibly_sensitive")),
             hashtags=hashtags,
+            poll=poll,
+        )
+
+    @staticmethod
+    def _parse_poll(node: dict) -> TwitterPoll | None:
+        """投票 —— 数据在 ``node["card"]`` 里, 不在 ``legacy`` 上。
+
+        X 的投票卡片名形如 ``poll2choice_text_only`` / ``poll3choice_text_only`` /
+        ``poll4choice_image``：**选项数不固定**, 所以按 ``choice{N}_label`` 递增取,
+        取到没有为止, 而不是硬编码 2 个。
+
+        正文里只有作者自己写的那句话（本例就是 ``Vote``）—— 选项与票数**只能从这里拿**,
+        不取就整条丢掉。
+        """
+        card = ((node.get("card") or {}).get("legacy")) or {}
+        if not (card.get("name") or "").startswith("poll"):
+            return None
+
+        values = {b.get("key"): (b.get("value") or {}) for b in (card.get("binding_values") or [])}
+
+        def string_of(key: str) -> str | None:
+            """取值 —— 字符串字段在 ``string_value`` (布尔字段在 ``boolean_value``)。"""
+            value = values.get(key) or {}
+            text = value.get("string_value")
+            return text if isinstance(text, str) else None
+
+        choices: list[tuple[str, int]] = []
+        for index in range(1, 5):
+            label = string_of(f"choice{index}_label")
+            if label is None:
+                break
+            # 票数缺失按 0 算: 选项本身仍要显示, 不该整条投票丢掉
+            choices.append((label, to_int(string_of(f"choice{index}_count")) or 0))
+        if not choices:
+            return None
+
+        final = (values.get("counts_are_final") or {}).get("boolean_value")
+        return TwitterPoll(
+            choices=choices,
+            end_datetime=to_datetime(string_of("end_datetime_utc")),
+            is_final=bool(final) if isinstance(final, bool) else False,
         )
 
     @staticmethod
@@ -239,7 +284,10 @@ class Twitter:
         也不套引用块格式。收下这张卡片图就等于又替链接做了加工。
         """
         card = ((node.get("card") or {}).get("legacy")) or {}
-        if "player" in (card.get("name") or ""):
+        # player 类 (YouTube 等) 与 poll 类都不走这里: 前者是正文里的链接,
+        # 后者的图是选项配图, 都不是"外链预览图"。
+        name = card.get("name") or ""
+        if "player" in name or name.startswith("poll"):
             return None
 
         values = {b.get("key"): (b.get("value") or {}) for b in (card.get("binding_values") or [])}
@@ -346,6 +394,22 @@ class Twitter:
         return True
 
 
+@dataclass
+class TwitterPoll:
+    """投票 (正文之外的卡片数据)。
+
+    X 把投票放在 ``node["card"]`` 里, **不在** ``legacy`` 上 —— 与媒体、标签那两条路
+    都不同, 所以以前整条丢掉: 正文只剩作者写的 ``Vote``, 选项与票数全无。
+    """
+
+    choices: list[tuple[str, int]]
+    """选项, 每项是 ``(文案, 票数)``, 顺序与 X 上一致。"""
+    end_datetime: datetime | None = None
+    """投票截止时间 (``end_datetime_utc``)。"""
+    is_final: bool = False
+    """票数是否为最终结果 (``counts_are_final``), 即投票是否已结束。"""
+
+
 class TwitterTweet:
     def __init__(
         self,
@@ -364,6 +428,7 @@ class TwitterTweet:
         view_count: int | None = None,
         like_count: int | None = None,
         hashtags: list[str] | None = None,
+        poll: TwitterPoll | None = None,
     ):
         self.tweet_id = tweet_id
         self.full_text = re.sub(r"\s*https://t\.co/[^\s,]+$", "", full_text or "") if media else full_text
@@ -387,6 +452,8 @@ class TwitterTweet:
         """浏览量 (views.count)"""
         self.like_count = to_int(like_count)
         """点赞数 (legacy.favorite_count)"""
+        self.poll = poll
+        """推文附带的投票 (卡片 ``poll*choice*``), 没有则为 ``None``。"""
         self.hashtags = hashtags or []
         """正文里的标签 (不含 ``#``), 来自平台实体 ``entities.hashtags[].text``。
 

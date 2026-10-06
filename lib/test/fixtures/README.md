@@ -18,6 +18,7 @@
 | `instagram_caption.json` | instagram | 2026-10-06 21:05 | `xdt_api__v1__media__shortcode__web_info`（匿名） | ~44 KB | caption 含 `#PeakyBlinders`，证 **只有文本、无实体** |
 | `instagram_post.json` | instagram | 2026-10-06 21:05 | 同 API（匿名，另一条） | ~48 KB | 对照：caption 无 hashtag |
 | `instagram_cookie_execution_error.json` | instagram | 2026-10-06 21:05 | 同 API（**带 cookie**） | 263 B | `execution error` + `data:null`（IG 带 cookie 反而失败，匿名可用） |
+| `twitter_poll_card.json` | twitter | 2026-10-07 06:39 | 推文详情（`TweetResultByRestId`），id `2107576143285219799`（源 URL `https://twitter.com/thsottiaux/status/2107576143285219799`） | ~3.6 KB | 承载**投票卡**实证：`node["card"].legacy.name == "poll2choice_text_only"`、`binding_values` 里的 `choice{N}_label`/`choice{N}_count` |
 
 说明：每个平台原始响应仅追加了一个 `_provenance` 键（仿 `douyin_video.json` 的 `_comment` 约定），**原有字段一个未删未改名**。
 `xhs_tag_list_reference.json` 明确标注为外部参考，不是本机抓取。
@@ -35,6 +36,13 @@
   - threads — 正文 hashtag 在 `caption.text` / 单个 plaintext fragment 里；`text_post_app_info.tag_header` 是**整帖唯一的话题**（另一回事，不是正文 hashtag 实体）
   - instagram — `caption` 只有 `{text, pk, has_translation, created_at}`
 - **待验证**：小红书 — `note.noteDetailMap[<id>].note.tagList[].name`（与正文 `#[名][话题]#` 1:1 同序），但**需 cookie**；本机匿名拿不到（快照里 `noteDetailMap == {}`）
+
+**其它字段速查**（非标签）：
+
+- **twitter 投票** — **不在 `legacy` 上**，只在 `node["card"].legacy`：
+  `name` 形如 `poll{2,3,4}choice_{text_only,image}`，选项是 `choice{N}_label` + `choice{N}_count`
+  （`string_value`），另有 `end_datetime_utc`（ISO 8601）与 `counts_are_final`（**`boolean_value`**，
+  不是 `string_value` —— 取错就永远是 `None`）。票数**匿名可拿到**（实测 11805/34875）。
 
 **凭证脱敏**：提交前已把响应里的鉴权/追踪 token 换成 `***REDACTED***` ——
 `authentication_token`（抖音）、`organic_tracking_token`（instagram / threads，共 27 处）。

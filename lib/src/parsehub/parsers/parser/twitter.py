@@ -58,14 +58,49 @@ class TwitterParser(BaseParser):
     @staticmethod
     def _quote_block(source: TwitterTweet) -> str:
         """把一条被回复/被引用的推文渲染成引用块 (排版统一由公共 helper 决定)."""
+        # 投票跟着**它所属的那条推文**的正文走 —— 被引用/被回复的推文带投票时,
+        # 表格渲染在它自己的引用块里（与 X 上一致）。
+        body = source.full_text or ""
+        if poll := TwitterParser._build_poll(source):
+            body = f"{body}\n\n{poll}"
         return format_quote_block(
-            source.full_text or "",
+            body,
             format_author_link(
                 source.author_name or "",
                 source.author_handle or "",
                 profile_url(Platform.TWITTER, source.author_handle or ""),
             ),
         )
+
+    @staticmethod
+    def _poll_cell(text: str) -> str:
+        """表格单元格转义 —— 选项文案里的 ``|`` 会把列切断。"""
+        return text.replace("|", "\\|")
+
+    @staticmethod
+    def _build_poll(tweet: TwitterTweet) -> str:
+        """投票 -> markdown 表格, 没有投票时返回空串。
+
+        形态与 linux.do 的投票一致（选项 / 票数 / 占比三列）—— 表格由渲染层
+        转成服务端的 Table 块, 所以这里用 markdown 表格语法即可。
+
+        占比按**总票数**算（不是"最高票"）; 一票都还没有时占比记 0%, 不抛错。
+
+        选项文案里的 ``|`` 要转义 —— 否则会把表格的列切断。
+        """
+        poll = tweet.poll
+        if not poll or not poll.choices:
+            return ""
+        total = sum(count for _, count in poll.choices)
+        rows = [
+            "| 选项 | 票数 | 占比 |",
+            "| --- | --- | --- |",
+        ]
+        rows.extend(
+            f"| {TwitterParser._poll_cell(label)} | {count} | {round(count * 100 / total) if total else 0}% |"
+            for label, count in poll.choices
+        )
+        return "\n".join(rows)
 
     @staticmethod
     def _build_quote(tweet: TwitterTweet) -> str:
@@ -84,6 +119,8 @@ class TwitterParser(BaseParser):
         :param reply_yt: 被回复推文正文里的 YouTube 卡片, 追加进**回复**引用块
         :param quoted_yt: 被引用推文正文里的 YouTube 卡片, 追加进**被引用**引用块
         """
+        if poll := TwitterParser._build_poll(tweet):
+            body = f"{body}\n\n{poll}"
         reply_block = TwitterParser._append_inside_quote(TwitterParser._build_quote(tweet), reply_yt)
         text = f"{reply_block}{body}"
         # strip: 引用块自带末尾空行（``format_quote_block`` 的块结束约定），
