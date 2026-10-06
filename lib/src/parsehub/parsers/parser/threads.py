@@ -15,15 +15,12 @@ class ThreadsParser(BaseParser):
 
     async def _do_parse(self, raw_url: str) -> "MultimediaParseResult":
         post = await self._parse(raw_url)
-        media: list[AnyMediaRef] = []
-        if post.media:
-            pm: list[ThreadsMedia] = post.media if isinstance(post.media, list) else [post.media]
-            for m in pm:
-                match m.type:
-                    case ThreadsMediaType.VIDEO:
-                        media.append(VideoRef(url=m.url, thumb_url=m.thumb_url, width=m.width, height=m.height))
-                    case ThreadsMediaType.IMAGE:
-                        media.append(ImageRef(url=m.url, thumb_url=m.url, width=m.width, height=m.height))
+        media = ThreadsParser._to_refs(post.media)
+        # 被回复帖的媒体也要发 —— 它渲染成回复卡片, 卡片里的图不能丢
+        # (用户报「回复的图片丢了」)。顺序与 twitter 一致: 正文媒体在前, 回复媒体在后,
+        # 再用 ``reply_media_count`` 告诉渲染层"末尾这几个属于回复卡片"。
+        reply_media = ThreadsParser._to_refs(post.reply_to.media if post.reply_to else None)
+        media.extend(reply_media)
         quote = ThreadsParser._build_quote(post)
         return MultimediaParseResult(
             content=f"{quote}{post.content}",
@@ -34,7 +31,22 @@ class ThreadsParser(BaseParser):
             published_at=post.published_at,
             view_count=post.view_count,
             like_count=post.like_count,
+            reply_media_count=len(reply_media),
         )
+
+    @staticmethod
+    def _to_refs(raw: "ThreadsMedia | list[ThreadsMedia] | None") -> list[AnyMediaRef]:
+        """把 provider 的媒体对象转成结果用的 ref（单条与列表两种形态都吃）。"""
+        if not raw:
+            return []
+        items: list[ThreadsMedia] = raw if isinstance(raw, list) else [raw]
+        out: list[AnyMediaRef] = []
+        for m in items:
+            if m.type == ThreadsMediaType.VIDEO:
+                out.append(VideoRef(url=m.url, thumb_url=m.thumb_url, width=m.width, height=m.height))
+            elif m.type == ThreadsMediaType.IMAGE:
+                out.append(ImageRef(url=m.url, thumb_url=m.url, width=m.width, height=m.height))
+        return out
 
     @staticmethod
     def _build_quote(post: ThreadsPost) -> str:
