@@ -42,6 +42,7 @@ from pyrogram.types.messages_and_media.rich_text import (
     RichTextCode,
     RichTextDateTime,
     RichTextItalic,
+    RichTextSpoiler,
     RichTextStrikethrough,
     RichTextSubscript,
     RichTextSuperscript,
@@ -125,6 +126,9 @@ _INLINE_PATTERNS: list[tuple[re.Pattern, type]] = [
     (re.compile(r"\*\*([^*\n]+)\*\*"), RichTextBold),
     (re.compile(r"`([^`\n]+)`"), RichTextCode),
     (re.compile(r"~~([^~\n]+)~~"), RichTextStrikethrough),
+    # 行内遮罩: threads 的文字级遮罩会渲染成 `||文字||` (服务端解析成 RichTextSpoiler)。
+    # 放在 ~~ 之后 —— 两者不冲突 (`~~` 会先吃掉删除线)。
+    (re.compile(r"\|\|([^|\n]+)\|\|"), RichTextSpoiler),
     (re.compile(r"(?<!\*)\*([^*\n]+)\*(?!\*)"), RichTextItalic),
 ]
 

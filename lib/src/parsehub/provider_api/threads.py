@@ -247,6 +247,10 @@ class ThreadsPost:
     def from_graphql(cls, post: dict[str, Any]) -> ThreadsPost:
         caption = post.get("caption")
         content = caption.get("text") if isinstance(caption, dict) else caption
+        # 文字级遮罩: threads 的 `styling_info.is_spoiler` 标在某一片段上
+        # (用户报「识别不到遮罩文字」——那条帖子里有一整行是遮罩的)。
+        # 映射成富文本的行内遮罩语法 `||…||` (实测服务端解析成 RichTextSpoiler)。
+        content = cls._apply_text_spoilers(str(content or ""), post)
         # taken_at 是 unix 秒; 浏览量不在该 GraphQL 响应里 (页面上的 views 另走接口), 因此留 None
         return cls(
             content=str(content or ""),
@@ -257,6 +261,39 @@ class ThreadsPost:
             view_count=to_int(post.get("view_count")),
             like_count=to_int(post.get("like_count")),
         )
+
+    @staticmethod
+    def _apply_text_spoilers(content: str, post: dict[str, Any]) -> str:
+        """把 ``text_fragments`` 里被标为遮罩的文字包成 ``||…||``。
+
+        ``caption.text`` 是**不带遮罩标记的纯文字**，遮罩信息只在
+        ``text_post_app_info.text_fragments.fragments[].styling_info.is_spoiler`` ——
+        只看 caption 就会把遮罩文字当普通文字发出去（这就是用户报的问题）。
+
+        按 ``plaintext`` 在正文里定位并逐个包裹（逐次从上次结束处往后找，避免同一段文字
+        被重复包裹；找不到就跳过，**绝不臆造位置**）。
+        """
+        if not content:
+            return content
+        fragments = (((post.get("text_post_app_info") or {}).get("text_fragments") or {}).get("fragments")) or []
+        out = content
+        cursor = 0
+        for fragment in fragments:
+            if not isinstance(fragment, dict):
+                continue
+            styling = fragment.get("styling_info") or {}
+            if not styling.get("is_spoiler"):
+                continue
+            text = fragment.get("plaintext")
+            if not text:
+                continue
+            start = out.find(text, cursor)
+            if start < 0:
+                continue
+            end = start + len(text)
+            out = f"{out[:start]}||{text}||{out[end:]}"
+            cursor = end + 4  # 让过刚插入的 ||
+        return out
 
     @classmethod
     def _fetch_media(cls, d: dict[str, Any]) -> ThreadsMedia | list[ThreadsMedia]:

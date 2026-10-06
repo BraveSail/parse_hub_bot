@@ -13,6 +13,29 @@ TABLE = """| 选项 | 票数 | 占比 |
 """
 
 
+def test_an_inline_spoiler_becomes_a_spoiler_span():
+    """行内 `||文字||` → RichTextSpoiler（敏感帖/引用卡片走 blocks 时不能丢遮罩）"""
+    from plugins.parse.rich_blocks import markdown_to_blocks
+
+    blocks = markdown_to_blocks("前 ||被遮住的字|| 后")
+    kinds = []
+
+    def walk(node, depth=0):  # noqa: ANN001
+        if node is None or isinstance(node, (str, int)) or depth > 6:
+            return
+        kinds.append(type(node).__name__)
+        inner = getattr(node, "text", None)
+        if inner is not None and not isinstance(inner, str):
+            for one in inner if isinstance(inner, list) else [inner]:
+                walk(one, depth + 1)
+        if isinstance(node, list):
+            for one in node:
+                walk(one, depth + 1)
+
+    walk(blocks)
+    assert "RichTextSpoiler" in kinds, kinds
+
+
 def test_a_markdown_table_becomes_a_table_block():
     blocks = markdown_to_blocks(TABLE)
     assert len(blocks) == 1, [type(b).__name__ for b in blocks]

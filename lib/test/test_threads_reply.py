@@ -15,6 +15,16 @@ from parsehub.provider_api.threads import (
 )
 
 
+def make_spoiler_post(text: str, fragments: list[dict], username: str = "me") -> dict:
+    """带文字级遮罩片段的帖子（结构照 2026-10-06 真实响应裁剪）。"""
+    return {
+        "code": "DeHnGiigRgh",
+        "caption": {"text": text},
+        "user": {"username": username, "full_name": "Me"},
+        "text_post_app_info": {"is_reply": False, "text_fragments": {"fragments": fragments}},
+    }
+
+
 def make_post(
     code: str,
     text: str,
@@ -63,6 +73,50 @@ def reply_post(text="original", handle="other", name="Other", media=None):
 
 
 # ---------- _extract_post: 父帖提取 ----------
+
+
+def test_a_spoiler_text_fragment_becomes_inline_spoiler_markup():
+    """文字级遮罩 → `||…||`（服务端解析成 RichTextSpoiler）。
+
+    依据 2026-10-06 的真实响应：``caption.text`` 是**不带标记**的纯文字，
+    遮罩信息只在 ``text_post_app_info.text_fragments.fragments[].styling_info.is_spoiler`` ——
+    只看 caption 就会把遮罩文字当普通文字发出去（用户报「识别不到遮罩文字」）。
+    """
+    text = "那幾部都是 CR 的\n還有光看動畫的話，CR 的年繳比動畫瘋平時的年繳便宜"
+    post = make_spoiler_post(
+        text,
+        [
+            {"fragment_type": "plaintext", "plaintext": "那幾部都是 CR 的\n還有光看動畫的話，"},
+            {
+                "fragment_type": "plaintext",
+                "plaintext": "CR 的年繳比動畫瘋平時的年繳便宜",
+                "styling_info": {"is_bold": False, "is_spoiler": True, "is_underline": False},
+            },
+        ],
+    )
+    parsed = ThreadsPost.from_graphql(post)
+    assert parsed.content.endswith("||CR 的年繳比動畫瘋平時的年繳便宜||"), parsed.content
+    # 前面那段没被遮罩的保持原样
+    assert parsed.content.startswith("那幾部都是 CR 的")
+
+
+def test_a_post_without_spoiler_fragments_is_unchanged():
+    post = make_spoiler_post(
+        "普通正文",
+        [{"fragment_type": "plaintext", "plaintext": "普通正文"}],
+    )
+    assert ThreadsPost.from_graphql(post).content == "普通正文"
+
+
+def test_a_fragment_that_cannot_be_located_is_skipped():
+    """片段文字在 caption 里找不到时**跳过**, 不臆造位置"""
+    post = make_spoiler_post(
+        "完全不同的正文",
+        [{"fragment_type": "plaintext", "plaintext": "这段不在正文里", "styling_info": {"is_spoiler": True}}],
+    )
+    parsed = ThreadsPost.from_graphql(post)
+    assert parsed.content == "完全不同的正文"
+    assert "||" not in parsed.content
 
 
 def test_extract_returns_parent_before_target():
