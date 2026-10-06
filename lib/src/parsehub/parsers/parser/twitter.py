@@ -78,23 +78,41 @@ class TwitterParser(BaseParser):
         return TwitterParser._quote_block(tweet.quoted_status) if tweet.quoted_status else ""
 
     @staticmethod
-    def _compose(body: str, tweet: TwitterTweet, extra: str = "") -> str:
+    def _compose(body: str, tweet: TwitterTweet, *, reply_yt: str = "", quoted_yt: str = "") -> str:
         """组装正文: 被回复推文在最前, 被引用推文在最后 (与 X 上的卡片位置一致).
 
-        :param extra: 额外追加在**最末**的引用卡片 (正文里的 YouTube 链接, 见
-            ``_youtube_card``)。放最末是为了和媒体顺序对齐 —— 它的封面走
-            ``quoted_media_count`` 那一档。
+        :param reply_yt: 被回复推文正文里的 YouTube 卡片, 追加进**回复**引用块
+        :param quoted_yt: 被引用推文正文里的 YouTube 卡片, 追加进**被引用**引用块
         """
-        text = f"{TwitterParser._build_quote(tweet)}{body}"
-        tail = "\n\n".join(part for part in (TwitterParser._build_quoted_block(tweet).strip(), extra) if part)
-        return f"{text}\n\n{tail}" if tail else text
+        reply_block = TwitterParser._append_inside_quote(TwitterParser._build_quote(tweet), reply_yt)
+        text = f"{reply_block}{body}"
+        # strip: 引用块自带末尾空行（``format_quote_block`` 的块结束约定），
+        # 拼接由这里负责，别让它在正文中段多出一个空行。
+        quoted_block = TwitterParser._append_inside_quote(
+            TwitterParser._build_quoted_block(tweet), quoted_yt
+        ).strip()
+        return f"{text}\n\n{quoted_block}" if quoted_block else text
+
+    @staticmethod
+    def _append_inside_quote(block: str, extra: str) -> str:
+        """把内容追加到引用块**内部**。
+
+        ``format_quote_block`` 末尾自带一个空行（块靠它结束），所以必须插在那个空行
+        **之前** —— 插在之后就成了独立段落, 媒体会和卡片分家。
+        """
+        if not block or not extra:
+            return block
+        return f"{block.rstrip()}\n{extra}\n\n"
 
     @staticmethod
     async def _youtube_card(text: str | None) -> tuple[str, list[AnyMediaRef]]:
-        """正文里引用的 YouTube 链接 -> 引用卡片 (标题可点) + 封面图。
+        """把正文里的 YouTube 链接渲染成引用卡片 (标题可点) + 封面图。
 
-        用户要求: 正文引用的 YouTube 链接要**像 bilibili 引用的视频那样** —— 有封面、
-        标题能点开 (bilibili 那边是 ``_render_forward`` 给标题包 ``<a href>``)。
+        **作用域: 只给被引用 / 被回复的推文用** —— 它们本来就渲染成引用卡片,
+        卡片正文里的链接应当有封面 (与 bilibili 引用的形态一致, 用户要求)。
+
+        ⚠️ **主帖自己的正文不处理**: 它既不是引用也不是回复, 链接原样留着
+        (用户原话:「有引用就引用吗, 没引用就不弄, 链接你放那里不管就行了」)。
 
         只取**第一个**能抓到卡片的链接: 一条推文塞多张封面会喧宾夺主, 而且卡片之间
         没有各自的位置信息 (引用块媒体是按数量切分的, 见 ``quoted_media_count``)。
@@ -112,7 +130,6 @@ class TwitterParser(BaseParser):
                 return f'> <i><a href="{href}">{label}</a></i>', [ImageRef(url=card.cover_url)]
         return "", []
 
-    @staticmethod
     @staticmethod
     def _hashtags(tweet: TwitterTweet) -> list[str]:
         """正文与被引用推文的标签，去重保序。
@@ -153,34 +170,44 @@ class TwitterParser(BaseParser):
 
     @staticmethod
     async def media_parse(tweet: TwitterTweet) -> MultimediaParseResult | RichTextParseResult:
-        # 正文里引用的 YouTube 链接: 抓封面做成引用卡片 (抓不到就是空, 不影响解析)。
-        # 检测源把 article 正文也带上 —— 两种结果类型都可能含链接, 但只抓一次网络。
-        article_content = tweet.article.content if tweet.article else ""
-        yt_quote, yt_media = await TwitterParser._youtube_card(f"{tweet.full_text or ''}\n{article_content}")
-
         media: list[AnyMediaRef] = TwitterParser.to_media_refs(tweet.media)
-        # 被回复/被引用内容的媒体追加在正文媒体之后, 并用两个计数告诉渲染层怎么切:
-        # 顺序是 [正文..., 被回复..., 被引用...], 让它们分别落到对应的引用块里
-        reply_media = TwitterParser.to_media_refs(tweet.reply_to.media if tweet.reply_to else None)
-        quoted_media = TwitterParser.to_media_refs(tweet.quoted_status.media if tweet.quoted_status else None)
+
+        # 被**引用 / 被回复**推文正文里的 YouTube 链接 -> 引用卡片 (标题可点) + 封面。
+        # 只有这两种推文才处理: 它们本来就渲染成引用卡片, 卡片里的链接该有封面。
+        # **主帖自己的正文不处理** —— 它既不是引用也不是回复, 链接原样留着。
+        reply_yt_quote, reply_yt_media = (
+            await TwitterParser._youtube_card(tweet.reply_to.full_text) if tweet.reply_to else ("", [])
+        )
+        quoted_yt_quote, quoted_yt_media = (
+            await TwitterParser._youtube_card(tweet.quoted_status.full_text) if tweet.quoted_status else ("", [])
+        )
+
+        # 媒体顺序 = [正文..., 被回复..., 被引用...]（渲染层从末尾往前切两个引用块）。
+        # 每档里"卡片自己正文的 YouTube 封面"排在该档媒体的**末尾**。
+        reply_media = [
+            *TwitterParser.to_media_refs(tweet.reply_to.media if tweet.reply_to else None),
+            *reply_yt_media,
+        ]
+        quoted_media = [
+            *TwitterParser.to_media_refs(tweet.quoted_status.media if tweet.quoted_status else None),
+            *quoted_yt_media,
+        ]
         media.extend(reply_media)
         media.extend(quoted_media)
-        # YouTube 卡片的封面**属于正文**, 放在最后只是因为卡片文字排在正文末尾。
-        #
-        # ⚠️ 它**不能**算进 ``quoted_media_count``（以前是算的）: 那个计数是给
-        # "真有一条被引用的推文"用的, 渲染层会按它把媒体切进**引用卡片**里。
-        # 而 YouTube 卡片的文字恰好也是引用块形态（``> <i>…</i>``）—— 于是
-        # **没有引用/回复**的推文, 它的封面会被吸进那个"引用卡片",
-        # 用户看到的就是「链接的预览放引用里了」。
-        media.extend(yt_media)
-        quoted_total = len(quoted_media)
-        # ``reply_to`` 有内容时它排在**正文之前**, 由 ``_build_quote`` 给出引用块;
-        # 只有真渲染出引用块（有被回复的推文）才让它的媒体归那一档 ——
-        # 光有 ``reply_to`` 而引用块为空（被回复帖内容为空）时, 媒体不该被切进卡片。
-        reply_total = len(reply_media) if (tweet.reply_to and TwitterParser._build_quote(tweet)) else 0
+
+        # 计数 = 各档**真会渲染出引用块**时的媒体数。判据是数据层有没有那条推文
+        # （不是"正文里有没有 `> ` 形态的文字"）。
+        quoted_total = len(quoted_media) if (tweet.quoted_status and TwitterParser._build_quoted_block(tweet)) else 0
+        reply_total = (
+            len(reply_media)
+            if (tweet.reply_to and (TwitterParser._build_quote(tweet) or reply_yt_quote))
+            else 0
+        )
         if article := tweet.article:
             return RichTextParseResult(
-                markdown_content=TwitterParser._compose(article.content, tweet, yt_quote),
+                markdown_content=TwitterParser._compose(
+                    article.content, tweet, reply_yt=reply_yt_quote, quoted_yt=quoted_yt_quote
+                ),
                 title=article.title,
                 media=media,
                 author_name=tweet.author_name,
@@ -196,7 +223,9 @@ class TwitterParser(BaseParser):
                 hashtags=TwitterParser._hashtags(tweet),
             )
         return MultimediaParseResult(
-            content=TwitterParser._compose(tweet.full_text, tweet, yt_quote),
+            content=TwitterParser._compose(
+                tweet.full_text, tweet, reply_yt=reply_yt_quote, quoted_yt=quoted_yt_quote
+            ),
             media=media,
             author_name=tweet.author_name,
             author_handle=tweet.author_handle,

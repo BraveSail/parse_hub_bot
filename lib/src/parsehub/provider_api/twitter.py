@@ -234,8 +234,9 @@ class Twitter:
         **不在** ``legacy.entities.media`` 那条路上 —— 所以以前整条丢掉:
         正文里只有个链接的推文, 图片一张都发不出来 (用户报「里面有图, 没抓到」)。
 
-        播放器类卡片 (YouTube 等) 跳过: 那条路有专门处理 (parser 层 ``_youtube_card``
-        走 oembed 拿真封面), 这里再补一张就成了两张封面。
+        播放器类卡片 (YouTube 等) 跳过 —— 那类链接对应的是**正文里的链接**，
+        按用户要求「链接你放那里不管就行了」：链接原样留在正文，不给它配封面，
+        也不套引用块格式。收下这张卡片图就等于又替链接做了加工。
         """
         card = ((node.get("card") or {}).get("legacy")) or {}
         if "player" in (card.get("name") or ""):
