@@ -99,6 +99,68 @@ def test_a_folding_quote_without_media_uses_the_same_button_form():
     assert _render(_quote(LONG_BODY)) != _render(_quote(LONG_BODY), [PLACEHOLDER])
 
 
+def test_the_author_line_does_not_eat_the_preview():
+    """署名行必须**单独一段**, 不能把预览配额吃光。
+
+    署名行（作者名 + @handle）常有 80+ 字符, 而预览配额是「2 行 / 100 字符」——
+    它一个人就顶到上限, 于是折起来时正文一行都露不出来
+    (用户反馈「引用里的作者和正文也分割」)。
+    """
+    author = '<i><a href="https://x.com/asora_jp">【公式】アストラエ・オラティオ</a> <code>@Asora_JP</code></i>'
+    body = "<i>【特区庁広報課からのご案内】</i>\n\n<i>✦クローズドβテストのご紹介です！</i>\n\n" + "\n\n".join(
+        f"<i>第{i}行の内容</i>" for i in range(1, 12)
+    )
+    quote = _quote(f"{author}\n{body}")
+
+    markdown = _render(quote, [PLACEHOLDER])
+    head = markdown.split("<details>", 1)[0]
+    assert author in head, "署名行应留在外面"
+    assert "【特区庁広報課からのご案内】" in head, f"正文前几行也要露出来: {head!r}"
+    assert "✦クローズドβテストのご紹介です！" in head, f"预览应含正文头两行: {head!r}"
+    # 署名行在预览**之前**（与源文一致）
+    assert head.index(author) < head.index("【特区庁広報課からのご案内】")
+    # 剩下的仍折起来
+    assert "第11行の内容" not in head
+    assert "第11行の内容" in markdown
+
+
+def test_blank_lines_do_not_use_up_the_preview():
+    """空行只算排版, 不占「前几行」的配额 (与 _should_fold 同一原则)。
+
+    否则"首行文字 + 空行"就把 2 行配额用完, 折叠态只看得到一行 ——
+    所谓"前几行预览"名不副实。
+    """
+    body = "<i>第一段文字</i>\n\n<i>第二段文字</i>\n\n" + "\n\n".join(
+        f"<i>第{i}行内容</i>" for i in range(3, 12)
+    )
+    markdown = _render(_quote(body), [PLACEHOLDER])
+    head = markdown.split("<details>", 1)[0]
+    assert "第一段文字" in head and "第二段文字" in head, f"应露出两行文字: {head!r}"
+    assert "第3行内容" not in head, f"第三行该折起来: {head!r}"
+
+
+def test_the_author_line_does_not_decide_whether_to_fold():
+    """折叠判定只看正文: 署名行很长, 算进去会让内容很短的引用也被折起来"""
+    author = (
+        '<i><a href="https://x.com/someone_with_a_long_name">很长很长的一个作者名字啊啊啊</a>'
+        " <code>@someone_with_a_long_name</code></i>"
+    )
+    short_body = "<i>很短的一句正文</i>"
+    assert quote_will_fold(_quote(f"{author}\n{short_body}")) is False, "短引用不该被署名行顶到折叠"
+
+    long_body = "\n\n".join(f"<i>第{i}行内容</i>" for i in range(1, 20))
+    assert quote_will_fold(_quote(f"{author}\n{long_body}")) is True
+
+
+def test_a_quote_without_an_author_line_is_unchanged():
+    """没有署名行的引用块: 正文自己留预览 (不因为拆分逻辑而丢内容)"""
+    body = "\n\n".join(f"<i>第{i}行の内容</i>" for i in range(1, 12))
+    markdown = _render(_quote(body), [PLACEHOLDER])
+    head = markdown.split("<details>", 1)[0]
+    assert "第1行の内容" in head
+    assert "第11行の内容" in markdown
+
+
 def test_a_body_quote_does_not_ask_for_blocks():
     """正文里本来就有引用块 (linux.do 一篇十几个) —— 不能因此被推去走 blocks。
 

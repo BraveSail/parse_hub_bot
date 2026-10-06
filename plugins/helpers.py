@@ -638,9 +638,36 @@ def _quote_body(quote: str) -> str:
     return "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
 
 
+#: 引用块的**署名行**（``format_quote_block`` 在开头加的作者行）:
+#: 整行是 ``<i>…</i>`` 且行内含链接。正文行不会长这样（正文是 ``<i>文字</i>``，
+#: 除非它本身就是个纯链接 —— 那种情况把它提到外面也无害）。
+_QUOTE_AUTHOR_RE = re.compile(r"^<i>.*?<a\s+href=.*?</i>$", re.S)
+
+
+def _split_quote_author(body: str) -> tuple[str, str]:
+    """把引用正文拆成 (署名行, 其余正文)。没有署名行时返回 ("", body)。
+
+    为什么要拆: 署名行（作者名 + ``@handle``）往往就有 80+ 字符，会**把预览配额吃光**
+    —— ``split_fold_preview`` 按字符数取前几行，署名行一个人就顶到上限，正文一行都露不出来
+    （用户反馈「引用里的作者和正文也分割」）。拆开后署名行单独一段（不参与折叠），
+    正文自己按同一套阈值留预览。
+    """
+    lines = body.split("\n")
+    if len(lines) > 1 and _QUOTE_AUTHOR_RE.match(lines[0].strip()):
+        return lines[0].strip(), "\n".join(lines[1:]).strip()
+    return "", body
+
+
 def quote_will_fold(quote: str) -> bool:
-    """引用块会不会被折叠 (折叠形态见 ``render_folded_quote_card``)。"""
-    return bool(quote) and _should_fold(_quote_body(quote))
+    """引用块会不会被折叠 (折叠形态见 ``render_folded_quote_card``)。
+
+    只按**正文**判断: 署名行是固定开销 (名字 + ``@handle`` 常有 80+ 字符), 算进去的话
+    内容很短的引用也会被折起来 —— 那是"作者行吃了配额"的另一种表现。
+    """
+    if not quote:
+        return False
+    _, text = _split_quote_author(_quote_body(quote))
+    return _should_fold(text)
 
 
 def fold_quote_block(quote: str, *, summary: str = "") -> str:
@@ -693,8 +720,12 @@ def render_folded_quote_card(quote: str, media: Sequence[str] = (), *, summary: 
     if not quote:
         return quote
     body = _quote_body(quote)
-    preview, rest = split_fold_preview(body)
+    # 署名行单独一段、不参与折叠: 否则它一个就把预览配额吃光, 正文一行都露不出来
+    author_line, text = _split_quote_author(body)
+    preview, rest = split_fold_preview(text)
     parts: list[str] = []
+    if author_line:
+        parts.append(author_line)
     if preview:
         parts.append(preview)
     if rest:
@@ -953,9 +984,15 @@ def split_fold_preview(content: str) -> tuple[str, str]:
     lines = content.split("\n")
     end = 0
     chars = 0
+    counted = 0
     for line in lines:
-        if end >= _FOLD_PREVIEW_LINES or (end and chars + len(line) > _FOLD_PREVIEW_CHARS):
+        # **只数非空行** (与 _should_fold 同一原则): 空行是段落排版, 不是内容量。
+        # 若把空行也算一行, 首行文字后面跟个空行就把配额用完了 ——
+        # 折叠态只看到一行, 与「前几行预览」的说法不符。
+        if counted >= _FOLD_PREVIEW_LINES or (counted and chars + len(line) > _FOLD_PREVIEW_CHARS):
             break
+        if line.strip():
+            counted += 1
         chars += len(line)
         end += 1
 
