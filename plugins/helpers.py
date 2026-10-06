@@ -442,8 +442,14 @@ def build_rich_markdown_by_str(
     quote_media_placeholders: Sequence[str] = (),
     reply_media_placeholders: Sequence[str] = (),
     hide_content: str = "",
+    platform: Platform | None = None,
 ) -> str:
-    """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。"""
+    """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。
+
+    ``platform`` **不是可选项**: 渲染里有多处依赖它（标签页链接等）。传 None 时
+    调用方应自行用 ``ParseHub().get_platform(raw_url)`` 兜底 —— 否则会静默降级
+    （标签变纯文本），而两条路径（现场/缓存）的产物还不一致。
+    """
     return build_rich_markdown(
         _RichFields(  # type: ignore[arg-type]
             title,
@@ -456,6 +462,7 @@ def build_rich_markdown_by_str(
             view_count,
             like_count,
             tags,
+            platform,
         ),
         config=config,
         lang=lang,
@@ -483,6 +490,7 @@ class _RichFields:
         view_count,
         like_count=None,
         tags=None,
+        platform=None,
     ):
         self.title = title or ""
         self.content = content or ""
@@ -494,7 +502,10 @@ class _RichFields:
         self.view_count = view_count
         self.like_count = like_count
         self.tags = list(tags or [])
-        self.platform = None
+        # ⚠️ platform 决定**标签能不能变成链接**（`link_hashtags` 靠它取标签页 URL）。
+        # 写死 None 时缓存路径的标签会静默退回纯文本 —— 症状是
+        # 「第一次发（现场解析）标签可点，命中缓存那条不可点」（用户报过）。
+        self.platform = platform
         self.markdown_content = ""
 
 

@@ -197,6 +197,9 @@ class CacheParseResult(BaseModel):
     view_count: int | None = None
     like_count: int | None = None
     tags: list[str] = []
+    #: 平台短名 (``Platform.id``)。**渲染要用**: 标签页链接等依赖它。
+    #: 老缓存没有这个字段 ⇒ 空串 ⇒ 由 ``raw_url`` 兜底推断（见 build_cached_rich_content）。
+    platform: str = ""
     #: 末尾有多少个媒体项属于被引用内容, 紧接其前的多少个属于被回复内容
     #: (两者都在各自的引用块内部渲染)
     quoted_media_count: int = 0

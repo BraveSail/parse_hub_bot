@@ -289,12 +289,25 @@ def rich_cache_entry(
             view_count=getattr(parse_result, "view_count", None),
             like_count=getattr(parse_result, "like_count", None),
             tags=list(getattr(parse_result, "tags", None) or []),
+            # 平台短名也要存: 缓存路径渲染时用它拼标签页链接（漏了就不只是少个字段）
+            platform=getattr(getattr(parse_result, "platform", None), "id", "") or "",
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
         ),
         media=media or None,
         rich=True,
     )
+
+
+def _platform_from_id(platform_id: str):
+    """按**短名**找平台枚举 (与库侧 serialize 同一手法)。
+
+    ⚠️ 不能用 ``Platform(platform_id)``: 枚举成员的 value 是
+    ``(短名, 显示名)`` 的 tuple, 按 value 构造**永远失败且静默**。
+    """
+    from parsehub.types import Platform
+
+    return next((platform for platform in Platform if platform.id == platform_id), None)
 
 
 def build_cached_rich_content(
@@ -317,6 +330,14 @@ def build_cached_rich_content(
     """
     from plugins.helpers import build_rich_markdown_by_str, wrap_collage
 
+    # 平台: 优先用缓存里存的短名; 老缓存没这个字段 ⇒ 按 raw_url 推断。
+    # **必须给一个真实平台** —— 渲染里标签等依赖它, 传 None 会静默降级成纯文本。
+    platform = _platform_from_id(entry.parse_result.platform)
+    if platform is None:
+        from parsehub import ParseHub
+
+        platform = ParseHub().get_platform(raw_url) if raw_url else None
+
     media, placeholders, quoted_placeholders, reply_placeholders, media_blocks = cache_media_blocks(entry)
     markdown = build_rich_markdown_by_str(
         entry.parse_result.title,
@@ -337,6 +358,7 @@ def build_cached_rich_content(
         quote_media_placeholders=quoted_placeholders,
         reply_media_placeholders=reply_placeholders,
         hide_content=spoiler_tag,
+        platform=platform,
     )
     return markdown, media, media_blocks
 
