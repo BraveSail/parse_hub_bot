@@ -26,8 +26,8 @@
 
 - **能给出精确标签边界**（可弃用正则）：
   - twitter — `legacy.entities.hashtags[].text`（长推文另加 `note_tweet...entity_set.hashtags[]`）；**已上线**
-  - B站动态 — `modules.module_dynamic.desc.rich_text_nodes[]`，节点 `type == "RICH_TEXT_NODE_TYPE_TOPIC"`，`orig_text` 是 `#话题#`，**节点自带 `jump_url`**；另有 `modules.module_dynamic.topic = {id, jump_url, name}`
-  - 微博 — 正文 `text` 里标签**已经是 `<a href="//s.weibo.com/weibo?q=%23...%23">#话题#</a>`**（服务端给的锚点）；`topic_struct[].topic_url` 亦可
+  - B站动态 — `modules.module_dynamic.desc.rich_text_nodes[]`，节点 `type == "RICH_TEXT_NODE_TYPE_TOPIC"`，节点自带 `jump_url`（协议相对，要补 `https:`）；另有 `modules.module_dynamic.topic`。**已上线**
+  - 微博 — 正文 `text` 里标签**已经是 `<a href="//s.weibo.com/weibo?q=%23...%23">#话题#</a>`**（服务端给的锚点，href 就是话题页）。**已上线**
 - **有实体但不完整 / 无偏移**（只能部分替代）：
   - 抖音 — `aweme_detail.text_extra[].{hashtag_name, hashtag_id, start, end}`，`desc[start:end] == '#<hashtag_name>'`；**但实测 5 个 `#` 只收录 4 个**，`cha_list` 更少 ⇒ 仍要正则兜底
   - 快手 — `data.visionVideoDetail.tags[].{type, name}`（1:1 但**无偏移**、顺序不保证）；**主路径走 HTML `__APOLLO_STATE__` 里没有 tags**，只有 API 兜底分支有且现被丢弃
