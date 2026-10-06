@@ -3,6 +3,7 @@ import math
 import os
 import re
 import shutil
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -129,6 +130,8 @@ class SegmentDownloader:
         self._progress_lock = asyncio.Lock()
         self._downloaded = 0
         self._part_downloaded: dict[int, int] = {}
+        #: 本次下载实际切了几个分片 (速度日志要打出来 —— 分片数直接决定并发度)
+        self._part_count = 0
 
     async def run(self) -> str:
         last_error: Exception | None = None
@@ -203,6 +206,8 @@ class SegmentDownloader:
         self._prepare_temp_dir(resolved_path)
         try:
             probe = await self._probe(client)
+            # 只给**传输阶段**计时: probe/merge 不算进速度, 否则小文件会被探测开销拉低
+            started = time.monotonic()
             if self._should_use_multipart(probe):
                 try:
                     await self._download_multipart(client, probe.total_size or 0)
@@ -213,8 +218,10 @@ class SegmentDownloader:
                     await self._download_single(client, probe.total_size)
             else:
                 await self._download_single(client, probe.total_size)
+            elapsed = time.monotonic() - started
 
             os.replace(self._require_complete_path(), resolved_path)
+            self._log_speed(elapsed, resolved_path)
         except BaseException:
             self._cleanup_temp_dir()
             raise
@@ -311,6 +318,7 @@ class SegmentDownloader:
         parts_dir = temp_dir.joinpath("parts")
         parts_dir.mkdir(parents=True, exist_ok=True)
         parts = self._build_parts(total_size, parts_dir)
+        self._part_count = len(parts)
         tasks = [asyncio.create_task(self._download_part(client, part, total_size)) for part in parts]
 
         try:
@@ -442,33 +450,53 @@ class SegmentDownloader:
         self.complete_path = None
 
     async def _report_part(self, index: int, downloaded: int, total: int) -> None:
-        if not self.progress:
-            return
+        # **字节统计与进度回调解耦**: 没有 ``progress`` 回调时也要记账 ——
+        # 下载速度日志用的就是这里的 ``_downloaded``, 早退会让它永远是 0。
         async with self._progress_lock:
             previous = self._part_downloaded.get(index, 0)
             if downloaded <= previous:
                 return
             self._part_downloaded[index] = downloaded
             self._downloaded += downloaded - previous
-            await self.progress(self._downloaded, total, *self.progress_args, **self.progress_kwargs)
+            if self.progress:
+                await self.progress(self._downloaded, total, *self.progress_args, **self.progress_kwargs)
 
     async def _report_single(self, downloaded: int, total: int) -> None:
-        if not self.progress:
-            return
         async with self._progress_lock:
             if downloaded <= self._downloaded:
                 return
             self._downloaded = downloaded
-            await self.progress(downloaded, total, *self.progress_args, **self.progress_kwargs)
+            if self.progress:
+                await self.progress(downloaded, total, *self.progress_args, **self.progress_kwargs)
 
     async def _report_finish(self, total: int) -> None:
-        if not self.progress or total <= 0:
+        if total <= 0:
             return
         async with self._progress_lock:
             if self._downloaded >= total:
                 return
             self._downloaded = total
-            await self.progress(total, total, *self.progress_args, **self.progress_kwargs)
+            if self.progress:
+                await self.progress(total, total, *self.progress_args, **self.progress_kwargs)
+
+    def _log_speed(self, elapsed: float, path: Path) -> None:
+        """打一行下载速度日志: **实际字节数 / 耗时 / 平均速度**。
+
+        字节数取落地文件的大小, 而下载器对完整性是有校验的(单连接比 ``Content-Length``、
+        多分片比每个 part 的 size), 所以这个数就是真实传输量 —— 不是预分配的假象
+        (本下载器不 truncate 预分配)。
+
+        分片数与 CDN host 一起打出来: 二者是下载速度的主要变量(域名不同能差几十倍)。
+        """
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return
+        speed = size / elapsed / 1048576 if elapsed > 0 else 0.0
+        logger.info(
+            f"下载完成: {path.name} {size / 1048576:.2f}MB 用时 {elapsed:.2f}s "
+            f"平均 {speed:.2f} MB/s | 分片 {self._part_count or 1} | host={urlparse(self.url).netloc}"
+        )
 
     def _headers(self, extra: Mapping[str, str]) -> dict[str, str]:
         merged = dict(self.headers)
@@ -478,6 +506,7 @@ class SegmentDownloader:
     def _reset_progress(self) -> None:
         self._downloaded = 0
         self._part_downloaded.clear()
+        self._part_count = 0
 
     def _require_resolved_path(self) -> Path:
         if self.resolved_path is None:
