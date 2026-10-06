@@ -143,6 +143,11 @@ class LinuxDoTopic:
         # ``post["polls"]`` 结构化字段里（`options[].votes` / `voters`）—— 不需要额外请求。
         polls = [p for p in (first.get("polls") or []) if isinstance(p, dict)]
         images = cls._extract_images(soup)
+        # ⚠️ 必须在取纯文本**之前**清 lightbox: 它的包裹里除了 img 还有一段**说明文字**
+        # (``span.filename`` 文件名 + ``span.informations`` 的"分辨率 体积", 如 ``746×330 24.3 KB``)。
+        # 纯图楼层(markdown 为空)拿 text_content 当正文, 晚清理这些元信息就会跟图一起显示
+        # (用户报「正文多了个 image 分辨率体积」)。
+        cls._strip_lightbox(soup)
         text_content = soup.get_text("\n", strip=True)
         # 引用块先抽出来 (改写成占位符), 转完 markdown 再回填公共 helper 渲染的结果
         rendered_quotes = cls._extract_quotes(soup)
@@ -300,6 +305,17 @@ class LinuxDoTopic:
         return rendered
 
     @staticmethod
+    def _strip_lightbox(soup: BeautifulSoup) -> None:
+        """去掉图片的 lightbox 包裹 —— 图会作为媒体单独发送, 正文里不再重复。
+
+        清掉的是**整个包裹**: 除了 ``img``, 里面还有 ``div.meta`` 里的说明文字
+        (``span.filename`` 是文件名, ``span.informations`` 是"分辨率 体积")。
+        那些文字不是正文, 见 ``_from_payload`` 里为什么要在取纯文本前调用。
+        """
+        for wrapper in soup.find_all("div", class_="lightbox-wrapper"):
+            wrapper.decompose()
+
+    @staticmethod
     def _simplify(soup: BeautifulSoup, polls: list[dict[str, Any]] | None = None) -> None:
         """清理 Discourse 特有的包裹结构，避免转换出噪音。
 
@@ -312,8 +328,7 @@ class LinuxDoTopic:
         """
         for tag in soup.find_all("img", class_=["emoji", "avatar"]):
             tag.decompose()
-        for wrapper in soup.find_all("div", class_="lightbox-wrapper"):
-            wrapper.decompose()
+        LinuxDoTopic._strip_lightbox(soup)
         for details in soup.find_all("details"):
             details.unwrap()
         for summary in soup.find_all("summary"):

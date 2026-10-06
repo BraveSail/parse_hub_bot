@@ -534,3 +534,43 @@ def test_text_content_is_plain():
     topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
     assert "杂鱼杂鱼杂鱼" in topic.text_content
     assert "<p>" not in topic.text_content
+
+
+def test_the_image_caption_stays_out_of_the_plain_text():
+    """图片的说明文字（文件名 / "分辨率 体积"）不能进纯文本正文。
+
+    用户报「正文多了个 image 分辨率体积」—— 那帖是**纯图楼层**（markdown 为空）,
+    正文取 ``text_content``; 而 lightbox 的包裹里除了图还有 ``span.filename``
+    （文件名）与 ``span.informations``（``746×330 24.3 KB``），清理晚一步就会被抓进来。
+
+    结构取自真实响应（linux.do/t/topic/2987239）。
+    """
+    cooked = (
+        '<p><div class="lightbox-wrapper">'
+        '<a class="lightbox" href="https://cdn3.ldstatic.com/original/4X/7/5/b/abc.png" '
+        'data-download-href="/uploads/short-url/gN.png?dl=1" title="image" rel="noopener nofollow ugc">'
+        '<img src="https://cdn3.ldstatic.com/original/4X/7/5/b/abc.png" alt="image" '
+        'data-base62-sha1="gN" width="690" height="305" data-dominant-color="232426">'
+        '<div class="meta">'
+        '<svg class="fa d-icon d-icon-far-image svg-icon" aria-hidden="true"><use href="#far-image"></use></svg>'
+        '<span class="filename">image</span>'
+        '<span class="informations">746×330 24.3 KB</span>'
+        "</div></a></div></p>"
+    )
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = cooked
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+
+    # 图照样抽出来了（清的是说明文字, 不是图）
+    assert len(topic.images) == 1
+    assert topic.images[0].url == "https://cdn3.ldstatic.com/original/4X/7/5/b/abc.png"
+    # 说明文字不进正文
+    assert "746×330" not in topic.text_content, topic.text_content
+    assert "24.3 KB" not in topic.text_content, topic.text_content
+    assert "746×330" not in topic.markdown_content, topic.markdown_content
+
+
+def test_the_lightbox_filename_stays_out_of_the_plain_text():
+    """同一个坑的另一半: fixture 的 ``span.filename``（IMG_7961）也不该漏进纯文本"""
+    topic = LinuxDoTopic._from_payload(make_payload(), "2979226")
+    assert "IMG_7961" not in topic.text_content, topic.text_content
