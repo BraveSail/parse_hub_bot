@@ -139,11 +139,14 @@ class LinuxDoTopic:
 
         cooked: str = first.get("cooked") or ""
         soup = BeautifulSoup(cooked, "lxml")
+        # 投票: cooked 里的 poll 只是个**占位壳**（人数恒为 0），真实数据在同一次响应的
+        # ``post["polls"]`` 结构化字段里（`options[].votes` / `voters`）—— 不需要额外请求。
+        polls = [p for p in (first.get("polls") or []) if isinstance(p, dict)]
         images = cls._extract_images(soup)
         text_content = soup.get_text("\n", strip=True)
         # 引用块先抽出来 (改写成占位符), 转完 markdown 再回填公共 helper 渲染的结果
         rendered_quotes = cls._extract_quotes(soup)
-        cls._simplify(soup)
+        cls._simplify(soup, polls=polls)
         markdown_content = cls._to_markdown(str(soup))
         for placeholder, block in rendered_quotes:
             markdown_content = markdown_content.replace(placeholder, block)
@@ -297,7 +300,7 @@ class LinuxDoTopic:
         return rendered
 
     @staticmethod
-    def _simplify(soup: BeautifulSoup) -> None:
+    def _simplify(soup: BeautifulSoup, polls: list[dict[str, Any]] | None = None) -> None:
         """清理 Discourse 特有的包裹结构，避免转换出噪音。
 
         - ``div.lightbox-wrapper``：图片会作为媒体单独发送，正文里不再重复
@@ -317,38 +320,72 @@ class LinuxDoTopic:
             summary.decompose()
         for spoiler in soup.find_all("div", class_="spoiler"):
             spoiler.unwrap()
-        LinuxDoTopic._convert_polls(soup)
+        LinuxDoTopic._convert_polls(soup, polls or [])
 
     @staticmethod
-    def _convert_polls(soup: BeautifulSoup) -> None:
-        """把 Discourse 的投票改写成「标题 + 选项列表」。
+    def _convert_polls(soup: BeautifulSoup, polls: list[dict[str, Any]]) -> None:
+        """把 Discourse 的投票改写成「标题（人数）+ 选项列表（票数 / 占比）」。
 
         不处理的话，poll 就是一段 HTML，直接转 markdown 会把**选项与人数标签**
         糊成一串裸文字（如 ``选项A / 选项B / 0 / 投票人``）—— 看不出这是投票，
-        最后那个 ``0 投票人`` 还像是正文的残句（用户报的就是这个）。
+        最后那个 ``0 投票人`` 还像是正文的残句。
 
-        ⚠️ **票数/参与人数都不显示**：``cooked`` 里那个 ``info-number`` **永远是 0**
-        （占位），真实结果由前端另拉 ``/polls/voters.json`` —— 实测即使在
-        meta.discourse.org 的老帖（4.3 万浏览、十几个选项）上，``topic.json``
-        里也是 0。把它渲染成「0 人参与」是**假信息**（用户看到"实际 214"），
-        所以只渲染确实可信的东西：标题 + 选项。
+        **真实数据在同一次响应的 ``post["polls"]`` 结构化字段里**
+        （``options[].votes`` / ``voters``）—— ``cooked`` 里那个 ``info-number``
+        是恒为 0 的**占位壳**（服务端渲染与前端首次渲染都用它，真实数字由前端拿
+        结构化数据填）。所以这里以 ``polls`` 为准，**不需要任何额外请求**。
+
+        ⚠️ 教训: 判断"数据拿不到"之前要把**同一个响应里的其它字段**翻一遍 ——
+        只看 ``cooked`` 会得出"票数要另请求"的错误结论（踩过）。
+        没有结构化数据时（老版本站点）退化成「📊 投票」+ 选项，**不显示那个假 0**。
         """
-        for poll in soup.find_all("div", class_="poll"):
-            options = [li.get_text(" ", strip=True) for li in poll.select("li[data-poll-option-id]")]
-            if not options:
+        by_name = {str(p.get("name")): p for p in polls}
+        for index, poll in enumerate(soup.find_all("div", class_="poll")):
+            name = str(poll.get("data-poll-name") or "")
+            data = by_name.get(name) or (polls[index] if index < len(polls) else {})
+            raw_options = data.get("options") or []
+            rows: list[tuple[str, int | None]] = []
+            for option in raw_options:
+                if isinstance(option, dict):
+                    rows.append((LinuxDoTopic._option_text(option), to_int(option.get("votes"))))
+            if not rows:
+                # 没有结构化数据: 退回 cooked 里的选项文字 (不带票数, 见 docstring)
+                rows = [
+                    (li.get_text(" ", strip=True), None) for li in poll.select("li[data-poll-option-id]")
+                ]
+            if not rows:
                 continue
+            voters = to_int(data.get("voters")) or 0
+            title = str(data.get("title") or "").strip()
+
             block = soup.new_tag("div")
             head = soup.new_tag("p")
-            # 不带人数: cooked 里的 info-number 是不可信的占位 (见 docstring)
-            head.string = "📊 投票"
+            parts = ["📊 投票"]
+            if title:
+                parts.append(f"「{title}」")
+            if voters > 0:
+                parts.append(f"{voters} 人参与")
+            head.string = parts[0] + (f"（{' · '.join(parts[1:])}）" if len(parts) > 1 else "")
             block.append(head)
+
             options_list = soup.new_tag("ul")
-            for option in options:
+            for text, votes in rows:
                 item = soup.new_tag("li")
-                item.string = option
+                if votes is None or voters <= 0:
+                    item.string = text
+                else:
+                    item.string = f"{text} — {votes} 票（{round(votes * 100 / voters)}%）"
                 options_list.append(item)
             block.append(options_list)
             poll.replace_with(block)
+
+    @staticmethod
+    def _option_text(option: dict[str, Any]) -> str:
+        """选项文字: ``html`` 字段可能带标签 (有的投票选项就是一张图)。"""
+        raw = str(option.get("html") or "")
+        if "<" not in raw:
+            return raw.strip()
+        return BeautifulSoup(raw, "lxml").get_text(" ", strip=True)
 
     @staticmethod
     def _to_markdown(html: str) -> str:

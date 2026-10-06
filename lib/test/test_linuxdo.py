@@ -144,8 +144,9 @@ def test_avatar_is_not_media_and_is_removed_from_the_body():
     assert "我的回复" in topic.markdown_content
 
 
-#: 真实抓到的 poll HTML（2026-10-06 从 ``/t/topic/2985951.json`` 的 cooked 里取）
-POLL_COOKED = (
+#: 真实抓到的 poll HTML（2026-10-06 从 ``/t/topic/2985951.json`` 的 cooked 里取）。
+#: ⚠️ 这里的人数**恒为 0** —— 它是占位壳，真实数据在同响应的 ``post["polls"]``。
+POLL_COOKIE_PLACEHOLDER = (
     "<p>要不然是不是只用过o/的codex，没被a/封过号，a/封号是让我挺恶心的</p>"
     '<div class="poll" data-poll-charttype="bar" data-poll-name="poll" data-poll-public="false"'
     ' data-poll-results="always" data-poll-status="open" data-poll-type="regular">'
@@ -161,6 +162,27 @@ POLL_COOKED = (
 )
 
 
+#: 真实的结构化 polls 数据（同一次响应的 ``post["polls"]``，2026-10-06 抓）
+POLL_STRUCTURED = [
+    {
+        "id": "40361",
+        "name": "poll",
+        "type": "regular",
+        "status": "open",
+        "results": "always",
+        "chart_type": "bar",
+        "title": None,
+        "voters": 222,
+        "options": [
+            {"id": "d7ffaa1410bc2fd4b0be1de8a1ad3bb3", "html": "还在用a/感觉良好", "votes": 71},
+            {"id": "2f9cd91f0d73a903a7d4849965241509", "html": "没用过a/，感觉o/实在恶心", "votes": 31},
+            {"id": "1f35519f11e1df7980d56c002bad370b", "html": "即使被a/封过付费号，也觉得o/比a/不当人", "votes": 40},
+            {"id": "0520d1c3d9d52393b184ac30d88958e7", "html": "一直觉得a/比o/恶心", "votes": 80},
+        ],
+    }
+]
+
+
 def test_a_poll_renders_as_a_vote_block_not_as_loose_text():
     """投票要渲染成「标题 + 选项列表」—— 不能糊成一串裸文字。
 
@@ -168,24 +190,32 @@ def test_a_poll_renders_as_a_vote_block_not_as_loose_text():
     末尾孤零零一个 `0 / 投票人` 看起来像正文的残句（用户报障就是这个）。
     """
     payload = make_payload()
-    payload["post_stream"]["posts"][0]["cooked"] = POLL_COOKED
+    payload["post_stream"]["posts"][0]["cooked"] = POLL_COOKIE_PLACEHOLDER
+    payload["post_stream"]["posts"][0]["polls"] = POLL_STRUCTURED
     topic = LinuxDoTopic._from_payload(payload, "2979226")
     md = topic.markdown_content
 
     # 正文段落还在
     assert "没被a/封过号" in md
-    # 有一个明确的投票标题
-    assert "📊 投票" in md, md
-    # **不显示人数**: cooked 里的 info-number 是占位 0 (真实票数要另拉 voters.json),
-    # 渲染成"0 人参与"就是假信息 —— 用户明确报过"网页实际是 214 投票人"
-    assert "人参与" not in md, md
-    assert "0" not in md.split("📊")[1].split("\n")[0], md
-    # 选项各自成条目（markdown 列表），而不是与人数糊在一行
-    assert "还在用a/感觉良好" in md
-    assert "一直觉得a/比o/恶心" in md
-    # 选项各自成列表项 (markdown 的 `* `), 而不是与人数标签糊成一行
-    assert "* 还在用a/感觉良好" in md, md
+    # 投票标题带**真实**参与人数（来自同一次响应的 post["polls"]，不是 cooked 里那个 0）
+    assert "📊 投票（222 人参与）" in md, md
+    assert "0 人参与" not in md, md
+    # 每个选项带票数与占比（222 为分母）
+    assert "还在用a/感觉良好 — 71 票（32%）" in md, md
+    assert "一直觉得a/比o/恶心 — 80 票（36%）" in md, md
     assert md.count("\n* ") == 4, md
+
+
+def test_a_poll_without_structured_data_falls_back_to_a_bare_list():
+    """没有结构化 ``polls`` 字段时（老站点）: 只列选项, **不显示那个假的 0**"""
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = POLL_COOKIE_PLACEHOLDER
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    md = topic.markdown_content
+    assert "📊 投票" in md, md
+    assert "人参与" not in md, md
+    assert "投票人" not in md, md
+    assert "* 还在用a/感觉良好" in md, md
     # "投票人" 这个标签词不该再作为裸文字出现（已并入标题）
     assert "投票人" not in md, md
     # 不泄漏 Discourse 的内部属性
