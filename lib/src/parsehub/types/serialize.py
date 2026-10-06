@@ -103,7 +103,7 @@ def _constructor_param(cls: type) -> str | None:
 #: ``build()`` 能提供的构造参数名（与它实际传的 kwargs 一致）
 _BUILDABLE_PARAMS = frozenset({
     "title", "author_name", "is_sensitive", "published_at", "view_count", "like_count",
-    "author_handle", "author_url", "tags", "quoted_media_count", "reply_media_count",
+    "author_handle", "author_url", "tags", "hashtags", "quoted_media_count", "reply_media_count",
     "content", "video", "photo", "media", "markdown_content",
 })
 
@@ -206,6 +206,9 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
     return {
         **result.to_dict(),
         "media": _media_to_payload(result.media),
+        # ``to_dict()`` 是**公开输出格式**（被测试逐字段冻住），不往里加字段。
+        # 标签是渲染层要用的（精确链接化），只走缓存这套格式。
+        "hashtags": list(result.hashtags),
         "impl": type(result).__name__,
     }
 
@@ -237,6 +240,7 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
         "author_handle": data.get("author_handle", ""),
         "author_url": data.get("author_url", ""),
         "tags": data.get("tags") or [],
+        "hashtags": data.get("hashtags") or [],
         "quoted_media_count": data.get("quoted_media_count", 0),
         "reply_media_count": data.get("reply_media_count", 0),
     }

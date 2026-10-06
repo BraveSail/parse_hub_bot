@@ -3,7 +3,7 @@
 import html
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
@@ -270,7 +270,12 @@ def build_rich_markdown(
     title = (parse_result.title or "").strip()
     content = preserve_linebreaks(
         escape_setext_underlines(
-            link_hashtags(rich_content(parse_result).strip(), parse_result.platform)
+            link_hashtags(
+                rich_content(parse_result).strip(),
+                parse_result.platform,
+                # 平台实体给的标签名（拿不到时为空列表 → 退回正则）
+                getattr(parse_result, "hashtags", None),
+            )
         )
     )
     # 分两组: 标题/作者是"这是什么"的元信息, 留在折叠外; 其余(正文/引用块/标签/媒体)
@@ -535,8 +540,73 @@ _HASH_TAG_RE = re.compile(rf"(?<![\w&/])#({_TAG_BODY})")
 _ANCHOR_SEGMENT_RE = re.compile(r"<a\b[^>]*>.*?</a>", re.S)
 
 
-def link_hashtags(text: str, platform: Platform | None = None) -> str:
+def _link_known_tags(text: str, platform: Platform | None, hashtags: Sequence[str]) -> str:
+    """按**平台实体**给的标签名精确链接化（优先于正则）。
+
+    为什么需要它（2026-10-06，用户报）: 一条推文的正文是
+
+        TVアニメ「#FX戦士くるみちゃん」第一話より
+
+    正则把标签吃成了 ``#FX戦士くるみちゃん」第一話より`` —— 终止字符集没枚举 ``」``。
+    而 API 的 ``entities.hashtags[].text`` 就是 ``FX戦士くるみちゃん``（与网页上 hashtag
+    链接的最后一段逐字一致），服务端自己算的边界，不受标点影响。
+
+    做法: 在**非锚点**的片段里，把 ``#<名字>`` 精确替换成链接。名字用 ``re.escape`` ——
+    实体里可能含正则元字符。**匹配不到就不动**（正文里的标签被平台改写过的情况），
+    交给兜底正则处理 —— 绝不为了"用上实体"而改写正文。
+    """
+
+    def link(name: str, source: str) -> str:
+        url = tag_page_url(platform, name)
+        if not url:
+            return source
+        return source.replace(f"#{name}", f'<a href="{html.escape(url, quote=True)}">#{html.escape(name)}</a>')
+
+    out: list[str] = []
+    pos = 0
+    # 锚点内的标签已经不裸 —— 跳过整段 ``<a>…</a>``（与正则那条路同一纪律）
+    for anchor in _ANCHOR_SEGMENT_RE.finditer(text):
+        out.append(_link_tags_in_segment(text[pos : anchor.start()], hashtags, link))
+        out.append(anchor.group(0))
+        pos = anchor.end()
+    out.append(_link_tags_in_segment(text[pos:], hashtags, link))
+    return "".join(out)
+
+
+def _link_tags_in_segment(segment: str, hashtags: Sequence[str], link: Callable[[str, str], str]) -> str:
+    """在**不含锚点**的片段里逐个标签做精确替换。
+
+    两件必须做对的事:
+
+    1. **长名字优先**: ``#foo`` 与 ``#foobar`` 都在实体里时，先换长的 ——
+       否则 ``#foobar`` 会先被 ``#foo`` 换出个残缺的 ``<a>#foo</a>bar``。
+    2. **每轮都跳过已生成的锚点**: 长名字换完后，短名字那一轮会在**刚生成的锚点内部**
+       再包一层（``<a …>`` 里嵌 ``<a>#foo</a>bar``，标签全乱）。所以逐轮重扫锚点，
+       只在锚点之外的片段里替换。
+    """
+    for name in sorted((n for n in hashtags if n), key=len, reverse=True):
+        # 前面不能是 ``\w`` / ``&`` / ``/`` —— 排除 ``a#b`` 与 URL 片段（与正则同判据）
+        pattern = re.compile(rf"(?<![\w&/])#{re.escape(name)}")
+        pieces: list[str] = []
+        pos = 0
+        for anchor in _ANCHOR_SEGMENT_RE.finditer(segment):
+            pieces.append(pattern.sub(lambda m, n=name: link(n, m.group(0)), segment[pos : anchor.start()]))
+            pieces.append(anchor.group(0))
+            pos = anchor.end()
+        pieces.append(pattern.sub(lambda m, n=name: link(n, m.group(0)), segment[pos:]))
+        segment = "".join(pieces)
+    return segment
+
+
+def link_hashtags(
+    text: str, platform: Platform | None = None, hashtags: Sequence[str] | None = None
+) -> str:
     r"""把正文里的 **所有** 裸 ``#标签`` 渲染成标签页链接（不限于行首）。
+
+    :param hashtags: **平台实体**给的标签名（不含 ``#``，如 twitter 的
+        ``entities.hashtags[].text``）。给了就先按名字精确链接化，**正则只兜底**剩下的
+        —— 正则在日文 ``」``、全角标点这些地方会把边界猜错（见 ``_link_known_tags``）。
+        没给（其它平台 / 拿不到实体）时行为与本参数引入前**逐字相同**。
 
     为什么要自己链接而不是交给服务端:
       - 服务端的 hashtag 自动识别**有字符限制**: ``#foo-bar`` / ``#foo.bar`` 会在 ``-``/``.``
@@ -564,6 +634,11 @@ def link_hashtags(text: str, platform: Platform | None = None) -> str:
         escaped = html.escape(tag)
         return f"\\#{escaped}" if at_line_start else f"#{escaped}"
 
+    # ① 先按**平台实体**精确链接化（服务端算好的边界，胜过正则猜）
+    if hashtags:
+        text = _link_known_tags(text, platform, hashtags)
+
+    # ② 剩下的裸标签用正则兜底（实体没覆盖到的，或平台没给实体）
     # 锚点内的标签已经不裸: 跳过整段 ``<a>…</a>``, 免得包第二层
     out: list[str] = []
     pos = 0

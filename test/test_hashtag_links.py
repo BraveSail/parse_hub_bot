@@ -77,6 +77,58 @@ def test_a_pure_number_is_not_a_tag():
     assert "<a href=" not in out, f"#1 不该被链接: {out!r}"
 
 
+# ── 平台实体优先：精确边界（用户报的 `#FX戦士くるみちゃん」第一話より`） ──
+
+
+def test_the_entity_fixes_the_japanese_bracket_boundary():
+    """**核心**: 实体给了精确标签名，日文 `」` 不再被吃进标签。
+
+    用户报障原话: tag 识别成 `#FX戦士くるみちゃん」第一話より` 了。
+    正则的终止集合没枚举 `」` ⇒ 一路吃到空格；而 API 的
+    `entities.hashtags[].text` 就是 `FX戦士くるみちゃん`（与网页 hashtag 链接一致）。
+    """
+    out = link_hashtags(
+        "TVアニメ「#FX戦士くるみちゃん」第一話より", Platform.TWITTER, ["FX戦士くるみちゃん"]
+    )
+    assert '">#FX戦士くるみちゃん</a>」第一話より' in out, out
+    # 链接文字里不能再出现 `」`
+    assert "」第一話より</a>" not in out, out
+
+
+def test_without_the_entity_the_regex_still_runs():
+    """对照: 没实体时行为与本改动前逐字相同（不破坏其它平台）"""
+    out = link_hashtags("TVアニメ「#FX戦士くるみちゃん」第一話より", Platform.TWITTER)
+    assert "#FX戦士くるみちゃん」第一話より</a>" in out, out
+
+
+def test_the_longest_name_wins():
+    """`#foo` 与 `#foobar` 都在实体里时，先换长的，避免换出残链 `<a>#foo</a>bar`"""
+    out = link_hashtags("#foobar 和 #foo", Platform.TWITTER, ["foo", "foobar"])
+    assert '<a href="https://x.com/hashtag/foobar">#foobar</a>' in out, out
+    assert '<a href="https://x.com/hashtag/foo">#foo</a>' in out, out
+    assert "</a>bar" not in out, out
+
+
+def test_regex_metacharacters_in_the_name_are_escaped():
+    """实体名可能含正则元字符 —— 必须 re.escape，否则要么匹配不上要么匹配错"""
+    out = link_hashtags("#a.c 结束", Platform.TWITTER, ["a.c"])
+    assert '#a.c</a>' in out, out
+
+
+def test_an_entity_name_that_is_not_in_the_text_changes_nothing():
+    """实体与正文不一致（被平台改写过）时**不动正文**，交给兜底正则"""
+    src = "正文里只有 #other"
+    out = link_hashtags(src, Platform.TWITTER, ["不存在的标签"])
+    assert out == link_hashtags(src, Platform.TWITTER), out
+
+
+def test_entities_do_not_touch_text_inside_an_existing_anchor():
+    """已有锚点里的内容不二次包装（与正则那条路同一纪律）"""
+    src = '<a href="https://x.com/hashtag/foo">#foo</a> 以及 #foo'
+    out = link_hashtags(src, Platform.TWITTER, ["foo"])
+    assert out.count("<a ") == 2, out
+
+
 def test_a_fragment_in_a_url_is_not_a_tag():
     """URL 里的 `#片段` 不是标签 (前面是字母/斜杠)"""
     out = link_hashtags("https://x.com/a#b", platform=Platform.TWITTER)

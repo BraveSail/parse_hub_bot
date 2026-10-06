@@ -128,6 +128,8 @@ class Twitter:
         view_count = (node.get("views") or {}).get("count")
         # 点赞数在 legacy.favorite_count (匿名请求同样返回)
         like_count = legacy.get("favorite_count")
+        # 标签取**平台实体**（服务端已算好边界）—— 正则猜边界会多吃日文标点（见 hashtags 字段说明）
+        hashtags = self._extract_hashtags(legacy.get("entities") or {})
 
         if article := node.get("article", {}):
             ta = ArticleRenderer(article["article_results"]["result"]).render()
@@ -143,6 +145,7 @@ class Twitter:
                 view_count=view_count,
                 like_count=like_count,
                 is_sensitive=bool(legacy.get("possibly_sensitive")),
+                hashtags=hashtags,
             )
 
         if note_tweet := node.get("note_tweet"):
@@ -201,6 +204,12 @@ class Twitter:
             # 外链卡片的预览图排在推文自带媒体**之后** (与 X 上的显示顺序一致)
             media_list.append(card_photo)
 
+        # 长推文的标签在 note_tweet 的 entity_set 里, 与 legacy 的合并（去重保序）
+        hashtags = self._extract_hashtags(
+            legacy.get("entities") or {},
+            ((node.get("note_tweet") or {}).get("note_tweet_results") or {}).get("result", {}).get("entity_set") or {},
+        )
+
         return TwitterTweet(
             tweet_id=tweet_id,
             full_text=full_text,
@@ -214,6 +223,7 @@ class Twitter:
             view_count=view_count,
             like_count=like_count,
             is_sensitive=bool(legacy.get("possibly_sensitive")),
+            hashtags=hashtags,
         )
 
     @staticmethod
@@ -280,6 +290,26 @@ class Twitter:
         return text
 
     @staticmethod
+    def _extract_hashtags(*sources: dict) -> list[str]:
+        """从实体里取标签名 (不含 ``#``)。
+
+        长推文 (note tweet) 的实体在 ``note_tweet...entity_set.hashtags``, 平铺的在
+        ``legacy.entities.hashtags`` —— 两处都看, 去重保序。
+
+        ⚠️ **不用 ``indices``**: 那是指向**原始** ``full_text`` 的位置, 而正文到渲染层时
+        已经被加工过 (短链展开、t.co 去掉), 位置会漂。用 ``text`` 按名字匹配更稳。
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+        for source in sources:
+            for entity in (source or {}).get("hashtags") or []:
+                name = str((entity or {}).get("text") or "").strip().lstrip("#").strip()
+                if name and name not in seen:
+                    seen.add(name)
+                    out.append(name)
+        return out
+
+    @staticmethod
     def _extract_author_name(result: dict) -> str:
         user_result = result.get("core", {}).get("user_results", {}).get("result", {})
         legacy = user_result.get("legacy", {}) if isinstance(user_result, dict) else {}
@@ -332,6 +362,7 @@ class TwitterTweet:
         published_at: datetime | None = None,
         view_count: int | None = None,
         like_count: int | None = None,
+        hashtags: list[str] | None = None,
     ):
         self.tweet_id = tweet_id
         self.full_text = re.sub(r"\s*https://t\.co/[^\s,]+$", "", full_text or "") if media else full_text
@@ -355,6 +386,13 @@ class TwitterTweet:
         """浏览量 (views.count)"""
         self.like_count = to_int(like_count)
         """点赞数 (legacy.favorite_count)"""
+        self.hashtags = hashtags or []
+        """正文里的标签 (不含 ``#``), 来自平台实体 ``entities.hashtags[].text``。
+
+        **平台自己算的边界** —— 比正则可靠: 日文标点 (``」``)、全角符号这些,
+        正则要么没枚举到、要么枚举不全, 而实体是服务端切的, 与网页上的 hashtag 链接一致。
+        拿不到实体时为空列表, 渲染层退回正则。
+        """
 
 
 @dataclass

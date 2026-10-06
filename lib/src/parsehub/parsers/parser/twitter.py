@@ -113,6 +113,23 @@ class TwitterParser(BaseParser):
         return "", []
 
     @staticmethod
+    @staticmethod
+    def _hashtags(tweet: TwitterTweet) -> list[str]:
+        """正文与被引用推文的标签，去重保序。
+
+        被引用推文的标签也要 —— 它渲染成引用卡片，卡片正文里的标签同样要能点
+        （渲染层对引用块也走同一套链接化）。
+        """
+        out = list(tweet.hashtags)
+        seen = set(out)
+        for other in (tweet.quoted_status, tweet.reply_to):
+            for tag in getattr(other, "hashtags", None) or []:
+                if tag not in seen:
+                    seen.add(tag)
+                    out.append(tag)
+        return out
+
+    @staticmethod
     def to_media_refs(media_items: Sequence[TwitterPhoto | TwitterVideo | TwitterAni] | None) -> list[AnyMediaRef]:
         """把 provider 的媒体对象转成下载用的 ref (主推与被引用推文共用)。"""
         refs: list[AnyMediaRef] = []
@@ -165,6 +182,8 @@ class TwitterParser(BaseParser):
                 like_count=tweet.like_count,
                 quoted_media_count=quoted_total,
                 reply_media_count=len(reply_media),
+                # 标签走**平台实体**（服务端算好的边界），渲染层据此精确链接化
+                hashtags=TwitterParser._hashtags(tweet),
             )
         return MultimediaParseResult(
             content=TwitterParser._compose(tweet.full_text, tweet, yt_quote),
@@ -178,6 +197,7 @@ class TwitterParser(BaseParser):
             like_count=tweet.like_count,
             quoted_media_count=quoted_total,
             reply_media_count=len(reply_media),
+            hashtags=TwitterParser._hashtags(tweet),
         )
 
 

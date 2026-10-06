@@ -169,6 +169,39 @@ class RoundtripTest(unittest.TestCase):
         self.assertIs(type(back), PixivParseResult, "平台子类丢了 —— 平台专属下载头会失效")
         self.assertIs(type(back)._do_download, PixivParseResult._do_download)
 
+    def test_hashtags_survive_the_roundtrip(self):
+        """标签（渲染层做精确链接化要用）必须往返无损 —— 丢了就退回正则猜边界。"""
+        from parsehub.types.result import RichTextParseResult, VideoParseResult
+
+        for cls, kwargs in (
+            (VideoParseResult, {"video": "https://x"}),
+            (RichTextParseResult, {"markdown_content": "md"}),
+        ):
+            with self.subTest(result=cls.__name__):
+                original = cls(**kwargs, hashtags=["FX戦士くるみちゃん", "tag2"])
+                back = _roundtrip(original)
+                self.assertEqual(back.hashtags, ["FX戦士くるみちゃん", "tag2"])
+
+    def test_an_empty_hashtag_list_roundtrips_as_empty(self):
+        """空列表 = "拿不到实体" ⇒ 渲染层退回正则；不能变成 None 或丢掉字段"""
+        from parsehub.types.result import VideoParseResult
+
+        back = _roundtrip(VideoParseResult(video="https://x"))
+        self.assertEqual(back.hashtags, [])
+
+    def test_hashtags_are_not_added_to_the_public_dict(self):
+        """``to_dict()`` 是公开输出格式（被别的测试逐字段冻住）—— 不该多出字段"""
+        from parsehub.types.result import VideoParseResult
+
+        self.assertNotIn("hashtags", VideoParseResult(video="https://x", hashtags=["a"]).to_dict())
+
+    def test_the_hashtag_field_is_in_the_cache_format(self):
+        """但缓存格式里有 —— 否则往返就丢了"""
+        from parsehub.types.result import VideoParseResult
+
+        data = result_to_cache_dict(VideoParseResult(video="https://x", hashtags=["a"]))
+        self.assertEqual(data["hashtags"], ["a"])
+
     def test_the_impl_name_is_recorded(self):
         """缓存字典要带上具体类名（按 PostType 重建只能得到通用类）"""
         from parsehub.parsers.parser.pixiv import PixivParseResult

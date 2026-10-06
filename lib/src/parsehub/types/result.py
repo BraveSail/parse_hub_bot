@@ -43,6 +43,7 @@ class ParseResult(ABC):  # noqa: B024
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
     ):
@@ -58,6 +59,9 @@ class ParseResult(ABC):  # noqa: B024
         :param author_handle: 作者的用户名/账号 (不带 @), 平台没提供时为空
         :param author_url: 作者主页地址, 平台没提供或拿不到时为空
         :param tags: 作品标签 (平台提供时才有, 去重且保持原顺序)
+        :param hashtags: 正文里的标签名 (**不含 ``#``**, 去重保序) —— 来自**平台实体**
+            (如 twitter 的 ``entities.hashtags[].text``)。渲染层拿它做精确链接化, 避免用正则
+            猜标签边界 (日文 ``」``、全角标点这类会把边界猜错)。拿不到就为空, 退回正则。
         :param quoted_media_count: ``media`` 末尾有多少个是**被引用内容**的媒体
             (渲染在被引用卡片里, 其余属于正文/被回复内容)
         :param reply_media_count: ``media`` 中, 在 ``quoted_media_count`` 之前的多少个
@@ -76,6 +80,8 @@ class ParseResult(ABC):  # noqa: B024
         self.view_count = to_int(view_count)
         self.like_count = to_int(like_count)
         self.tags = self._clean_tags(tags)
+        self.hashtags = self._clean_tags(hashtags)
+        """正文里的标签名 (不含 ``#``), 来自平台实体; 空列表表示拿不到 (渲染层退回正则)"""
         self.quoted_media_count = max(0, to_int(quoted_media_count) or 0)
         self.reply_media_count = max(0, to_int(reply_media_count) or 0)
         self.name = slugify(
@@ -359,6 +365,7 @@ class VideoParseResult(ParseResult):
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
     ):
@@ -375,6 +382,7 @@ class VideoParseResult(ParseResult):
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
+            hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
         )
@@ -398,6 +406,7 @@ class ImageParseResult(ParseResult):
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
     ):
@@ -414,6 +423,7 @@ class ImageParseResult(ParseResult):
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
+            hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
         )
@@ -437,6 +447,7 @@ class MultimediaParseResult(ParseResult):
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
     ):
@@ -452,6 +463,7 @@ class MultimediaParseResult(ParseResult):
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
+            hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
         )
@@ -481,6 +493,7 @@ class RichTextParseResult(ParseResult):
         author_handle: str = "",
         author_url: str = "",
         tags: Sequence[str] | None = None,
+        hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
     ):
@@ -502,6 +515,7 @@ class RichTextParseResult(ParseResult):
             author_handle=author_handle,
             author_url=author_url,
             tags=tags,
+            hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
         )
