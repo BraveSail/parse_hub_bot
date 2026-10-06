@@ -305,6 +305,7 @@ class LinuxDoTopic:
         - ``div.spoiler``：只保留内容
         - ``img.emoji`` / ``img.avatar``：直接去掉 —— emoji 的 alt 是 ``:name:`` 形式,
           留在正文里既不美观也不是原样文本; 头像则是引用回复头部的装饰
+        - ``div.poll``：改写成结构化的投票块（见 ``_convert_polls``）
         """
         for tag in soup.find_all("img", class_=["emoji", "avatar"]):
             tag.decompose()
@@ -316,6 +317,38 @@ class LinuxDoTopic:
             summary.decompose()
         for spoiler in soup.find_all("div", class_="spoiler"):
             spoiler.unwrap()
+        LinuxDoTopic._convert_polls(soup)
+
+    @staticmethod
+    def _convert_polls(soup: BeautifulSoup) -> None:
+        """把 Discourse 的投票改写成「标题 + 选项列表」。
+
+        不处理的话，poll 就是一段 HTML，直接转 markdown 会把**选项与人数标签**
+        糊成一串裸文字（如 ``选项A / 选项B / 0 / 投票人``）—— 看不出这是投票，
+        最后那个 ``0 投票人`` 还像是正文的残句（用户报的就是这个）。
+
+        ⚠️ **各选项的票数拿不到**：源数据里（``/t/topic/<id>.json`` 的 ``cooked``
+        与页面 HTML）只有**参与人数**，每个选项的票数由前端另拉
+        ``/polls/voters.json`` —— 实测本站返回 400（``invalid parameters: poll_name``）。
+        这里只渲染确实拿得到的东西，**不给票数编造占位**。
+        """
+        for poll in soup.find_all("div", class_="poll"):
+            options = [li.get_text(" ", strip=True) for li in poll.select("li[data-poll-option-id]")]
+            if not options:
+                continue
+            count = poll.select_one(".poll-info_counts .info-number")
+            voters = count.get_text(strip=True) if count else ""
+            block = soup.new_tag("div")
+            head = soup.new_tag("p")
+            head.string = f"📊 投票（{voters} 人参与）" if voters else "📊 投票"
+            block.append(head)
+            options_list = soup.new_tag("ul")
+            for option in options:
+                item = soup.new_tag("li")
+                item.string = option
+                options_list.append(item)
+            block.append(options_list)
+            poll.replace_with(block)
 
     @staticmethod
     def _to_markdown(html: str) -> str:

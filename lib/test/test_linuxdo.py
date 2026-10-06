@@ -144,6 +144,60 @@ def test_avatar_is_not_media_and_is_removed_from_the_body():
     assert "我的回复" in topic.markdown_content
 
 
+#: 真实抓到的 poll HTML（2026-10-06 从 ``/t/topic/2985951.json`` 的 cooked 里取）
+POLL_COOKED = (
+    "<p>要不然是不是只用过o/的codex，没被a/封过号，a/封号是让我挺恶心的</p>"
+    '<div class="poll" data-poll-charttype="bar" data-poll-name="poll" data-poll-public="false"'
+    ' data-poll-results="always" data-poll-status="open" data-poll-type="regular">'
+    '<div class="poll-container"><ul>'
+    '<li data-poll-option-id="d7ffaa1410bc2fd4b0be1de8a1ad3bb3">还在用a/感觉良好</li>'
+    '<li data-poll-option-id="2f9cd91f0d73a903a7d4849965241509">没用过a/，感觉o/实在恶心</li>'
+    '<li data-poll-option-id="1f35519f11e1df7980d56c002bad370b">即使被a/封过付费号，也觉得o/比a/不当人</li>'
+    '<li data-poll-option-id="0520d1c3d9d52393b184ac30d88958e7">一直觉得a/比o/恶心</li>'
+    "</ul></div>"
+    '<div class="poll-info"><div class="poll-info_counts"><div class="poll-info_counts-count">'
+    '<span class="info-number">0</span><span class="info-label">投票人</span>'
+    "</div></div></div></div>"
+)
+
+
+def test_a_poll_renders_as_a_vote_block_not_as_loose_text():
+    """投票要渲染成「标题 + 选项列表」—— 不能糊成一串裸文字。
+
+    以前 poll 就是一段 HTML，转 markdown 后选项与"人数标签"混在一起，
+    末尾孤零零一个 `0 / 投票人` 看起来像正文的残句（用户报障就是这个）。
+    """
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = POLL_COOKED
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    md = topic.markdown_content
+
+    # 正文段落还在
+    assert "没被a/封过号" in md
+    # 有一个明确的投票标题，人数在里面
+    assert "📊 投票（0 人参与）" in md, md
+    # 选项各自成条目（markdown 列表），而不是与人数糊在一行
+    assert "还在用a/感觉良好" in md
+    assert "一直觉得a/比o/恶心" in md
+    # 选项各自成列表项 (markdown 的 `* `), 而不是与人数标签糊成一行
+    assert "* 还在用a/感觉良好" in md, md
+    assert md.count("\n* ") == 4, md
+    # "投票人" 这个标签词不该再作为裸文字出现（已并入标题）
+    assert "投票人" not in md, md
+    # 不泄漏 Discourse 的内部属性
+    assert "data-poll" not in md
+    assert "info-number" not in md
+
+
+def test_a_poll_without_options_is_dropped():
+    """poll 里没有选项时不要留下空壳"""
+    payload = make_payload()
+    payload["post_stream"]["posts"][0]["cooked"] = '<p>正文</p><div class="poll"></div>'
+    topic = LinuxDoTopic._from_payload(payload, "2979226")
+    assert "📊" not in topic.markdown_content
+    assert "正文" in topic.markdown_content
+
+
 def test_floor_counts_come_from_the_floor_not_the_topic():
     """指定楼层时, 时间与点赞要用那一层的, 不能用主题级 (那是楼主帖/全话题的)"""
     payload = make_payload(
