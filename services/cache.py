@@ -26,7 +26,11 @@ from enum import StrEnum
 from typing import Any
 
 from parsehub.types.result import AnyParseResult
-from parsehub.types.serialize import result_from_cache_dict, result_to_cache_dict
+from parsehub.types.serialize import (
+    can_rebuild_from_cache,
+    result_from_cache_dict,
+    result_to_cache_dict,
+)
 from pydantic import BaseModel
 
 from core import bs
@@ -159,6 +163,13 @@ class ResultCache:
             return None
 
     async def set(self, url: str, result: AnyParseResult, ttl: int | None = None) -> None:
+        # **读不回来的结果不要写**: 例如 yt-dlp 系 (必填运行期句柄 `dl`), 写进去也永远
+        # 重建不了 —— 每次读都要"删除 + 重新解析 + 再写", 白占 Redis 还刷 warning 日志。
+        if not can_rebuild_from_cache(result):
+            self.logger.debug(
+                f"结果无法从缓存原样重建, 跳过写入: url={url} impl={type(result).__name__}"
+            )
+            return
         try:
             payload = json.dumps(result_to_cache_dict(result), ensure_ascii=False)
         except Exception as e:  # noqa: BLE001 - 序列化失败只是没缓存, 不该打断解析

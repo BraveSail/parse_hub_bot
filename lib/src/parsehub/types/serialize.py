@@ -33,6 +33,15 @@ from .result import (
     VideoParseResult,
 )
 
+
+class ResultRebuildUnavailable(RuntimeError):
+    """缓存里的**具体结果类无法重建**（通常因为它需要运行期句柄, 如 yt-dlp 系的 ``dl``）。
+
+    调用方应当**重新解析**, 而不是拿一个降级的对象继续用 —— 降级会静默换掉下载逻辑,
+    实测症状见 ``result_from_cache_dict`` 里那段注释。
+    """
+
+
 #: 媒体类型标签 —— **序列化必须显式带上**, 否则重建时区分不了 (见模块 docstring)
 _KIND_TO_CLASS: dict[str, type[MediaRef]] = {
     "video": VideoRef,
@@ -89,6 +98,46 @@ def _constructor_param(cls: type) -> str | None:
         if (param := _KIND_TO_PARAM.get(base)) is not None:
             return param
     return None
+
+
+#: ``build()`` 能提供的构造参数名（与它实际传的 kwargs 一致）
+_BUILDABLE_PARAMS = frozenset({
+    "title", "author_name", "is_sensitive", "published_at", "view_count", "like_count",
+    "author_handle", "author_url", "tags", "quoted_media_count", "reply_media_count",
+    "content", "video", "photo", "media", "markdown_content",
+})
+
+
+def _required_init_params(cls: type) -> set[str]:
+    """这个类 ``__init__`` 里**没有默认值**的参数名（不含 self）。"""
+    import inspect
+
+    try:
+        sig = inspect.signature(cls.__init__)
+    except (TypeError, ValueError):
+        return set()
+    return {
+        name
+        for name, param in sig.parameters.items()
+        if name != "self"
+        and param.default is inspect.Parameter.empty
+        and param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }
+
+
+def can_rebuild_from_cache(result: AnyParseResult) -> bool:
+    """这条结果能不能从缓存里**原样**读回来（同一个类、同一套行为）。
+
+    不能的情况: 类要求**运行期句柄** —— yt-dlp 系的 ``YtVideoParseResult`` 必填 ``dl``
+    （一个 ``YtVideoInfo``), 缓存里存不下这种东西。
+
+    这类结果**不要写进结果层缓存**: 写了也永远读不出来 (``result_from_cache_dict`` 会拒绝),
+    只会让每次读都触发一次"删除 + 重新解析 + 再写", 并在日志里刷 warning。
+    """
+    cls = type(result)
+    if _constructor_param(cls) is None:
+        return False
+    return _required_init_params(cls) <= _BUILDABLE_PARAMS
 
 
 def _platform_from_id(platform_id: str) -> Platform | None:
@@ -212,15 +261,25 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
 
     try:
         result = build(cls)
-    except TypeError:
-        # 有些平台子类**不能**用这套参数重建 —— yt-dlp 系的 `YtVideoParseResult` 要求
-        # 必填的 `dl`(下载器实例), 那是运行期句柄, 缓存里不可能有。
-        # 退回通用类: 平台专属行为会退化, 但**不丢缓存、不报错**(与恢复子类之前的行为一致)。
+    except TypeError as exc:
+        # 类**找得到但构造不了** —— 平台子类要求运行期句柄 (yt-dlp 系的 `YtVideoParseResult`
+        # 必填 `dl`, 缓存里不可能有)。**不要退回通用类**:
+        #
+        # 退通用类 = 静默换上另一套下载逻辑。2026-10-06 实测的故障: YouTube 缓存命中后退成
+        # ``VideoParseResult``, 它没有 yt-dlp 的下载实现, 于是走基类的分片下载器去下
+        # ``VideoRef.url`` —— 那是 ``www.youtube.com/shorts/...`` 的**页面 URL**,
+        # 下回来 1.2MB HTML, 产物不是媒体, 媒体处理阶段直接
+        # ``ffprobe failed to get container: {}`` 失败 (用户报的就是这个)。
+        #
+        # 抛出去让调用方**重新解析**: ``services/cache.py`` 会把这条缓存删掉并按未命中处理,
+        # 于是行为与现场解析完全一致。代价是这些平台不再享受结果层缓存 (它们本来也几乎命中不了
+        # 正确行为), 换来的是**不会拿错对象去下载**。
         generic = _TYPE_TO_CLASS[data["type"]]
         if cls is generic:
             raise
-        logger.warning(f"结果类无法重建, 退回通用类: impl={cls.__name__} → {generic.__name__}")
-        result = build(generic)
+        raise ResultRebuildUnavailable(
+            f"结果类 {cls.__name__} 需要运行期句柄, 无法从缓存重建 —— 应重新解析"
+        ) from exc
 
     # raw_url 不在构造参数里 (基类里初始为空串), 重建后单独赋回
     result.raw_url = data.get("raw_url", "")
@@ -230,4 +289,9 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
     return result
 
 
-__all__ = ["result_from_cache_dict", "result_to_cache_dict"]
+__all__ = [
+    "ResultRebuildUnavailable",
+    "can_rebuild_from_cache",
+    "result_from_cache_dict",
+    "result_to_cache_dict",
+]

@@ -17,7 +17,11 @@ from parsehub.types.result import (
     RichTextParseResult,
     VideoParseResult,
 )
-from parsehub.types.serialize import result_from_cache_dict, result_to_cache_dict
+from parsehub.types.serialize import (
+    ResultRebuildUnavailable,
+    result_from_cache_dict,
+    result_to_cache_dict,
+)
 
 PUBLISHED = datetime(2026, 10, 1, 19, 48, tzinfo=timezone(timedelta(hours=8)))
 
@@ -201,22 +205,27 @@ class RoundtripTest(unittest.TestCase):
 
             with self.subTest(platform_result=name):
                 back = _roundtrip(instance)
-                self.assertIsInstance(
-                    back,
-                    cls if not issubclass(cls, YtVideoParseResult) else VideoParseResult,
-                    f"{name} 降级成了 {type(back).__name__}",
-                )
+                # 能构造的类必须**原样**回来: 降级成别的类 = 挂在这个类上的下载/渲染行为失效
+                self.assertIsInstance(back, cls, f"{name} 降级成了 {type(back).__name__}")
                 checked += 1
         self.assertGreater(checked, 5, f"只检查到 {checked} 个平台子类, 断言没覆盖到位")
 
-    def test_a_class_that_needs_runtime_state_falls_back(self):
-        """yt-dlp 系的结果类带必填的 `dl`(下载器句柄), 缓存里不可能有 —— 必须退回通用类,
-        而不是抛异常 (抛了就等于这些平台的缓存**永远读不出来**)。"""
+    def test_a_class_that_needs_runtime_state_is_refused(self):
+        """yt-dlp 系的结果类带必填的 `dl`(下载器句柄), 缓存里不可能有 —— **必须拒绝重建**。
+
+        2026-10-06 实测的故障（就是这个"退回通用类"造成的）: YouTube 缓存命中后退成
+        ``VideoParseResult``, 它没有 yt-dlp 的下载实现, 于是走基类的分片下载器去下
+        ``VideoRef.url`` —— 那是 ``www.youtube.com/shorts/...`` 的**页面 URL**,
+        下回来 1.2MB HTML, 产物不是媒体, 媒体处理阶段 ``ffprobe failed to get container: {}``。
+
+        抛出去让调用方重新解析（``services/cache.py`` 会删掉这条缓存并按未命中处理）,
+        行为才与现场解析一致。旧注释担心"抛了等于缓存永远读不出来"—— 读不出来**不是故障**,
+        拿错对象去下载才是。
+        """
         data = result_to_cache_dict(VideoParseResult(title="t", content="c"))
         data["impl"] = YtVideoParseResult.__name__
-        back = result_from_cache_dict(data)
-        self.assertIsInstance(back, VideoParseResult)
-        self.assertEqual(back.title, "t")
+        with self.assertRaises(ResultRebuildUnavailable):
+            result_from_cache_dict(data)
 
     def test_an_unknown_impl_falls_back_to_the_generic_class(self):
         """平台子类被移除后 (老缓存) 退回通用类, 而不是抛异常"""

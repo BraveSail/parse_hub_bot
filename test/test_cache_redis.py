@@ -98,6 +98,66 @@ def test_a_corrupt_entry_is_deleted_and_treated_as_a_miss():
     broken.delete.assert_awaited_once_with(ResultCache._key(URL))
 
 
+def test_an_entry_that_needs_runtime_state_is_a_miss_not_a_downgrade():
+    """缓存里的类**构造不出来**时按未命中处理 —— 绝不降级成通用类。
+
+    2026-10-06 的故障（用户报 ``ffprobe failed to get container``）: yt-dlp 系的
+    ``YtbVideoParseResult`` 需要运行期句柄 ``dl``, 缓存里不可能有; 旧行为把它降级成
+    ``VideoParseResult`` —— 那个类没有 yt-dlp 的下载实现, 于是用基类的分片下载器去下
+    ``VideoRef.url``（``www.youtube.com/shorts/...`` 的**页面 URL**）, 拿回 1.2MB HTML,
+    产物不是媒体 → 媒体处理阶段 ffprobe 直接失败。
+
+    正确行为: 删掉这条缓存 + 当未命中, 让调用方**重新解析**（行为与现场解析一致）。
+    """
+    from parsehub.types.result import VideoParseResult
+    from parsehub.types.serialize import result_to_cache_dict
+
+    from services import redis_client
+
+    payload = result_to_cache_dict(VideoParseResult(title="t", content="c"))
+    payload["impl"] = "YtbVideoParseResult"  # 类存在, 但必填 dl
+    fake = MagicMock()
+    fake.get = AsyncMock(return_value=json.dumps(payload))
+    fake.delete = AsyncMock(return_value=1)
+    with patch.object(redis_client, "get_redis", return_value=fake):
+        assert asyncio.run(ResultCache().get(URL)) is None
+    fake.delete.assert_awaited_once_with(ResultCache._key(URL))
+
+
+def test_a_result_that_cannot_be_rebuilt_is_not_written():
+    """读不回来的结果**不要写结果层** —— 写了也永远重建不了, 每次读都要删+重解析+重写。
+
+    yt-dlp 系（``YtbVideoParseResult`` 等）就是这种: 必填运行期句柄。
+    """
+    from parsehub.parsers.base.ytdlp import YtVideoInfo, YtVideoParseResult
+
+    from services import redis_client
+
+    dl = YtVideoInfo(
+        title="t", description="", thumbnail="", url="https://x", info_json={}, duration=1
+    )
+    result = YtVideoParseResult(dl=dl, title="t")
+
+    fake = MagicMock()
+    fake.set = AsyncMock()
+    with patch.object(redis_client, "get_redis", return_value=fake):
+        asyncio.run(ResultCache().set(URL, result))
+
+    fake.set.assert_not_awaited()
+
+
+def test_a_normal_result_is_still_written():
+    """反面: 能重建的结果照常写入（跳过规则不能误伤普通结果）"""
+    from services import redis_client
+
+    fake = MagicMock()
+    fake.set = AsyncMock()
+    with patch.object(redis_client, "get_redis", return_value=fake):
+        asyncio.run(ResultCache().set(URL, MultimediaParseResult(title="t")))
+
+    fake.set.assert_awaited_once()
+
+
 # ---------------------------------------------------------------- 写入
 
 
