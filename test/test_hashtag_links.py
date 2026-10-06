@@ -40,16 +40,41 @@ def test_a_hyphenated_tag_is_linked_whole():
     assert "hashtag/foo-bar" in out
 
 
-def test_a_numeric_tag_is_linked():
-    """纯数字标签服务端完全不识别 —— 我们照样给链接"""
+def test_a_numeric_tag_is_left_as_text():
+    """纯数字**不链接**：那通常是楼层号/序号（``作者 · #1``），不是标签。
+
+    服务端本来也不把 ``#123`` 识别成 hashtag；硬链接它反而会造出指向不存在标签页的
+    链接（并曾把 ``#1</i>`` 的闭合标签吞进链接文字，导致正文裸露 ``<i>``）。
+    """
     out = link_hashtags("见 #123", platform=Platform.TWITTER)
-    assert '<a href="https://x.com/hashtag/123">#123</a>' in out
+    assert "#123" in out
+    assert "<a href=" not in out, out
 
 
 def test_a_trailing_period_stays_outside_the_tag():
     """句读是边界: `#tag.` 的句号不属于标签"""
     out = link_hashtags("看这个 #tag.", platform=Platform.TWITTER)
     assert ">#tag</a>." in out
+
+
+def test_a_tag_does_not_swallow_a_following_html_tag():
+    """标签后面紧跟的 HTML 标签**不能被吞进标签名**。
+
+    实测症状（linux.do 引用块署名行 ``作者 · #1``）: 标签正则不排除 ``<`` ``>`` ``/``，
+    于是 ``#1</i>`` 整段被当成标签名 —— ``</i>`` 变成链接文字、闭合标签丢失，
+    后面所有 ``<i>`` 就裸露在消息里（用户报「引用里为什么有个 i 标签」）。
+    """
+    out = link_hashtags("> <i>SUN · #1</i>", platform=Platform.TWITTER)
+    assert "</i>" in out, f"闭合标签必须保留: {out!r}"
+    assert "&lt;/i&gt;" not in out and "&amp;lt;/i&amp;gt;" not in out, out
+    assert out.count("<i>") == out.count("</i>"), out
+
+
+def test_a_pure_number_is_not_a_tag():
+    """纯数字是楼层号/序号，不是标签（linux.do 的 ``作者 · #1``）"""
+    out = link_hashtags("Herta42 · #1", platform=Platform.LINUXDO)
+    assert "#1" in out
+    assert "<a href=" not in out, f"#1 不该被链接: {out!r}"
 
 
 def test_a_fragment_in_a_url_is_not_a_tag():

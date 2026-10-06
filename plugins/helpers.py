@@ -525,7 +525,10 @@ def rich_content(parse_result: AnyParseResult) -> str:
 #: 标签的字符边界: 空白与常见句读 **终止** 标签 (``#tag.`` 的句号不属于标签)。
 #: 注意 ``-`` **不**在终止集合里 —— ``#foo-bar`` 整串才是一个标签, 而服务端的自动识别
 #: 会在连字符处截断 (只染蓝 ``#foo``), 看着像标签被切了。
-_TAG_BODY = r"[^\s#，。！？、,.!?）)】\]]+"
+#: 标签体的字符边界。**必须排除 ``<`` ``>`` ``/``** —— 否则会把紧跟在标签后面的
+#: HTML 标签一起吞进去（实测症状: 引用块署名行的 ``#1</i>`` 把 ``</i>`` 吃成链接文字，
+#: 闭合标签丢失后，后面的 ``<i>`` 就裸露在消息里）。
+_TAG_BODY = r"[^\s#，。！？、,.!?）)】\]<>/]+"
 #: 任意位置的 ``#标签`` (前面不是字母/数字/``&``/``/`` —— 排除 ``a#b`` 与 URL 里的片段)
 _HASH_TAG_RE = re.compile(rf"(?<![\w&/])#({_TAG_BODY})")
 #: 已经是链接的整段 (``<a …>…</a>``): 处理标签时跳过, 免得把标签包第二层
@@ -548,6 +551,10 @@ def link_hashtags(text: str, platform: Platform | None = None) -> str:
 
     def repl(match: re.Match[str]) -> str:
         tag = match.group(1)
+        # **纯数字不是标签** —— 那是楼层号/序号（如引用块署名行的 ``作者 · #1``）。
+        # 不排除的话 ``#1`` 会被链接到标签页（linux.do 上还会变成不存在的 tag 链接）。
+        if tag.isdigit():
+            return match.group(0)
         url = tag_page_url(platform, tag)
         if url:
             label = html.escape(tag)
