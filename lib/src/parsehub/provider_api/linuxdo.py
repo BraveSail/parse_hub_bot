@@ -327,20 +327,20 @@ class LinuxDoTopic:
         糊成一串裸文字（如 ``选项A / 选项B / 0 / 投票人``）—— 看不出这是投票，
         最后那个 ``0 投票人`` 还像是正文的残句（用户报的就是这个）。
 
-        ⚠️ **各选项的票数拿不到**：源数据里（``/t/topic/<id>.json`` 的 ``cooked``
-        与页面 HTML）只有**参与人数**，每个选项的票数由前端另拉
-        ``/polls/voters.json`` —— 实测本站返回 400（``invalid parameters: poll_name``）。
-        这里只渲染确实拿得到的东西，**不给票数编造占位**。
+        ⚠️ **票数/参与人数都不显示**：``cooked`` 里那个 ``info-number`` **永远是 0**
+        （占位），真实结果由前端另拉 ``/polls/voters.json`` —— 实测即使在
+        meta.discourse.org 的老帖（4.3 万浏览、十几个选项）上，``topic.json``
+        里也是 0。把它渲染成「0 人参与」是**假信息**（用户看到"实际 214"），
+        所以只渲染确实可信的东西：标题 + 选项。
         """
         for poll in soup.find_all("div", class_="poll"):
             options = [li.get_text(" ", strip=True) for li in poll.select("li[data-poll-option-id]")]
             if not options:
                 continue
-            count = poll.select_one(".poll-info_counts .info-number")
-            voters = count.get_text(strip=True) if count else ""
             block = soup.new_tag("div")
             head = soup.new_tag("p")
-            head.string = f"📊 投票（{voters} 人参与）" if voters else "📊 投票"
+            # 不带人数: cooked 里的 info-number 是不可信的占位 (见 docstring)
+            head.string = "📊 投票"
             block.append(head)
             options_list = soup.new_tag("ul")
             for option in options:

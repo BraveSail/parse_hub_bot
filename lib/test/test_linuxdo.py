@@ -174,8 +174,12 @@ def test_a_poll_renders_as_a_vote_block_not_as_loose_text():
 
     # 正文段落还在
     assert "没被a/封过号" in md
-    # 有一个明确的投票标题，人数在里面
-    assert "📊 投票（0 人参与）" in md, md
+    # 有一个明确的投票标题
+    assert "📊 投票" in md, md
+    # **不显示人数**: cooked 里的 info-number 是占位 0 (真实票数要另拉 voters.json),
+    # 渲染成"0 人参与"就是假信息 —— 用户明确报过"网页实际是 214 投票人"
+    assert "人参与" not in md, md
+    assert "0" not in md.split("📊")[1].split("\n")[0], md
     # 选项各自成条目（markdown 列表），而不是与人数糊在一行
     assert "还在用a/感觉良好" in md
     assert "一直觉得a/比o/恶心" in md
