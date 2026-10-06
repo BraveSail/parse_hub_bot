@@ -175,12 +175,11 @@ async def edit_inline_rich_message(
     session = await cli.get_session(unpacked.dc_id, is_media=True)
     if blocks:
         rich = InputRichMessage(blocks=blocks)
-        # blocks 里的媒体由各 block 自己上传 (_get_input_photo/Document, peer=self)
-        raw_rich = await rich.write(client=cli, chat_id=None)
     else:
         rich = InputRichMessage(markdown=markdown, media=media or None)
-        # 走 InputRichMessage.write: 它负责把媒体上传/复用成 InputRichFile*
-        raw_rich = await rich.write(client=cli, chat_id=None)
+    # 媒体上传发生在 write 里 (blocks 路径由各 block 自己上传); 封面 URL 抓不到时
+    # 服务端会拒收整条 —— 去掉封面重发一次 (普通路径一直有这个兜底)。
+    raw_rich = await with_cover_fallback(rich, lambda r: r.write(client=cli, chat_id=None))
     await session.invoke(
         raw.functions.messages.EditInlineBotMessage(
             id=unpacked,
@@ -223,7 +222,9 @@ def cache_media_blocks(entry) -> tuple[list, list[str], list[str], list[str], di
             case CacheMediaType.PHOTO:
                 kind, item = "photo", InputMediaPhoto(m.file_id)
             case CacheMediaType.VIDEO:
-                kind, item = "video", InputMediaVideo(m.file_id)
+                # 缓存里存了封面的 file_id 就用上 —— 否则"第二次发同一个链接"视频没封面
+                # (第一次直发是本地 thumb, 缓存这条路以前把它丢了)。
+                kind, item = "video", InputMediaVideo(m.file_id, thumb=m.cover_file_id or None)
             case CacheMediaType.ANIMATION:
                 kind, item = "video", InputMediaAnimation(m.file_id)
             case CacheMediaType.DOCUMENT:
@@ -427,12 +428,18 @@ async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]
                 item.media = InputMediaPhoto(file_id)
                 entries.append(CacheMedia(type=CacheMediaType.PHOTO, file_id=file_id))
             else:
+                # 封面: 本地文件必须**一起上传**才存得进 document 的缩略图里。
+                # 以前这里没传 thumb, 于是 inline 记账过的视频**永远没有封面**
+                # (编辑时用的是这份 file_id, 原来的 thumb 已经不在参数里了)。
+                thumb_path = getattr(inner, "thumb", None)
+                thumb = await cli.save_file(thumb_path) if thumb_path else None
                 uploaded = await cli.invoke(
                     raw.functions.messages.UploadMedia(
                         peer=raw.types.InputPeerSelf(),
                         media=raw.types.InputMediaUploadedDocument(
                             file=await cli.save_file(source),
                             mime_type=getattr(inner, "mime_type", None) or "video/mp4",
+                            thumb=thumb,
                             attributes=[
                                 raw.types.DocumentAttributeVideo(
                                     duration=int(getattr(inner, "duration", 0) or 0),
@@ -452,12 +459,85 @@ async def upload_media_for_cache(cli: Client, media: list[InputRichMessageMedia]
                     access_hash=document.access_hash,
                     file_reference=document.file_reference,
                 ).encode()
-                item.media = InputMediaVideo(file_id, supports_streaming=True)
-                entries.append(CacheMedia(type=CacheMediaType.VIDEO, file_id=file_id))
+                # 换成 file_id 引用: **带着封面**（从刚上传的 document 里把缩略图
+                # 的 file_id 取出来）—— 否则编辑出去的就是没封面的视频。
+                cover = _thumb_file_id(document, cli)
+                item.media = InputMediaVideo(file_id, thumb=cover, supports_streaming=True)
+                entries.append(CacheMedia(type=CacheMediaType.VIDEO, file_id=file_id, cover_file_id=cover))
             logger.debug(f"inline 媒体已上传并记账: type={type(entries[-1]).__name__}")
         except Exception as e:  # noqa: BLE001 - 记账失败不能影响发送本身
             logger.warning(f"inline 媒体上传记账失败 (改由后续步骤上传, 只是不写缓存): {type(e).__name__}: {e}")
     return entries
+
+
+def strip_video_cover(rich: InputRichMessage) -> InputRichMessage:
+    """把富文本媒体里的**远端封面地址**去掉（``video_cover=`` 是给服务端去抓的 URL）。
+
+    服务端抓不到那个 URL 时整条发送会以 ``WEBPAGE_CURL_FAILED`` 失败 —— 封面只是装饰，
+    不该让它挡住消息。就地清空并返回同一个对象。
+    """
+    def clear(node, depth: int = 0) -> None:
+        if node is None or isinstance(node, (str, int)) or depth > 8:
+            return
+        if hasattr(node, "video_cover"):
+            node.video_cover = None
+        media = getattr(node, "media", None)
+        if media is not None:
+            clear(media, depth + 1)
+        for attr in ("video", "photo", "blocks", "items"):
+            child = getattr(node, attr, None)
+            if child is None or isinstance(child, (str, int, bytes)):
+                continue
+            for one in child if isinstance(child, list) else [child]:
+                clear(one, depth + 1)
+
+    for item in getattr(rich, "media", None) or []:
+        clear(item)
+    for block in getattr(rich, "blocks", None) or []:
+        clear(block)
+    return rich
+
+
+async def with_cover_fallback(rich: InputRichMessage, send):
+    """发送富文本；若服务端因抓不到封面而拒绝，去掉封面重发一次。
+
+    普通发送路径一直有这个兜底（``WebpageCurlFailed`` → 移除封面继续），
+    富文本路径当初漏了 —— 于是"封面 URL 抓不到"会直接变成发送失败。
+    """
+    from pyrogram.errors import WebpageCurlFailed
+
+    try:
+        return await send(rich)
+    except WebpageCurlFailed as e:
+        logger.warning(f"服务端抓不到封面, 去掉封面重试: {str(e)[:90]}")
+        return await send(strip_video_cover(rich))
+
+
+def _thumb_file_id(document, client) -> str | None:
+    """从上传返回的 document 里取出**缩略图**的 file_id（缓存用, 下次可当 thumb）。
+
+    document 的缩略图在 ``thumbs`` 里（``PhotoSize`` 列表）; 构造方式与上面照片分支
+    取 file_id 的手法一致（Telegram 的 file_id 是"引用"的编码, 不是新文件）。
+    拿不到就返回 None —— 封面只是锦上添花, 不能因此让上传失败。
+    """
+    from pyrogram.file_id import FileId, FileType, ThumbnailSource
+
+    sizes = list(getattr(document, "thumbs", None) or [])
+    if not sizes:
+        return None
+    biggest = max(sizes, key=lambda s: getattr(s, "w", 0) * getattr(s, "h", 0))
+    return FileId(
+        file_type=FileType.PHOTO,
+        dc_id=document.dc_id,
+        media_id=document.id,
+        access_hash=document.access_hash,
+        file_reference=document.file_reference,
+        thumbnail_source=ThumbnailSource.THUMBNAIL,
+        thumbnail_file_type=FileType.PHOTO,
+        thumbnail_size=getattr(biggest, "type", "") or "",
+        volume_id=0,
+        local_id=0,
+    ).encode()
 
 
 def extract_cache_media(rich_message) -> list:

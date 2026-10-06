@@ -623,13 +623,28 @@ async def _post_rich(
     编辑失败 (状态消息被用户手动删掉、内容被判为未变更等) 时退回新建 ——
     结果不能因为"收尾方式"失败而丢失。
     """
-    if reporter is not None and reporter.has_message:
-        try:
-            if (edited := await reporter.finalize(rich)) is not None:
-                return edited
-        except Exception as e:
-            logger.warning(f"编辑状态消息失败, 改为新建结果: {type(e).__name__}: {e}")
-    return await sender.rich_message(rich_message=rich)
+    from pyrogram.errors import WebpageCurlFailed
+
+    from plugins.parse.inline_rich import strip_video_cover
+
+    async def _send(r: InputRichMessage) -> Message:
+        if reporter is not None and reporter.has_message:
+            try:
+                if (edited := await reporter.finalize(r)) is not None:
+                    return edited
+            except WebpageCurlFailed:
+                raise  # 交给外层"去掉封面重试", 别退化成新建一条
+            except Exception as e:
+                logger.warning(f"编辑状态消息失败, 改为新建结果: {type(e).__name__}: {e}")
+        return await sender.rich_message(rich_message=r)
+
+    try:
+        return await _send(rich)
+    except WebpageCurlFailed as e:
+        # 服务端抓不到封面 URL 时会拒收整条 —— 去掉封面重发 (普通发送路径一直这么做,
+        # 富文本路径当初漏了这一步)。
+        logger.warning(f"服务端抓不到封面, 去掉封面重试: {str(e)[:90]}")
+        return await _send(strip_video_cover(rich))
 
 
 def build_input_media(

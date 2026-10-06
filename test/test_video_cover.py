@@ -1,111 +1,76 @@
-"""视频封面: 缩放成 Telegram 缩略图 + 只给视频类准备封面。"""
+"""视频封面: 三条发送路径都要带上它（inline 记账 / 缓存命中 / 抓不到时的兜底）。
 
-import asyncio
-import io
-from pathlib import Path
+背景（2026-10-06, 用户报「B站视频没有封面」）: 封面早就实现了, 但**只在直发的
+"本地 thumb" 那条路上** —— 一旦媒体被换成 file_id（inline 记账、缓存命中）封面就没了,
+而用户主要走 inline。另外富文本路径缺 ``WebpageCurlFailed`` 兜底（普通路径一直有）,
+封面 URL 服务端抓不到时整条发送会失败。
+"""
 
-from parsehub.types import AniRef, ImageRef, VideoRef
-from PIL import Image
+from types import SimpleNamespace
 
-from plugins.parse import covers
-from plugins.parse.covers import prepare_video_thumbs, shrink_to_thumbnail
+from pyrogram.types import InputMediaVideo, InputRichMessage, InputRichMessageMedia
 
-
-def _png(size: tuple[int, int]) -> bytes:
-    buffer = io.BytesIO()
-    Image.new("RGB", size, (10, 120, 200)).save(buffer, "PNG")
-    return buffer.getvalue()
+from plugins.parse.inline_rich import strip_video_cover
 
 
-def test_shrink_respects_telegram_limits():
-    """边长要降到 320 以内, 体积要小于 200 KB"""
-    out = shrink_to_thumbnail(_png((1920, 1080)))
-    assert out is not None
-    assert len(out) < 200 * 1024
-    with Image.open(io.BytesIO(out)) as img:
-        assert img.format == "JPEG"
-        assert max(img.size) <= 320
+def _rich_with_cover(cover="https://i2.hdslb.com/bfs/archive/x.jpg"):
+    item = InputRichMessageMedia(id="m0", media=InputMediaVideo("file_id", video_cover=cover, thumb="/tmp/c.jpg"))
+    return InputRichMessage(markdown="正文", media=[item]), item
 
 
-def test_shrink_keeps_small_image():
-    out = shrink_to_thumbnail(_png((100, 60)))
-    assert out is not None
-    with Image.open(io.BytesIO(out)) as img:
-        assert img.size == (100, 60)
+def test_strip_removes_the_remote_cover_only():
+    """兜底只清远端地址 (服务端要去抓的那个), 本地 thumb 保留"""
+    rich, item = _rich_with_cover()
+    strip_video_cover(rich)
+    assert item.media.video_cover is None
+    assert item.media.thumb == "/tmp/c.jpg"
 
 
-def test_shrink_rejects_non_image():
-    """拿到 HTML 错误页之类的东西时不能炸, 返回 None 由调用方降级"""
-    assert shrink_to_thumbnail(b"<html>403</html>") is None
+def test_strip_reaches_covers_inside_blocks():
+    """blocks 路径 (敏感内容/引用卡片) 的封面藏在块里, 同样要能清"""
+    video = InputMediaVideo("file_id", video_cover="https://example.com/c.jpg")
+    block = SimpleNamespace(video=video, blocks=None)
+    rich = SimpleNamespace(media=None, blocks=[block])
+    strip_video_cover(rich)
+    assert video.video_cover is None
 
 
-def test_shrink_rejects_truncated_image():
-    data = _png((800, 600))
-    assert shrink_to_thumbnail(data[: len(data) // 3]) is None
+def test_strip_is_safe_on_media_without_a_cover():
+    rich, item = _rich_with_cover(cover=None)
+    assert strip_video_cover(rich) is rich
+    assert item.media.video_cover is None
 
 
-def test_prepare_only_covers_videos(monkeypatch, tmp_path):
-    """图片不需要封面; 视频/实况/动画才下载"""
-    calls: list[str] = []
+def test_the_cache_media_builder_uses_the_stored_cover():
+    """缓存命中也必须带封面: 缓存里存了 cover_file_id 就要当 thumb 用"""
+    from plugins.parse.inline_rich import cache_media_blocks
+    from services.cache import CacheEntry, CacheMedia, CacheMediaType, CacheParseResult
 
-    async def fake_fetch(url, **kwargs):
-        calls.append(url)
-        path = Path(tmp_path) / "t.jpg"
-        path.write_bytes(_png((320, 180)))
-        return path
-
-    monkeypatch.setattr(covers, "fetch_video_thumb", fake_fetch)
-    refs = [
-        ImageRef(url="https://x/img.jpg", thumb_url="https://x/img_thumb.jpg"),
-        VideoRef(url="https://x/v.mp4", thumb_url="https://x/v_thumb.jpg"),
-        AniRef(url="https://x/a.gif", thumb_url="https://x/a_thumb.jpg"),
-    ]
-    thumbs = asyncio.run(prepare_video_thumbs(refs))
-    assert set(calls) == {"https://x/v_thumb.jpg", "https://x/a_thumb.jpg"}
-    assert "https://x/img_thumb.jpg" not in thumbs
+    entry = CacheEntry(
+        parse_result=CacheParseResult(title="t", content="c", author_name="", author_handle="", author_url=""),
+        media=[CacheMedia(type=CacheMediaType.VIDEO, file_id="vid", cover_file_id="cov")],
+        rich=True,
+    )
+    media, _ph, _blocks, _q, _r = cache_media_blocks(entry)
+    assert media[0].media.thumb == "cov", "缓存里的封面 file_id 应作为 thumb"
 
 
-def test_prepare_dedupes_and_skips_missing(monkeypatch, tmp_path):
-    """同一封面只下一次; 下载失败的条目缺席 (不能让发送失败)"""
-    calls: list[str] = []
+def test_the_upload_path_sends_the_cover_along():
+    """inline 记账上传 document 时**必须**带 thumb, 否则换成的 file_id 引用没有封面。
 
-    async def fake_fetch(url, **kwargs):
-        calls.append(url)
-        if "bad" in url:
-            return None
-        path = Path(tmp_path) / "t.jpg"
-        path.write_bytes(_png((320, 180)))
-        return path
+    这是纯副作用的一行 (删掉后测试不会红), 用源码断言看着。
+    """
+    from pathlib import Path
 
-    monkeypatch.setattr(covers, "fetch_video_thumb", fake_fetch)
-    refs = [
-        VideoRef(url="https://x/1.mp4", thumb_url="https://x/same.jpg"),
-        VideoRef(url="https://x/2.mp4", thumb_url="https://x/same.jpg"),
-        VideoRef(url="https://x/3.mp4", thumb_url="https://x/bad.jpg"),
-        VideoRef(url="https://x/4.mp4"),
-    ]
-    thumbs = asyncio.run(prepare_video_thumbs(refs))
-    assert calls == ["https://x/same.jpg", "https://x/bad.jpg"]
-    assert list(thumbs) == ["https://x/same.jpg"]
+    text = (
+        Path(__file__).resolve().parent.parent / "plugins" / "parse" / "inline_rich.py"
+    ).read_text(encoding="utf-8")
+    assert "thumb=thumb" in text, "上传 document 时要带封面"
+    assert 'thumb_path = getattr(inner, "thumb", None)' in text
+    assert "cover_file_id=cover" in text, "记账时要存封面的 file_id"
 
 
-def test_fetch_returns_none_on_http_error(monkeypatch):
-    """HTTP 非 200 时静默返回 None"""
+if __name__ == "__main__":
+    import pytest
 
-    class FakeResponse:
-        status_code = 404
-        content = b""
-
-    class FakeClient:
-        def __init__(self, **kwargs): ...
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def get(self, url, headers=None):
-            return FakeResponse()
-
-    monkeypatch.setattr(covers.http, "AsyncClient", FakeClient)
-    assert asyncio.run(covers.fetch_video_thumb("https://x/nope.jpg")) is None
+    raise SystemExit(pytest.main([__file__, "-q"]))
