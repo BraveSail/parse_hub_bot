@@ -219,7 +219,13 @@ class BiliParse(BaseParser):
             video_playurl = await bili.get_video_playurl(url, cid, b3, b4)
 
         durl = video_playurl["data"]["durl"][0]
-        video_url = self.change_source(durl["backup_url"][0]) if durl.get("backup_url") else durl["url"]
+        # 用 B 站**自己给的首选地址**（``durl.url``）。
+        # 以前这里会换成 ``backup_url[0]`` 再改写域名，两个问题:
+        #   1. ``durl.url`` 才是官方首选（实测同一条视频 ``durl.url`` 与 ``backup_url``
+        #      指向不同 CDN，速度能差几十倍）；
+        #   2. 改写域名是**伪造签名** —— B 站的播放签名与 host 绑定，换域名靠兼容性侥幸能用，
+        #      一旦收紧就整条下载失败（实测把 path 换到别的域名会 403 / 超时）。
+        video_url = durl["url"]
         content = desc.strip()
         if content == "-":
             content = ""
@@ -243,14 +249,6 @@ class BiliParse(BaseParser):
 
     async def ytp_parse(self, url: str) -> YtVideoParseResult:
         return await BiliYtParse(proxy=self.proxy, cookie=self.cookie)._do_parse(url)
-
-    @staticmethod
-    def change_source(url: str) -> str:
-        return re.sub(
-            r"upos-.*.(bilivideo.com|mirrorakam.akamaized.net)",
-            "upos-sz-upcdnbda2.bilivideo.com",
-            url,
-        )
 
     @staticmethod
     def hashtag_handler(desc: str) -> str:
