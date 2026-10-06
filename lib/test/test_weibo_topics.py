@@ -9,8 +9,8 @@
 ``C# 与 Python# 都常用`` 被误配成 ``# 与 Python#``，剥壳后 ``C#`` 就被破坏了。
 
 fixture：``test/fixtures/weibo_topic_struct.json``（真实详情 API 响应）。
-注意它的 ``page_info.object_type`` 是 ``ai_summary``（不在 ``MediaType`` 枚举里），
-所以整条 payload 不能直接喂 ``Data.parse`` —— 这里只取用到的字段。
+它的 ``page_info.object_type`` 是 ``ai_summary`` —— 这个值一度让**整条微博解析失败**
+（枚举里没有它就抛 ValueError，``media_info`` 又是硬索引），现已修，下面有专门的回归测试。
 """
 
 from parsehub.parsers.parser.weibo import WeiboParser
@@ -31,12 +31,26 @@ def _data(**overrides) -> Data:
 
 
 def test_only_anchored_topics_are_taken():
-    """**核心**: 只有做成锚点的才是真话题。
+    """**核心**: 话题名只从锚点取 —— 正文里裸的 ``#xxx#`` **不算**。
 
-    真实响应里 ``#海大数#`` 有锚点、``#中小冉#`` 没有 —— 服务端只认前者。
-    正则会把两个都当话题（多识别了一个）。
+    这里用的是**手写片段**（只给一个锚点），所以只应取到那一个。
+    真实响应里三个话题**都有锚点**，见 ``test_the_real_fixture_yields_all_topics``。
     """
     assert _data().topic_names == ["海大数"]
+
+
+def test_the_real_fixture_yields_all_topics():
+    """用**真实响应**核对：三个话题都带锚点，全部取到（顺序即出现顺序）。
+
+    ⚠️ 这条是必要的纠正 —— 早先我用手写片段（只放一个锚点）得出过
+    "服务端认为 ``#中小冉#`` 不是话题"的结论，那是**自造样本**造成的误判。
+    """
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).parent / "fixtures" / "weibo_topic_struct.json").read_text(encoding="utf-8"))
+    names = Data.from_kwargs(**{k: v for k, v in raw.items() if k in {"id", "mid", "text", "text_raw"}}).topic_names
+    assert names == ["从“苏大强”到全国“X大Y”话题矩阵", "海大数", "中小冉"], names
 
 
 def test_two_anchors_give_two_topics_in_order():
@@ -51,6 +65,24 @@ def test_two_anchors_give_two_topics_in_order():
 def test_topic_names_are_empty_without_the_html_field():
     """拿不到 ``text``（老接口/字段缺失）时是空列表 —— 调用方退回正则"""
     assert _data(text=None).topic_names == []
+
+
+def test_an_unknown_card_type_no_longer_kills_the_post():
+    """**回归**: 不认识的卡片类型不该让整条微博挂掉。
+
+    实测（真实响应）: ``page_info.object_type == "ai_summary"``（微博智搜卡片）——
+    ``MediaType`` 枚举里没有它 ⇒ ``ValueError``；而且 ``PageInfo.parse`` 对
+    ``media_info`` 是**硬索引**，智搜卡片没这个键 ⇒ ``KeyError``。两个都会让整条
+    **解析失败**（用户发这类微博直接报错）。卡片不认识顶多是"不特殊处理"。
+    """
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).parent / "fixtures" / "weibo_topic_struct.json").read_text(encoding="utf-8"))
+    data = Data.parse(raw)  # 修复前这里会抛
+    assert data.page_info is not None
+    assert str(data.page_info.object_type) == "MediaType.UNKNOWN", data.page_info.object_type
+    assert data.page_info.media_info is None
 
 
 def test_a_single_hash_does_not_break_the_text():

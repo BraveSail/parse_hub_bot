@@ -110,6 +110,15 @@ class MediaType(Enum):
     LIVE_PHOTO = "livephoto"
     GIF = "gif"
     ARTICLE = "article"
+    #: 没见过的 ``object_type`` 都归这里（如微博智搜的 ``ai_summary``）。
+    #: **不能抛异常**: 枚举里没有的值以前会让**整条微博解析失败** ——
+    #: 实测 ``ValueError: 'ai_summary' is not a valid MediaType``。
+    #: 卡片类型不认识，顶多是"这个卡片不特殊处理"，不该整条挂掉。
+    UNKNOWN = "unknown"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "MediaType":
+        return cls.UNKNOWN
 
 
 class Info(abc.ABC):
@@ -175,11 +184,20 @@ class PageInfo(Info):
 
     @classmethod
     def parse(cls, page_info_dict: dict) -> Self:
-        object_type = MediaType(page_info_dict["object_type"])
-        if object_type != MediaType.ARTICLE:
-            media_info = MediaInfo.parse(page_info_dict["media_info"])
-        else:
-            media_info = None
+        """解析卡片信息。
+
+        ``object_type`` 与 ``media_info`` 都**用 .get**：不同卡片带不同的键，
+        不认识的卡片（如微博智搜的 ``ai_summary``）整个没有 ``media_info`` ——
+        硬索引会让**整条微博解析失败**（实测 ``KeyError: 'media_info'``）。
+        缺了就是"这个卡片没有播放信息"，不是解析错误。
+        """
+        object_type = MediaType(page_info_dict.get("object_type") or "")
+        raw_media_info = page_info_dict.get("media_info")
+        media_info = (
+            MediaInfo.parse(raw_media_info)
+            if raw_media_info and object_type != MediaType.ARTICLE
+            else None
+        )
         page_pic = page_info_dict.get("page_pic")
         short_url = page_info_dict.get("short_url")
         return cls(object_type, media_info, page_pic, short_url)
