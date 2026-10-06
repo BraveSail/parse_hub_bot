@@ -270,7 +270,7 @@ def build_rich_markdown(
     title = (parse_result.title or "").strip()
     content = preserve_linebreaks(
         escape_setext_underlines(
-            link_leading_hashtags(rich_content(parse_result).strip(), parse_result.platform)
+            link_hashtags(rich_content(parse_result).strip(), parse_result.platform)
         )
     )
     # 分两组: 标题/作者是"这是什么"的元信息, 留在折叠外; 其余(正文/引用块/标签/媒体)
@@ -511,28 +511,55 @@ def rich_content(parse_result: AnyParseResult) -> str:
 
 
 # 行首的 "#标签" (# 后紧跟非空白, 标签里不含空白与常见标点)
-_LINE_HASH_TAG_RE = re.compile(r"(?m)^([ \t]*)#([^\s#，。！？、,.!?）)】\]]+)")
+#: 标签的字符边界: 空白与常见句读 **终止** 标签 (``#tag.`` 的句号不属于标签)。
+#: 注意 ``-`` **不**在终止集合里 —— ``#foo-bar`` 整串才是一个标签, 而服务端的自动识别
+#: 会在连字符处截断 (只染蓝 ``#foo``), 看着像标签被切了。
+_TAG_BODY = r"[^\s#，。！？、,.!?）)】\]]+"
+#: 任意位置的 ``#标签`` (前面不是字母/数字/``&``/``/`` —— 排除 ``a#b`` 与 URL 里的片段)
+_HASH_TAG_RE = re.compile(rf"(?<![\w&/])#({_TAG_BODY})")
+#: 已经是链接的整段 (``<a …>…</a>``): 处理标签时跳过, 免得把标签包第二层
+_ANCHOR_SEGMENT_RE = re.compile(r"<a\b[^>]*>.*?</a>", re.S)
 
 
-def link_leading_hashtags(text: str, platform: Platform | None = None) -> str:
-    """处理行首的 ``#标签``: 渲染成标签页链接 (拿不到标签页时只转义)。
+def link_hashtags(text: str, platform: Platform | None = None) -> str:
+    r"""把正文里的 **所有** 裸 ``#标签`` 渲染成标签页链接（不限于行首）。
 
-    两件事同时解决:
-    1. 行首 ``#xxx`` 是富文本 markdown 的一级标题语法, threads 正文末尾的
-       ``#敬請準時收看`` 会变成巨大的 section heading;
-    2. 裸 hashtag 里 Telegram 遇到 ``・`` 之类的字符就停止解析, 长标签会"断"。
-    带空格的 ``# 标题`` 是真标题, 保持不动。
+    为什么要自己链接而不是交给服务端:
+      - 服务端的 hashtag 自动识别**有字符限制**: ``#foo-bar`` / ``#foo.bar`` 会在 ``-``/``.``
+        处**截断**（只有前半截可点），**纯数字**标签（``#123``）干脆不识别 ——
+        于是同一条消息里"有的标签是链接、有的不是"（用户报障就是这个）。
+      - 行首 ``#xxx`` 还会被富文本 markdown 当成**一级标题**（字号巨大）。
+    自己写成 ``<a href="标签页">`` 两个问题一起解决，且形态与**标签行**（``format_tags``）一致。
+
+    平台**没有**标签页模板时退回纯文本；行首那种情况继续用 ``\#`` 转义（防标题）。
+    带空格的 ``# 标题`` 是真标题，本来就不匹配（``#`` 后面是空格）。
     """
 
     def repl(match: re.Match[str]) -> str:
-        indent, tag = match.group(1), match.group(2)
+        tag = match.group(1)
         url = tag_page_url(platform, tag)
-        if not url:
-            return f"{indent}{_tag_label(tag, linked=False)}"
-        label = _tag_label(tag, linked=True)
-        return f'{indent}<a href="{html.escape(url, quote=True)}">{label}</a>'
+        if url:
+            label = html.escape(tag)
+            return f'<a href="{html.escape(url, quote=True)}">#{label}</a>'
+        # 没有标签页可指向: 行首的 ``#`` 得转义 (否则被当一级标题), 行中的原样
+        at_line_start = match.start() == 0 or text[match.start() - 1] == "\n"
+        escaped = html.escape(tag)
+        return f"\\#{escaped}" if at_line_start else f"#{escaped}"
 
-    return _LINE_HASH_TAG_RE.sub(repl, text)
+    # 锚点内的标签已经不裸: 跳过整段 ``<a>…</a>``, 免得包第二层
+    out: list[str] = []
+    pos = 0
+    for anchor in _ANCHOR_SEGMENT_RE.finditer(text):
+        out.append(_HASH_TAG_RE.sub(repl, text[pos : anchor.start()]))
+        out.append(anchor.group(0))
+        pos = anchor.end()
+    out.append(_HASH_TAG_RE.sub(repl, text[pos:]))
+    return "".join(out)
+
+
+def link_leading_hashtags(text: str, platform: Platform | None = None) -> str:
+    """旧名保留（行为已扩到全文，见 ``link_hashtags``）。"""
+    return link_hashtags(text, platform)
 
 
 # 整行只有 - 或 = 的行: markdown 会把它当成 setext 标题下划线, 把上面整段变成标题(大字)
