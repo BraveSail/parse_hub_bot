@@ -1,4 +1,5 @@
 import re
+from collections.abc import Sequence
 
 from ...provider_api.weibo import MediaType, MixMediaInfoItem, PicInfo, WeiboAPI, WeiboTVContent
 from ...types import (
@@ -34,7 +35,7 @@ class WeiboParser(BaseParser):
             )
 
         data = weibo.data
-        text = self.f_text(data.content)
+        text = self.f_text(data.content, data.topic_names)
         media: list[VideoRef | ImageRef | LivePhotoRef | AniRef] = []
 
         if not data.pic_infos and data.page_info and data.page_info.object_type == MediaType.VIDEO:
@@ -97,14 +98,31 @@ class WeiboParser(BaseParser):
             return ImageParseResult(content=text, photo=photos, author_name=data.author_name)
         return MultimediaParseResult(content=text, media=media, author_name=data.author_name)
 
-    def f_text(self, text: str | None) -> str:
+    def f_text(self, text: str | None, topics: Sequence[str] | None = None) -> str:
         # text = re.sub(r'<a  href="https://video.weibo.com.*?>.*的微博视频.*</a>', "", text)
         # text = re.sub(r"<[^>]+>", " ", text)
-        text = self.hashtag_handler(text or "")
+        text = self.hashtag_handler(text or "", topics)
         return text.strip()
 
     @staticmethod
-    def hashtag_handler(desc: str) -> str:
+    def hashtag_handler(desc: str, topics: Sequence[str] | None = None) -> str:
+        """把 ``#话题#`` 剥成 ``话题``（保留原有的可见形态，只换边界判据）。
+
+        :param topics: **服务端给的**话题名（不含 ``#``，见 ``Data.topic_names``）。
+            给了就按名字精确匹配 —— 正文里出现**单个** ``#`` 时正则会把不相干的
+            一段当成话题（``C# 与 Python# 都`` → 误配成 ``# 与 Python#``）。
+            没给（老接口/字段缺失）时退回正则，行为与本参数引入前一致。
+        """
+        if topics:
+            # 替换形态与下面的正则版**逐字一致**（`#名字#` → ` #名字 `）——
+            # 这次只换边界判据，不擅自改可见输出。
+            # 先吃掉尾随空格: 正则版匹配的是 ``#名字# ``（` ?` 贪婪含尾空格），
+            # 不这么做会多留一个空格（`#中小冉# 。` → ` #中小冉  。` 双空格）。
+            for name in sorted((t for t in topics if t), key=len, reverse=True):
+                desc = desc.replace(f"#{name}# ", " #" + name + " ")
+                desc = desc.replace(f"#{name}#", " #" + name + " ")
+            return desc
+
         hashtags = re.findall(r" ?#[^#]+# ?", desc)
         for hashtag in hashtags:
             desc = desc.replace(hashtag, f" {hashtag.strip().removesuffix('#')} ")

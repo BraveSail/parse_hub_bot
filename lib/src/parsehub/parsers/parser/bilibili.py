@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import html
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urlparse
@@ -115,7 +117,7 @@ class BiliParse(BaseParser):
     async def _do_parse(self, raw_url: str) -> YtVideoParseResult | BiliVideoParseResult | ImageParseResult:
         if await self.is_dynamic(raw_url):
             dynamic = await self.get_dynamic_info(raw_url)
-            content = self.hashtag_handler(dynamic.content or "")
+            content = self.hashtag_handler(dynamic.content or "", dynamic.topics)
             photos: list[LivePhotoRef | ImageRef] = []
             photos.extend(BiliParse._to_refs(dynamic.images))
 
@@ -124,7 +126,10 @@ class BiliParse(BaseParser):
             if forward := dynamic.forward:
                 content, forward_text = BiliParse._split_forward_comment(content)
                 if forward_text:
-                    forward_text = BiliParse.hashtag_handler(forward_text)
+                    # ``//@`` 段的原文就是被转发动态的正文, 所以能用它的节点话题
+                    forward_text = BiliParse.hashtag_handler(
+                        forward_text, dynamic.forward.topics if dynamic.forward else None
+                    )
                 if quote := BiliParse._render_forward(forward, extra_text=forward_text):
                     content = f"{content}\n\n{quote}" if content else quote
                 forward_refs = BiliParse._to_refs(forward.images)
@@ -251,8 +256,14 @@ class BiliParse(BaseParser):
         return await BiliYtParse(proxy=self.proxy, cookie=self.cookie)._do_parse(url)
 
     @staticmethod
-    def hashtag_handler(desc: str) -> str:
+    def hashtag_handler(desc: str, topics: Sequence[Mapping[str, str]] | None = None) -> str:
         """把 ``#话题#`` 渲染成指向 B 站搜索页的超链接。
+
+        :param topics: **节点给的**话题列表（``BiliDynamic.topics``: name + url）。
+            给了就按名字精确链接化、并用节点自带的话题页地址 —— 边界与类型由 B 站判定，
+            不必用正则猜（``C# 与 #tag#`` 这种成对 ``#`` 正则匹不出正确的话题）。
+            没给（老接口 / 转发的 ``//@`` 段没有节点）时退回正则，行为不变。
+
 
         用 HTML ``<a>`` 而不是 markdown 链接: 这条正文既可能落在引用块里 (块内
         markdown 行内语法不解析), 也可能落在正文, HTML 标签两处都有效。
@@ -264,6 +275,21 @@ class BiliParse(BaseParser):
         if not desc:
             return ""
 
+        # ① 先用**节点给的话题**精确链接化（类型与边界由 B 站判定，且节点自带话题页地址）
+        if topics:
+            # 长名字优先: 两个话题名互为前缀时，先换长的才不会把短名嵌进去
+            named = [t for t in topics if (t or {}).get("name")]
+            for topic in sorted(named, key=lambda t: len(t["name"]), reverse=True):
+                name = topic["name"]
+                url = topic.get("url") or f"https://search.bilibili.com/all?keyword={quote(name)}"
+                if url.startswith("//"):
+                    # 节点给的是**协议相对**地址（``//search.bilibili.com/…``），
+                    # 直接塞进 <a href> 会被当成站内相对路径 —— 补上 https:
+                    url = f"https:{url}"
+                desc = desc.replace(f"#{name}#", f'<a href="{html.escape(url, quote=True)}">#{html.escape(name)}#</a>')
+            return desc
+
+        # ② 兜底：节点拿不到时按 ``#话题#`` 形态链接化
         def _to_link(match: re.Match) -> str:
             # B 站的话题是**左右都有 #** (#话题#), 显示时两侧都保留
             topic = match.group(0).strip("#")

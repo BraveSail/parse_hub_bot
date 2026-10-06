@@ -1,0 +1,52 @@
+{
+ "_provenance": {
+  "type": "EXTERNAL_REFERENCE — NOT captured by this probe",
+  "why": "生产未配置 xhs cookie; 本环境 (直连 / mihomo 直连 / WARP) 匿名访问小红书笔记页均被重定向到 /login 或 /404, 抓不到带 tagList 的真实笔记响应",
+  "sources": [
+   "yt-dlp 官方 xiaohongshu extractor (真实响应用例, 长期维护): yt_dlp/extractor/xiaohongshu.py",
+   "Apify rednote-scraper 文档中的真实接口响应样本"
+  ]
+ },
+ "html_ssr_path": {
+  "path": "window.__INITIAL_STATE__.note.noteDetailMap[<firstNoteId>].note.tagList",
+  "type": "array<{id,name,type}>",
+  "field_name": "NOTE.tagList (camelCase)",
+  "ytdlp_mapping": "'tags': ('tagList', ..., 'name', {str})  # 每条取 name",
+  "ytdlp_recorded_real_test": {
+   "url": "https://www.xiaohongshu.com/explore/6411cf99000000001300b6d9",
+   "title": "香妃蛋糕也太香了吧🔥不需要卷❗️绝对的友好",
+   "description": "#今日快乐今日发[话题]# #吃货薯看这里[话题]# #香妃蛋糕[话题]# #小五卷蛋糕[话题]# #新手蛋糕卷[话题]#",
+   "tags": [
+    "今日快乐今日发",
+    "吃货薯看这里",
+    "香妃蛋糕",
+    "小五卷蛋糕",
+    "新手蛋糕卷"
+   ]
+  },
+  "ytdlp_recorded_real_test_2": {
+   "url": "https://www.xiaohongshu.com/discovery/item/674051740000000007027a15?xsec_token=...",
+   "description": "#广州[话题]# #深圳[话题]# #香港[话题]# #街头采访[话题]# #是你喜欢的类型[话题]#",
+   "tags": [
+    "广州",
+    "深圳",
+    "香港",
+    "街头采访",
+    "是你喜欢的类型"
+   ]
+  },
+  "observation": "desc 里每个 #[话题]# 的名字与 tagList[].name 一一对应且顺序一致 (desc 里标签名是去掉首尾 # 后的纯名)"
+ },
+ "web_api_path": {
+  "path": "data.items[0].note_card.tag_list",
+  "field_name": "note_card.tag_list (snake_case)",
+  "endpoint": "https://edith.xiaohongshu.com/api/sns/web/v1/feed",
+  "real_capture_sample": {
+   "note": "note_card 中同时存在 tag_list 与 at_user_list; 下面这条真实样本 desc 为空故 tag_list 为 []",
+   "note_card.tag_list": [],
+   "note_card.at_user_list": [],
+   "note_card.desc": ""
+  },
+  "third_party_usage": "greasyfork xiaohongshu_link 脚本: noteCard.tag_list.map(tag => tag.name)"
+ }
+}

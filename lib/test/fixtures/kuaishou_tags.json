@@ -1,0 +1,46 @@
+{
+ "_provenance": {
+  "captured_by": "hermes subagent probe (read-only)",
+  "captured_at": "2026-10-06 21:04 (CST) / 13:04 (UTC)",
+  "endpoint": "POST https://www.kuaishou.com/graphql  operationName=visionVideoDetail",
+  "sample_url": "https://www.kuaishou.com/short-video/3xdmz2xiuaw7kkg",
+  "photo_id": "3xdmz2xiuaw7kkg",
+  "cookie": "生产未配置 kuaishou cookie; 走 parsehub 内置 COOKIE 兜底 (lib/src/parsehub/parsers/parser/kuaishou.py)"
+ },
+ "data": {
+  "visionVideoDetail": {
+   "status": 1,
+   "type": 1,
+   "author": {
+    "id": "3xmrxxgc6af9vpw",
+    "name": "潇阳怎么说"
+   },
+   "photo": {
+    "id": "3xdmz2xiuaw7kkg",
+    "caption": "美国首家蜜雪冰城开业 #内容启发分享计划 #影画演绎未来之星 #快成长计划",
+    "timestamp": 1766226743592,
+    "expTag": "1_i/2006351061010853634_xpcwebsearchxxnull0",
+    "llsid": null
+   },
+   "tags": [
+    {
+     "type": "1",
+     "name": "内容启发分享计划"
+    },
+    {
+     "type": "1",
+     "name": "快成长计划"
+    },
+    {
+     "type": "1",
+     "name": "影画演绎未来之星"
+    }
+   ],
+   "commentLimit": {
+    "canAddComment": 0
+   },
+   "llsid": "2006351061010853634",
+   "danmakuSwitch": true
+  }
+ }
+}

@@ -6,10 +6,18 @@ from dataclasses import dataclass
 from enum import Enum
 from inspect import signature
 from typing import Any, Self, Union
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from ..utils import http
 from ..utils.helpers import get_author_name
+
+#: 详情 API 的 ``text`` 字段里, 话题**已经是锚点**（服务端给好的）::
+#:
+#:     <a href="//s.weibo.com/weibo?q=%23话题%23" target="_blank">#话题#</a>
+#:
+#: 所以话题名（与边界）直接从 ``q=`` 参数解出来即可 —— 不必用正则去正文里猜:
+#: 正文里出现**单个** ``#`` 时正则会误配（``C# 与 Python# 都`` 会被当成一个话题）。
+_TOPIC_ANCHOR_RE = re.compile(r'//s\.weibo\.com/weibo\?q=%23([^&"]+?)%23')
 
 
 class WeiboAPI:
@@ -315,6 +323,22 @@ class Data:
     mix_media_info: MixMediaInfo | None = None
     retweeted_status: "Data | None" = None
     author_name: str = ""
+
+    @property
+    def topic_names(self) -> list[str]:
+        """正文里的话题名（**不含 ``#``**, 去重保序）—— 取自服务端给的锚点。
+
+        见 ``_TOPIC_ANCHOR_RE``: 话题边界由微博自己算好, 不用正则猜。
+        拿不到（老接口 / 字段缺失）时为空列表, 调用方退回正则。
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+        for match in _TOPIC_ANCHOR_RE.finditer(self.text or ""):
+            name = unquote(match.group(1)).strip().strip("#").strip()
+            if name and name not in seen:
+                seen.add(name)
+                out.append(name)
+        return out
 
     @classmethod
     def parse(cls, data_dict: dict) -> Self:

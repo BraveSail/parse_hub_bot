@@ -271,6 +271,11 @@ class BiliDynamic:
     bvid: str | None = None
     #: 转发的原动态 (``item["orig"]``); 不是转发时为 None。递归结构, 支持嵌套转发。
     forward: "BiliDynamic | None" = None
+    #: 正文里的话题节点: ``[{"name": 话题名(不含#), "url": 话题页地址}, …]``。
+    #: 取自 ``desc.rich_text_nodes`` 里 ``type == RICH_TEXT_NODE_TYPE_TOPIC`` 的节点 ——
+    #: **类型与边界由 B 站判定**, 拿来链接化就不必用正则猜（正则在 ``C# 与 #tag#``
+    #: 这种成对 ``#`` 的场景会匹配出 ``# 与 #``）。
+    topics: list[dict[str, str]] | None = None
 
     @property
     def video_url(self) -> str:
@@ -304,8 +309,29 @@ class BiliDynamic:
         stat = (modules.get("module_stat") or {}).get("like") or {}
         result.like_count = to_int(stat.get("count"))
 
+        result.topics = cls._get_desc_topics(module_dynamic)
         result.forward = cls._resolve_forward(item, module_dynamic)
         return result
+
+    @staticmethod
+    def _get_desc_topics(module_dynamic: dict) -> list[dict[str, str]]:
+        """正文里的话题节点（权威来源，替代正则猜边界）。
+
+        节点自带 ``jump_url``（话题页 / 搜索页），比自己按名字拼 URL 权威；
+        节点 ``text`` 是 ``#话题#``（两侧都带 #，B 站的形态），这里存**不含 #** 的名字。
+        """
+        desc = module_dynamic.get("desc") or {}
+        out: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for node in desc.get("rich_text_nodes") or []:
+            if node.get("type") != "RICH_TEXT_NODE_TYPE_TOPIC":
+                continue
+            name = str(node.get("text") or "").strip().strip("#").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            out.append({"name": name, "url": str(node.get("jump_url") or "")})
+        return out
 
     @classmethod
     def _resolve_forward(cls, item: dict, module_dynamic: dict) -> "BiliDynamic | None":
