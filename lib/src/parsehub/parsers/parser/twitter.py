@@ -165,9 +165,19 @@ class TwitterParser(BaseParser):
         quoted_media = TwitterParser.to_media_refs(tweet.quoted_status.media if tweet.quoted_status else None)
         media.extend(reply_media)
         media.extend(quoted_media)
-        # YouTube 卡片的封面也归"引用块媒体" —— 卡片就在最后一个引用块里
+        # YouTube 卡片的封面**属于正文**, 放在最后只是因为卡片文字排在正文末尾。
+        #
+        # ⚠️ 它**不能**算进 ``quoted_media_count``（以前是算的）: 那个计数是给
+        # "真有一条被引用的推文"用的, 渲染层会按它把媒体切进**引用卡片**里。
+        # 而 YouTube 卡片的文字恰好也是引用块形态（``> <i>…</i>``）—— 于是
+        # **没有引用/回复**的推文, 它的封面会被吸进那个"引用卡片",
+        # 用户看到的就是「链接的预览放引用里了」。
         media.extend(yt_media)
-        quoted_total = len(quoted_media) + len(yt_media)
+        quoted_total = len(quoted_media)
+        # ``reply_to`` 有内容时它排在**正文之前**, 由 ``_build_quote`` 给出引用块;
+        # 只有真渲染出引用块（有被回复的推文）才让它的媒体归那一档 ——
+        # 光有 ``reply_to`` 而引用块为空（被回复帖内容为空）时, 媒体不该被切进卡片。
+        reply_total = len(reply_media) if (tweet.reply_to and TwitterParser._build_quote(tweet)) else 0
         if article := tweet.article:
             return RichTextParseResult(
                 markdown_content=TwitterParser._compose(article.content, tweet, yt_quote),
@@ -181,7 +191,7 @@ class TwitterParser(BaseParser):
                 view_count=tweet.view_count,
                 like_count=tweet.like_count,
                 quoted_media_count=quoted_total,
-                reply_media_count=len(reply_media),
+                reply_media_count=reply_total,
                 # 标签走**平台实体**（服务端算好的边界），渲染层据此精确链接化
                 hashtags=TwitterParser._hashtags(tweet),
             )
@@ -196,7 +206,7 @@ class TwitterParser(BaseParser):
             view_count=tweet.view_count,
             like_count=tweet.like_count,
             quoted_media_count=quoted_total,
-            reply_media_count=len(reply_media),
+            reply_media_count=reply_total,
             hashtags=TwitterParser._hashtags(tweet),
         )
 
