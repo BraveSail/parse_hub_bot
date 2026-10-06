@@ -968,7 +968,7 @@ _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
 # 英文推文 289 字符就被折了), 而中文 200 字是实打实的两三大段。放宽到 500 后
 # 中英的信息量大致对齐。
 _FOLD_CHAR_THRESHOLD = 500
-_FOLD_LINE_THRESHOLD = 8
+_FOLD_LINE_THRESHOLD = 10
 
 
 def _should_fold(text: str) -> bool:

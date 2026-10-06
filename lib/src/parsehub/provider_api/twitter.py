@@ -197,6 +197,10 @@ class Twitter:
                         )
                     )
 
+        if card_photo := self._parse_card_photo(node):
+            # 外链卡片的预览图排在推文自带媒体**之后** (与 X 上的显示顺序一致)
+            media_list.append(card_photo)
+
         return TwitterTweet(
             tweet_id=tweet_id,
             full_text=full_text,
@@ -211,6 +215,43 @@ class Twitter:
             like_count=like_count,
             is_sensitive=bool(legacy.get("possibly_sensitive")),
         )
+
+    @staticmethod
+    def _parse_card_photo(node: dict) -> TwitterPhoto | None:
+        """外链卡片的预览图 —— 推文贴了链接时, X 会给那个网页生成一张卡片图。
+
+        图由 X 托管在 ``pbs.twimg.com/card_img/...``, 字段在 ``node["card"]`` 里,
+        **不在** ``legacy.entities.media`` 那条路上 —— 所以以前整条丢掉:
+        正文里只有个链接的推文, 图片一张都发不出来 (用户报「里面有图, 没抓到」)。
+
+        播放器类卡片 (YouTube 等) 跳过: 那条路有专门处理 (parser 层 ``_youtube_card``
+        走 oembed 拿真封面), 这里再补一张就成了两张封面。
+        """
+        card = ((node.get("card") or {}).get("legacy")) or {}
+        if "player" in (card.get("name") or ""):
+            return None
+
+        values = {b.get("key"): (b.get("value") or {}) for b in (card.get("binding_values") or [])}
+        # 同一张图有十几个尺寸变体, 按"最大优先"取 name=orig 的那些
+        for key in (
+            "photo_image_full_size_original",
+            "summary_photo_image_original",
+            "thumbnail_image_original",
+            "photo_image_full_size_large",
+            "summary_photo_image_large",
+        ):
+            image = (values.get(key) or {}).get("image_value") or {}
+            url = image.get("url")
+            if not url:
+                continue
+            thumb = ((values.get("thumbnail_image") or {}).get("image_value") or {}).get("url")
+            return TwitterPhoto(
+                url=url,
+                height=image.get("height", 0) or 0,
+                width=image.get("width", 0) or 0,
+                thumb_url=thumb,
+            )
+        return None
 
     def _parse_quoted(self, result: dict) -> TwitterTweet | None:
         """解析内嵌的被引用推文.

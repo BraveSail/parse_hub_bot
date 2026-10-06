@@ -9,7 +9,13 @@
 - 字面 `---`: 原文里 `---` 紧贴上一行, 服务端要前后有空行才认它是分隔线。
 """
 
-from plugins.helpers import _FOLD_CHAR_THRESHOLD, _FOLD_PREVIEW_CHARS, _FOLD_PREVIEW_LINES, format_text
+from plugins.helpers import (
+    _FOLD_CHAR_THRESHOLD,
+    _FOLD_LINE_THRESHOLD,
+    _FOLD_PREVIEW_CHARS,
+    _FOLD_PREVIEW_LINES,
+    format_text,
+)
 
 QUOTE = "> <i><a href=\"https://linux.do/u/someone\">@someone</a></i> 这是一段引用内容, 长度普通。"
 
@@ -21,6 +27,22 @@ def _post(quote_count: int = 12, *, filler: int = 0) -> str:
         blocks.append(f"## 小节 {i}\n\n这是第 {i} 段正文内容。" + "补充文字" * filler)
         blocks.append(QUOTE)
     return "\n\n".join(blocks)
+
+
+# ---------------------------------------------------------------- 折叠阈值: 10 行
+
+
+def test_ten_lines_of_text_are_not_folded():
+    """**10 行以内不折**（用户 2026-10-06: 「折叠改成10行」, 原为 8 行）"""
+    text = "\n\n".join(f"第 {i} 行内容" for i in range(1, 11))  # 正好 10 个非空行
+    assert _FOLD_LINE_THRESHOLD == 10, f"阈值被改成 {_FOLD_LINE_THRESHOLD}"
+    assert "<details>" not in format_text(text, fold_summary="展开全文")
+
+
+def test_eleven_lines_do_fold():
+    """超过 10 行才折 —— 边界另一侧也要钉住, 否则阈值改成 100 也能过"""
+    text = "\n\n".join(f"第 {i} 行内容" for i in range(1, 12))  # 11 个非空行
+    assert "<details>" in format_text(text, fold_summary="展开全文")
 
 
 # ---------------------------------------------------------------- 折叠: 整篇一次

@@ -125,13 +125,13 @@ def test_blank_lines_do_not_count_towards_the_line_threshold():
     连空行一起数的话「五句话 + 四个空行」就是 9 行, 十几个字也会被折,
     行数阈值反而比字符阈值更早误触发。
     """
-    from plugins.helpers import _should_fold
+    from plugins.helpers import _FOLD_LINE_THRESHOLD, _should_fold
 
     spaced = "\n\n".join(["字"] * 5)          # 5 内容行 + 4 空行, 共 9 行, 13 字
     assert len(spaced.splitlines()) == 9
     assert _should_fold(spaced) is False
 
-    solid = "\n".join(["字"] * 9)              # 9 个内容行
+    solid = "\n".join(["字"] * (_FOLD_LINE_THRESHOLD + 1))   # 超阈值的内容行
     assert _should_fold(solid) is True
 
 
