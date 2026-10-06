@@ -33,18 +33,34 @@ def test_a_quote_heavy_post_folds_exactly_once():
     assert out.count("</details>") == 1
 
 
-def test_the_whole_post_goes_inside_that_single_fold():
-    """折叠的是整篇 —— 所有小节都在 details 里面, 不是只折一部分"""
+def test_the_whole_post_is_covered_by_that_single_fold():
+    """折叠覆盖整篇: 所有小节要么在预览里、要么在 details 里, 不会丢在外面散着。
+
+    (折叠的**对象**是整篇; 预览只是它开头的几行, 所以首节会在 details 之外。)
+    """
     out = format_text(_post(12), fold_summary="展开全文")
-    body = out.split("<details>", 1)[1]
-    assert "小节 0" in body
-    assert "小节 11" in body
+    assert out.count("<details>") == 1
+    for i in (0, 11):
+        assert f"小节 {i}" in out, f"第 {i} 节不见了"
+    head, _, tail = out.partition("<details>")
+    assert "小节 11" in tail, "靠后的小节必须在折叠里"
+    assert "小节 11" not in head
 
 
-def test_the_fold_is_collapsed_with_no_preview():
-    """整篇折叠不留预览 (用户要的是"收起时一行展开全文")"""
+def test_the_fold_keeps_the_first_lines_as_a_preview():
+    """折叠后**开头几行留在外面**当预览。
+
+    (曾一度全收起 —— 结果用户报「没有前几行」; 收起时客户端只显示 summary,
+    不留预览就看不到一点内容。)
+    """
     out = format_text(_post(12), fold_summary="展开全文")
-    assert out.startswith("<details>")
+    head, rest = out.split("<details>", 1)
+    assert head.strip(), f"展开按钮之前必须有预览行: {out[:120]!r}"
+    assert "<details>" in out                                   # 仍然只折一次
+    assert out.count("<details>") == 1
+    # 预览是被折内容的前面部分, 且剩余部分确实在 details 里
+    preview_lines = [ln for ln in head.strip().splitlines() if ln.strip()]
+    assert 1 <= len(preview_lines) <= 3, preview_lines
 
 
 def test_short_content_is_not_folded():

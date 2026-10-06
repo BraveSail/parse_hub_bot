@@ -109,11 +109,13 @@ def test_quote_not_folded_when_expandable_disabled():
 
 
 def test_format_text_folds_long_plain_text():
-    """折叠 = **整段进 details, 不留预览** (用户要「收起时一行展开全文」)"""
-    out = format_text("y" * 600)
-    assert out.startswith("<details><summary>\u5c55\u5f00\u5168\u6587</summary>")
+    """折叠 = **开头留一截当预览**, 其余进 details (收起时也能看到前几行)"""
+    out = format_text("z" * 600)  # 填充字符别用 y/s/u…: 标签里就有它们
+    assert "<details><summary>\u5c55\u5f00\u5168\u6587</summary>" in out
     assert out.endswith("</details>")
-    assert "y" * 600 in out                              # 一个字没丢
+    head = out.split("<details>", 1)[0].strip()
+    assert head, "展开按钮之前要有预览"
+    assert out.count("z") == 600                         # 一个字没丢
     assert "......" not in out
 
 
@@ -153,17 +155,18 @@ def test_folded_body_keeps_paragraph_breaks():
     assert out.count("\n\n") >= 4
 
 
-def test_the_fold_hides_everything_behind_the_summary():
-    """整篇折叠是**全收起**: 开头那段也在 details 里面 (不再留预览)。
+def test_the_fold_hides_the_rest_behind_the_summary():
+    """整篇只折一次: 预览留在外面, 其余全进 details (没有第二处折叠点)。
 
-    与 <blockquote expandable> 的"整块一起折"不同 —— details 收起时只显示 summary,
-    所以这里必须把整段都放进去, 否则开头会露在按钮外面 (那就不是"整篇折一次"了)。
+    预览是"开头一截"(与引用卡片同一套 `split_fold_preview`); details 收起时只显示
+    summary, 所以被折的部分要点开才看得到。
     """
     n = _FOLD_CHAR_THRESHOLD // 2 + 50
     body = "\n\n".join(["开头这一段", "中间内容" * n, "结尾内容" * n])
     out = format_text(body)
-    assert out.startswith("<details>")
-    assert out.index("开头这一段") > out.index("<details>")
+    assert out.count("<details>") == 1
+    assert out.index("开头这一段") < out.index("<details>"), "开头那截应作为预览留在外面"
+    assert out.index("结尾内容" * n) > out.index("<details>"), "靠后的内容应被折起来"
 
 
 def test_single_line_long_text_still_folds():

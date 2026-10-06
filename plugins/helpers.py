@@ -1081,24 +1081,16 @@ def _normalize_hr(text: str) -> str:
 
 
 def _fold_whole(content: str, *, summary: str = "") -> str:
-    """把**整段**内容包成一个可折叠块 (全收起, 不留预览)。
-
-    与 ``_render_foldable`` 的区别: 那个会留开头几行当预览 —— 那适合"一段长正文",
-    但整篇折叠时预览本身就是一大段内容, 而用户要的是"收起时一行展开全文"。
-    """
-    return f"<details><summary>{summary or _DEFAULT_FOLD_SUMMARY}</summary>\n\n{content}\n\n</details>"
-
-
-def _render_foldable(content: str, *, summary: str = "") -> str:
-    """包成可折叠块 (长内容展示用): 开头几行留外面当预览, 其余折进 details。
+    """把内容折一次: **开头几行留外面当预览**, 其余折进 details。
 
     **用 <details> 而不是 <blockquote expandable>**: 后者一旦块内含空行,
-    Telegram 就把它退化成普通引用块 (完全不折叠) —— 而推文正文天然是多段落,
+    Telegram 就把它退化成普通引用块 (完全不折叠) —— 而正文天然是多段落,
     于是长正文永远折不起来; 而且引用块内的换行会被并成空格, 段落结构全丢。
     <details> 保留完整段落, 是富文本 markdown 里唯一能折叠多段落的容器。
 
-    但 <details> 收起时**只显示 summary**, 所以正文得留一截在外面当预览,
-    否则用户看到的就是光秃秃一个「展开全文」。
+    收起时客户端**只显示 summary**, 所以必须留一截在外面当预览 —— 否则用户看到的
+    就是光秃秃一个「展开全文」(曾一度全收起, 用户报「没有前几行」)。
+    预览行数与阈值见 ``split_fold_preview`` / ``_FOLD_PREVIEW_*``。
     """
     preview, rest = split_fold_preview(content)
     if not rest:
