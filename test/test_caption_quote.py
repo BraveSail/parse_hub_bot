@@ -173,10 +173,10 @@ def test_single_line_long_text_still_folds():
     """整条正文只有一行时也要折: 行切不出来就按字符切, 否则永远折不起来"""
     from plugins.helpers import split_fold_preview
 
-    preview, rest = split_fold_preview("z" * 500)
+    preview, rest = split_fold_preview("z" * 900)
     assert preview and rest
-    assert preview + rest == "z" * 500
-    assert "z" * 400 in rest                   # 剩余足够多, 折了才有意义
+    assert preview + rest == "z" * 900         # 一个字都没丢
+    assert len(rest) > len(preview), "折起来的那部分要足够多, 否则折叠没意义"
 
 
 def test_split_fold_preview_returns_unfolded_for_short_content():
@@ -361,7 +361,7 @@ def test_build_rich_markdown_does_not_truncate_a_very_long_body():
     md = build_rich_markdown(result, config=config, lang="zh-hans")
     assert "<details>" in md
     assert "......" not in md
-    assert "长" * 1400 in md             # 折起的部分完整 (预览 + 折起 = 全文)
+    assert md.count("长") == 1500         # 一个字没丢 (预览 + 折起 = 全文)
 
 
 def test_format_text_does_not_truncate_by_default():
@@ -370,7 +370,7 @@ def test_format_text_does_not_truncate_by_default():
 
     out = format_text("x" * 1200)
     assert "......" not in out
-    assert "x" * 1100 in out
+    assert out.count("x") == 1200
 
 
 def test_caption_path_truncates_only_when_asked():

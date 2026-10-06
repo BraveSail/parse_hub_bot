@@ -990,9 +990,10 @@ def _strip_quote_prefix(match: re.Match) -> str:
 _DEFAULT_FOLD_SUMMARY = "展开全文"
 
 #: 折叠前**留在外面**的预览: 折叠态只显示 summary, 不留预览的话正文一个字都看不到
-#: (用户原话「这个折叠看不到一点内容啊」)。行数与字符数任一触顶即停。
-_FOLD_PREVIEW_LINES = 2
-_FOLD_PREVIEW_CHARS = 100
+#: (用户原话「这个折叠看不到一点内容啊」「怎么还是没有前几行啊」)。
+#: 行数与字符数任一触顶即停; 行数只数**非空行**(空行是排版, 不是内容量)。
+_FOLD_PREVIEW_LINES = 7
+_FOLD_PREVIEW_CHARS = 300
 
 
 def split_fold_preview(content: str) -> tuple[str, str]:

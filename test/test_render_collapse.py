@@ -9,7 +9,7 @@
 - 字面 `---`: 原文里 `---` 紧贴上一行, 服务端要前后有空行才认它是分隔线。
 """
 
-from plugins.helpers import _FOLD_CHAR_THRESHOLD, format_text
+from plugins.helpers import _FOLD_CHAR_THRESHOLD, _FOLD_PREVIEW_CHARS, _FOLD_PREVIEW_LINES, format_text
 
 QUOTE = "> <i><a href=\"https://linux.do/u/someone\">@someone</a></i> 这是一段引用内容, 长度普通。"
 
@@ -60,7 +60,8 @@ def test_the_fold_keeps_the_first_lines_as_a_preview():
     assert out.count("<details>") == 1
     # 预览是被折内容的前面部分, 且剩余部分确实在 details 里
     preview_lines = [ln for ln in head.strip().splitlines() if ln.strip()]
-    assert 1 <= len(preview_lines) <= 3, preview_lines
+    assert 1 <= len(preview_lines) <= _FOLD_PREVIEW_LINES, preview_lines
+    assert len(head.strip()) <= _FOLD_PREVIEW_CHARS + 60, "预览不该明显超字符上限"
 
 
 def test_short_content_is_not_folded():

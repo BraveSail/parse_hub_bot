@@ -132,12 +132,15 @@ def test_blank_lines_do_not_use_up_the_preview():
     所谓"前几行预览"名不副实。
     """
     body = "<i>第一段文字</i>\n\n<i>第二段文字</i>\n\n" + "\n\n".join(
-        f"<i>第{i}行内容</i>" for i in range(3, 12)
+        f"<i>第{i}行内容</i>" for i in range(3, 20)
     )
     markdown = _render(_quote(body), [PLACEHOLDER])
     head = markdown.split("<details>", 1)[0]
-    assert "第一段文字" in head and "第二段文字" in head, f"应露出两行文字: {head!r}"
-    assert "第3行内容" not in head, f"第三行该折起来: {head!r}"
+    # 预览按"只数非空行"取, 所以开头两段文字都该露出来 (没被空行吃掉配额)
+    assert "第一段文字" in head and "第二段文字" in head, f"应露出前两行文字: {head!r}"
+    # 靠后的内容仍在折叠里
+    assert "第19行内容" not in head
+    assert "第19行内容" in markdown
 
 
 def test_the_author_line_does_not_decide_whether_to_fold():
