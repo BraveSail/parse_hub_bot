@@ -420,20 +420,35 @@ def test_sub_replies_are_marked():
 
 # ---------------------------------------------------------------- 图片与表情
 
-def test_uploaded_images_are_collected_from_any_floor():
-    """图片从所有楼层抽（目标层可能在后面，图得先收全）"""
+def test_only_the_sent_floor_keeps_its_images():
+    """**核心**: 图片只保留**本层 + 上下文层**的 —— 别的楼层的图一律不发。
+
+    抽图时遍历全页（楼中楼里的图必须提前抽，逆序解析会 decompose 掉那些节点），
+    但**发出去时必须收窄**：不收窄的话整页几十层的图都会被当成"本层的图"
+    （用户报「把楼里所有图片都发出来了」—— 章节页 214 层一次发了 21 张）。
+    """
     nested = _floor(
         "7", "#2-1", "2026-10-7 00:28", "甲", "a",
         '<img class="code" src="//lain.bgm.tv/pic/photo/l/deep.jpg"/>',
         cls="sub_reply_bg clearit", body_cls="cmt_sub_content",
     )
-    topic = _from_html(
-        _floor("6", "#2", "2026-10-7 00:24", "甲", "a",
-               '<img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/>', nested=nested)
-    )
-    urls = [i.url for i in topic.images]
-    assert "https://lain.bgm.tv/pic/photo/l/a.jpg" in urls
-    assert "https://lain.bgm.tv/pic/photo/l/deep.jpg" in urls, "楼中楼里的图也要收（树上要先抽）"
+    reply = _floor("6", "#2", "2026-10-7 00:24", "甲", "a",
+                   '<img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/>', nested=nested)
+
+    # 发主楼（它自己没图）→ 一张都不带（#2 与它楼中楼的图不是主楼的）
+    assert _from_html(reply).images == []
+
+    # 发 #2 层 → 只带它自己那张；楼中楼那张属于**另一层**
+    assert [i.url for i in _from_html(reply, floor_id="6").images] == [
+        "https://lain.bgm.tv/pic/photo/l/a.jpg"
+    ]
+
+    # 发楼中楼 → 它自己那张 + 父楼（上下文）那张
+    urls = [i.url for i in _from_html(reply, floor_id="7").images]
+    assert urls == [
+        "https://lain.bgm.tv/pic/photo/l/deep.jpg",
+        "https://lain.bgm.tv/pic/photo/l/a.jpg",
+    ], urls
 
 
 def test_smiles_stay_text_and_do_not_become_media():

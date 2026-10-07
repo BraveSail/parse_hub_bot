@@ -644,18 +644,25 @@ class BangumiTopic:
             context_floor = parent
 
         context_quote = ""
-        quoted_media = 0
-        if not is_opening and context_floor is not None:
+        reply_media = 0
+        has_context = not is_opening and context_floor is not None
+        if has_context:
             context_quote = cls._quote_of(context_floor)
-            # 上下文层的图走**引用块媒体**通道 —— 约定是「末尾这几张属于引用块」
-            # （见 ``reply_media_count``：块在正文前，媒体排在正文媒体之后）。
-            # 图片是按 DOM 顺序抽的、上下文层在最前面，所以这里要**重排**：
-            # 本层的图在前、上下文层的图挪到末尾。
-            context_urls = set(context_floor.image_urls)
-            images = [i for i in images if i.url not in context_urls] + [
-                i for i in images if i.url in context_urls
-            ]
-            quoted_media = len([i for i in images if i.url in context_urls])
+
+        # **只发这一层的内容**：图片收窄到**本层 + 上下文层**。
+        #
+        # ⚠️ 抽图时遍历的是**全页所有楼层**（楼中楼里的图必须提前抽 —— 逆序解析会
+        # `decompose()` 掉那些节点，之后再找就没了）。不在这里收窄的话，整页几十层
+        # 的图都会被当成"本层的图"发出去（用户报「把楼里所有图片都发出来了」：
+        # 章节页 214 层的吐槽箱一次发了 21 张）。
+        #
+        # 顺序约定 ``[本层…, 上下文层…]``：上下文层那几张走引用块媒体通道
+        # （``reply_media_count``，块在正文前）。
+        by_url = {i.url: i for i in images}
+        current_urls = list(current.image_urls) if current else []
+        context_urls = list(context_floor.image_urls) if has_context else []
+        images = [by_url[u] for u in dict.fromkeys([*current_urls, *context_urls]) if u in by_url]
+        reply_media = len([u for u in dict.fromkeys(context_urls) if u in by_url])
 
         # 归属行**不进正文** —— 它是元信息，渲染层放在标题与作者行之间。
         # 章节页给**章节名**（带 ``/ep/<id>`` 链接）—— 用户看的是"哪部番的哪一集"，
@@ -686,7 +693,7 @@ class BangumiTopic:
             published_at=to_datetime(current.published_at, default_tz=BGM_TIMEZONE) if current else None,
             images=images,
             # 上下文块排在正文**之前** ⇒ 角色是 ``reply``（媒体走 reply_media_count）
-            reply_media_count=quoted_media,
+            reply_media_count=reply_media,
             quote_roles=["reply"] if context_quote else [],
             floor_label=current.label if current else "",
             is_opening=is_opening,

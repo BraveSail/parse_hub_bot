@@ -191,6 +191,80 @@ def test_the_anchored_floor_is_what_gets_sent():
     assert "这片工期果然炸了" in topic.markdown_content
 
 
+# ── 图片只属于本层与上下文 ─────────────────────────────────────────────
+
+def _floor_html(pid: str, label: str, when: str, body: str, *, sub: bool = False, nested: str = "") -> str:
+    body_cls = "cmt_sub_content" if sub else "reply_content"
+    cls = "sub_reply_bg clearit" if sub else "light_even row row_reply clearit"
+    return (
+        f'<div class="{cls}" id="post_{pid}">'
+        f'<div class="post_actions re_info"><div class="action"><small>{label} - {when}</small></div></div>'
+        f'<div class="inner"><strong><a class="l" href="/user/u{pid}">甲{pid}</a></strong>'
+        f'<div class="{body_cls}"><div class="message">{body}{nested}</div></div>'
+        "</div></div>"
+    )
+
+
+def _ep_html(floors: str) -> str:
+    """章节页骨架 + 给定的楼层（没有主楼，只有章节信息）。"""
+    return (
+        '<html><body><div class="clearit" id="headerSubject"><h1><a href="/subject/1">S</a></h1></div>'
+        '<div id="columnEpA"><h2 class="title">ep.1</h2>'
+        '<div class="epDesc">时长:00:23:40 / 首播:2026-10-03</div></div>'
+        f'<div id="comment_list" class="commentList">{floors}</div></body></html>'
+    )
+
+
+def test_only_the_sent_floor_keeps_its_pictures():
+    """**核心**（用户报「把楼里所有图片都发出来了」）: 一整集 200 多层，发一层就只发
+
+    那一层（+ 上下文层）的图 —— 不能把全页的图都当成本层的。
+    """
+    img = lambda name: f'<img class="code" src="//lain.bgm.tv/pic/photo/l/{name}.jpg"/>'  # noqa: E731
+    floors = "".join(
+        [
+            _floor_html("11", "#1", "2026-10-1 10:00", img("f1")),
+            _floor_html("12", "#2", "2026-10-2 10:00", img("f2") + img("f2b")),
+            _floor_html("13", "#3", "2026-10-3 10:00", img("f3")),
+            _floor_html("14", "#4", "2026-10-4 10:00", img("f4")),
+        ]
+    )
+    html = _ep_html(floors)
+
+    # 发第 3 层 → 只带它自己那张（前面几层的图不该跟着发）
+    topic = BangumiTopic._from_html(html, "1", floor_id="13", kind="ep")
+    assert [i.url.split("/")[-1] for i in topic.images] == ["f3.jpg"], [i.url for i in topic.images]
+
+    # 发第 2 层（两张图）→ 两张都在，别的层不在
+    topic = BangumiTopic._from_html(html, "1", floor_id="12", kind="ep")
+    assert {i.url.split("/")[-1] for i in topic.images} == {"f2.jpg", "f2b.jpg"}
+
+
+def test_a_top_level_floor_does_not_swallow_other_floors_pictures():
+    """一级吐槽引的是**章节信息**（它没有图）⇒ 只发自己那几张，一张都不多"""
+    img = lambda name: f'<img class="code" src="//lain.bgm.tv/pic/photo/l/{name}.jpg"/>'  # noqa: E731
+    floors = _floor_html("11", "#1", "2026-10-1 10:00", img("a")) + _floor_html(
+        "12", "#2", "2026-10-2 10:00", img("b")
+    )
+    topic = BangumiTopic._from_html(_ep_html(floors), "1", floor_id="12", kind="ep")
+    assert [i.url.split("/")[-1] for i in topic.images] == ["b.jpg"]
+    assert topic.reply_media_count == 0, "章节信息没有图，引用块媒体应为 0"
+
+
+def test_a_sub_reply_keeps_its_parents_pictures_as_context():
+    """楼中楼发**自己 + 父楼**的图：父楼的走引用块媒体通道（`reply_media_count`）"""
+    img = lambda name: f'<img class="code" src="//lain.bgm.tv/pic/photo/l/{name}.jpg"/>'  # noqa: E731
+    nested = _floor_html("21", "#2-1", "2026-10-2 12:00", img("sub"), sub=True)
+    parent = _floor_html("12", "#2", "2026-10-2 10:00", img("parent"), nested=nested)
+    other = _floor_html("13", "#3", "2026-10-3 10:00", img("other"))
+    topic = BangumiTopic._from_html(_ep_html(parent + other), "1", floor_id="21", kind="ep")
+
+    assert [i.url.split("/")[-1] for i in topic.images] == ["sub.jpg", "parent.jpg"], [
+        i.url for i in topic.images
+    ]
+    assert topic.reply_media_count == 1, "父楼那张属于引用块"
+
+
 # ── 统计 ───────────────────────────────────────────────────────────────
 
 def test_the_reply_count_comes_from_the_site():
