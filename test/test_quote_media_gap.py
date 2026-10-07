@@ -1,8 +1,10 @@
-"""图片与引用卡片之间要留**一行间距**（用户报「图片和引用贴在一起」）。
+"""图片与引用卡片之间要有间隔（用户报「图片和引用贴在一起」）。
 
-富文本里连续空行会被服务端**折叠**（实测：``块 + 空行 + 图`` 与 ``块 + 两个空行 + 图``
-的块结构完全相同），半角空格行同样被折叠 —— 只有**全角空格**段落能撑出一行高度。
-所以间距用 ``_QUOTE_GAP``（全角空格）实现。
+用**分割线**（``_QUOTE_GAP = "---"``，实测产出独立的 ``Divider`` 块）。
+曾经试过全角空格段：也能产出独立段落，但**太宽**（用户「这个不行太宽了，试试分割线」）。
+
+⚠️ 空行与半角空格段都会被服务端**折叠**（实测块结构与不加时完全相同）——
+间距会静默消失，改动时别退回这两种写法。
 
 两个方向都要：
 
@@ -17,7 +19,7 @@ import types
 
 from plugins.helpers import build_rich_markdown
 
-GAP = "\u3000"
+GAP = "---"
 
 REPLY = "> <i>回复块的作者</i>\n> <i>回复正文</i>"
 QUOTED = "> <i>引用块的作者</i>\n> <i>引用正文</i>"
@@ -69,21 +71,37 @@ def _render(content, *, roles=None, reply_media=(), quoted_media=(), body_media=
 def _blocks(md: str) -> list[str]:
     """按空行切段，忽略段内换行 —— 段的顺序就是块顺序。
 
-    ⚠️ 不能用 ``seg.strip()`` 判空后就丢弃：**全角空格段是有效内容**（那就是间距本身），
-    而 Python 的 ``str.strip()`` 会把它去掉、看起来像空段。
+    （分割线本身就是有内容的段，``strip()`` 判空不受影响；当初用全角空格做间距时
+    这里必须特判 —— ``str.strip()`` 会抹掉全角空格、看起来像空段。）
     """
-    out: list[str] = []
-    for seg in md.split("\n\n"):
-        text = seg.strip()
-        if text:
-            out.append(text)
-        elif GAP in seg:
-            out.append(GAP)
-    return out
+    return [seg.strip() for seg in md.split("\n\n") if seg.strip()]
 
 
 def _gap_positions(md: str) -> list[int]:
-    return [i for i, seg in enumerate(_blocks(md)) if seg == GAP]
+    """**间距**分割线的下标 —— 只数"卡片与媒体相邻"的那些。
+
+    ⚠️ 不能数全局的 ``---``：作者行与内容之间本来就有一条同样的分割线
+    （``_meta_divider``），那是元信息分区，不是这里的间距。
+    """
+    blocks = _blocks(md)
+    out: list[int] = []
+    for i, seg in enumerate(blocks):
+        if seg != GAP or i == 0 or i + 1 >= len(blocks):
+            continue
+        before, after = blocks[i - 1], blocks[i + 1]
+        if (_is_card(before) and _is_media(after)) or (_is_media(before) and _is_card(after)):
+            out.append(i)
+    return out
+
+
+def _is_card(seg: str) -> bool:
+    head = seg.lstrip()
+    return head.startswith(">") or head.startswith("<blockquote")
+
+
+def _is_media(seg: str) -> bool:
+    head = seg.lstrip()
+    return head.startswith("![]") or head.startswith("<tg-collage>")
 
 
 # ── 卡片在前、图片在后（bgm 纯图楼层） ─────────────────────────────────
@@ -129,20 +147,20 @@ def test_a_picture_inside_the_card_stays_glued():
     """
     md = _render(QUOTED, roles=["quoted"], quoted_media=QUOTED_MEDIA, body_media=())
     assert f"> {QUOTED_MEDIA[0]}" in md, md
-    assert GAP not in md, "卡片内部有图时不该再插间距"
+    assert _gap_positions(md) == [], "卡片内部有图时不该再插间距"
 
 
 def test_no_picture_means_no_gap():
     """**回归**: 没有图片时产物不变（不产生多余的空段）"""
     without = _render(f"{REPLY}\n\n{BODY}", roles=["reply"], body_media=())
-    assert GAP not in without, _blocks(without)
+    assert _gap_positions(without) == [], _blocks(without)
     assert BODY in without and "> <i>回复块的作者" in without
 
 
 def test_a_card_next_to_text_gets_no_gap():
     """卡片旁边只是**文字**（不是图片）时不插间距 —— 用户要的是"图片和引用"分开"""
     md = _render(f"{REPLY}\n\n{BODY}", roles=["reply"], body_media=())
-    assert GAP not in md, _blocks(md)
+    assert _gap_positions(md) == [], _blocks(md)
     assert BODY in md
 
 
@@ -184,7 +202,7 @@ def test_the_undeclared_path_gets_the_gap_too():
 def test_the_undeclared_path_does_not_gap_distant_things():
     """**回归**: 卡片与图不相邻（中间隔着正文）→ 位置路径也不该插间距"""
     md = _render(f"{QUOTED}\n\n{BODY}", quoted_media=QUOTED_MEDIA)
-    assert GAP not in md, _blocks(md)
+    assert _gap_positions(md) == [], _blocks(md)
 
 
 if __name__ == "__main__":
