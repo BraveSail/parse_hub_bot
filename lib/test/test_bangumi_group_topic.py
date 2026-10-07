@@ -163,12 +163,32 @@ def test_the_quote_and_the_body_are_one_blank_line_apart():
     assert lines[last_quote + 2] != "", f"引用块与正文之间插了多余空行: {lines}"
 
 
-def test_the_affiliation_and_the_quote_are_one_blank_line_apart():
-    """归属行与引用块之间同理"""
+def test_the_quote_comes_first_and_the_affiliation_follows():
+    """**核心**: 引用块在**最前**，归属行跟在它后面。
+
+    渲染层对「**末尾**引用块」用的是推特语义（主推的媒体排在引用块上面），媒体会被
+    插到引用块**前面**贴在一起（用户报「图片和引用贴一起了」）。放在开头走
+    「被回复的卡片」那条通道，媒体自然跟在后面 —— 与 linux.do 同一形态。
+    """
     md = _topic("4062141").markdown_content
     lines = md.splitlines()
-    assert lines[0].endswith("» 讨论"), lines[0]
-    assert lines[1] == "" and lines[2].startswith("> <i>"), lines[:4]
+    assert lines[0].startswith("> <i>"), lines[:2]
+    last_quote = max(i for i, ln in enumerate(lines) if ln.startswith("> "))
+    assert lines[last_quote + 1] == "", lines
+    assert lines[last_quote + 2].endswith("» 讨论"), lines[last_quote : last_quote + 3]
+
+
+def test_the_affiliation_is_last_when_there_is_no_body():
+    """**核心**: 纯图楼层（本层没文字）—— 引用块在开头、归属行在最后,
+
+    媒体会跟在归属行后面，**不会**贴住引用块。
+    """
+    main = _main("主楼正文")
+    reply = _floor("6", "#2", "2026-10-7 00:24", "甲", "a", "")
+    topic = _from_html(reply, floor_id="6", main=main)
+    lines = topic.markdown_content.splitlines()
+    assert lines[0].startswith("> <i>"), lines
+    assert lines[-1].endswith("» 讨论"), lines[-3:]
 
 
 def test_the_opening_post_has_no_stray_blank_lines():
@@ -204,6 +224,46 @@ def test_a_bad_anchor_falls_back_to_the_opening_post():
     topic = _topic("99999999")
     assert topic.floor_label == "#1"
     assert "最近视奸" in topic.markdown_content
+
+
+# ---------------------------------------------------------------- 楼中楼引用父楼
+
+def test_a_sub_reply_quotes_the_floor_it_replies_to():
+    """**核心**: 楼中楼引用**父楼**（它实际回复的那层），不是主楼。
+
+    用户定案「引用父楼（#4，它实际回复的那层）」。`#4-1` 在 DOM 上嵌在 `#4` 的正文
+    容器里（`div.topic_reply_410733`），所以它回的是 `#4` 的话 —— 拿主楼当上下文
+    等于答非所问。
+    """
+    lines = _topic("4062147").markdown_content.splitlines()
+    quoted = "\n".join(ln for ln in lines if ln.startswith("> "))
+    assert "大夜宵" in quoted, f"引用块里应是父楼 #2 的作者: {quoted!r}"
+    assert "两年四百+少了" in quoted, quoted
+    assert "最近视奸" not in quoted, "不该引用主楼"
+
+
+def test_a_top_level_floor_still_quotes_the_opening_post():
+    """一级楼层回复的是主楼 —— 引用块不变"""
+    quoted = "\n".join(ln for ln in _topic("4062141").markdown_content.splitlines() if ln.startswith("> "))
+    assert "irohard" in quoted and "最近视奸" in quoted, quoted
+
+
+def test_a_sub_reply_without_a_parent_falls_back_to_the_opening():
+    """父楼不在页面上（被删）→ 退回主楼，别丢上下文"""
+    main = _main("主楼正文")
+    sub = _floor(
+        "7", "#2-1", "2026-10-7 00:28", "甲", "a", "楼中楼", cls="sub_reply_bg clearit", body_cls="cmt_sub_content"
+    )
+    topic = _from_html(sub, floor_id="7", main=main)
+    assert "主楼正文" in topic.markdown_content
+    assert topic.floors  # 父楼不在页面上的情形由解析层给 parent_dom_id 兜底
+
+
+def test_the_parent_is_recorded_for_sub_replies_only():
+    floors = {f.label: f for f in _topic().floors}
+    assert floors["#2-1"].parent_dom_id == "4062141", "楼中楼要记父楼"
+    assert floors["#2"].parent_dom_id == "", "一级楼层没有父楼"
+    assert floors["#6-1"].parent_dom_id == floors["#6"].dom_id
 
 
 def test_the_quote_media_count_covers_the_opening_posts_images():

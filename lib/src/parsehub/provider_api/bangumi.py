@@ -378,6 +378,12 @@ class BangumiFloor:
     """纯文本形态（纯图话题走 text_content 那条路要用）"""
     is_sub: bool = False
     """楼中楼（回复某个楼层，而不是回复主楼）"""
+    parent_dom_id: str = ""
+    """楼中楼**回复的那一层**（DOM 上最近的 ``post_<id>`` 祖先）；一级楼层为空。
+
+    被回复对象是**父楼**而不是主楼 —— 分享楼中楼时引用块要用它（用户定案：
+    「引用父楼（#4，它实际回复的那层）」）。
+    """
     image_urls: list[str] = field(default_factory=list)
     """这一层自己的图片（用来切分引用块媒体）"""
 
@@ -537,14 +543,24 @@ class BangumiTopic:
         body = current.markdown if current else ""
         plain = current.plain if current else ""
 
+        # 引用谁当上下文：**楼中楼引用父楼**（它回复的那层），其余引用主楼。
+        # 用户定案「引用父楼（#4，它实际回复的那层）」—— 楼中楼在 DOM 上嵌在父楼里，
+        # 拿主楼当上下文等于答非所问（#4-1 回的明明是 #4 的话）。
+        context_floor = opening
+        if current is not None and current.is_sub and current.parent_dom_id:
+            parent = next((f for f in all_floors if f.dom_id == current.parent_dom_id), None)
+            if parent is None:
+                logger.warning(f"楼中楼 {current.label} 的父楼 {current.parent_dom_id} 不在页面上, 退回主楼当上下文")
+            context_floor = parent or opening
+
         context_quote = ""
         quoted_media = 0
-        if not is_opening and opening is not None:
-            context_quote = cls._quote_of(opening)
+        if not is_opening and context_floor is not None:
+            context_quote = cls._quote_of(context_floor)
             # 主楼的图走**引用块媒体**通道 —— 而那个通道的约定是「**末尾** N 张属于引用块」
             # （见 ParseResult.quoted_media_count）。图片是按 DOM 顺序抽的，主楼在最前面，
             # 所以这里要**重排**：本层的图在前、主楼的图挪到末尾。
-            context_urls = set(opening.image_urls)
+            context_urls = set(context_floor.image_urls)
             images = [i for i in images if i.url not in context_urls] + [
                 i for i in images if i.url in context_urls
             ]
@@ -619,7 +635,8 @@ class BangumiTopic:
         它会**清空被摘节点的内容**。正序解析时父楼先把子楼清掉，轮到子楼就只剩空壳
         （实测：45 个节点只解析出 38 条，7 条楼中楼全空）。逆序（子 → 父）就没有这个问题。
         """
-        nodes: list[tuple[Any, bool]] = [(main_post, False)]
+        # (节点, 是否楼中楼, 楼中楼所回复的那一层的 dom id)
+        nodes: list[tuple[Any, bool, str]] = [(main_post, False, "")]
         # 主楼**可能也出现在 comment_list 里**（页面结构变动时会出现；抽 fixture 时我
         # 就踩到过）—— 不去重的话主楼会进两次，第一层被当正文、第二层又当楼层出现。
         seen_ids = {main_post.get("id")}
@@ -629,19 +646,25 @@ class BangumiTopic:
                 if node.get("id") in seen_ids:
                     continue
                 seen_ids.add(node.get("id"))
-                nodes.append((node, False))
+                nodes.append((node, False, ""))
+                # 楼中楼嵌在这层的正文容器里 ⇒ 它的父楼就是当前这层
+                # （实测 `post_410747` 在 `topic_reply_410733` 内，即 #4-1 回复 #4）
+                parent_dom_id = str(node.get("id") or "").removeprefix("post_")
                 for sub in node.select("div.sub_reply_bg"):
                     if sub.get("id") in seen_ids:
                         continue
                     seen_ids.add(sub.get("id"))
-                    nodes.append((sub, True))
+                    nodes.append((sub, True, parent_dom_id))
 
-        floors = [cls._parse_floor(node, is_sub=is_sub) for node, is_sub in reversed(nodes)]
+        floors = [
+            cls._parse_floor(node, is_sub=is_sub, parent_dom_id=parent_dom_id)
+            for node, is_sub, parent_dom_id in reversed(nodes)
+        ]
         floors.reverse()
         return floors
 
     @classmethod
-    def _parse_floor(cls, node: Any, *, is_sub: bool) -> BangumiFloor:
+    def _parse_floor(cls, node: Any, *, is_sub: bool, parent_dom_id: str = "") -> BangumiFloor:
         small = node.select_one(".post_actions small")
         label = ""
         published_at = ""
@@ -689,17 +712,28 @@ class BangumiTopic:
             is_sub=is_sub,
             plain=plain,
             image_urls=image_urls,
+            parent_dom_id=parent_dom_id,
         )
 
     # ------------------------------------------------------------------ 组装
 
     @classmethod
     def _compose(cls, context_name: str, context_url: str, context_quote: str, body: str) -> str:
-        """归属行 + （分享楼层时的）主楼引用块 + **本层正文**。
+        """**引用块 + 归属行 + 本层正文** —— 引用块放**最前**。
 
-        形态与 linux.do 的楼层解析一致：引用块在前当上下文，本层内容在后。
+        形态与 linux.do 的楼层解析一致（上下文引用块在前、本层内容在后）。
+
+        ⚠️ **引用块必须是最前面那一块**：渲染层对「**末尾**引用块」的处理是推特语义
+        （主推的媒体排在引用块上面），媒体会被插到引用块**前面**、贴在一起
+        （用户报「图片和引用贴一起了」）。放在开头走的是「被回复的卡片」那条通道
+        （``reply_quote``），媒体自然跟在它后面。
+
+        以前归属行在引用块之前，于是无正文的纯图楼层里引用块落到了**末尾** ——
+        正好踩中上面那个坑。
         """
         parts: list[str] = []
+        if context_quote:
+            parts.append(context_quote)
         if context_name:
             label = (
                 f'<a href="{html.escape(context_url, quote=True)}">{html.escape(context_name)}</a>'
@@ -707,8 +741,6 @@ class BangumiTopic:
                 else html.escape(context_name)
             )
             parts.append(f"**{label}** » 讨论")
-        if context_quote:
-            parts.append(context_quote)
         if body:
             parts.append(body)
         # strip 每个块: ``format_quote_block`` 末尾自带空行, 直接 join 会堆出多余空行
