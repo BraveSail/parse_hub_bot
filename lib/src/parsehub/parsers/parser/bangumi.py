@@ -27,18 +27,21 @@ class BangumiParseResult(RichTextParseResult):
 class BangumiParser(BaseParser):
     __platform__ = Platform.BANGUMI
     __supported_type__ = ["图文"]
-    # 锚定 ``blog/<数字>``、``group/topic/<数字>``、``subject/topic/<数字>``：
-    # bgm.tv 与 bangumi.tv 两个域名都有人用。
+    # 锚定 ``blog/<数字>``、``group/topic/<数字>``、``subject/topic/<数字>``、
+    # ``rakuen/topic/<归属>/<数字>``、``ep/<数字>``：bgm.tv 与 bangumi.tv 两个域名都有人用。
     # **不接** ``/subject/<id>``（条目页本身，官方 API 覆盖）与 ``/group/<slug>``（小组首页）。
     __match__ = (
         r"^(http(s)?://)?(bgm|bangumi)\.tv/"
         r"(blog/\d+"
         r"|(group|subject)/topic/\d+"
-        r"|rakuen/topic/(group|subject)/\d+)"  # 「超展开」入口，与上面同话题
+        r"|rakuen/topic/(group|subject)/\d+"  # 「超展开」入口，与上面同话题
+        r"|ep/\d+)"  # 章节讨论（一整集的吐槽箱）
     )
 
     async def _do_parse(self, raw_url: str) -> "BangumiParseResult":
         try:
+            if "/ep/" in raw_url:
+                return await self._parse_topic(raw_url)
             if "/topic/" in raw_url:
                 return await self._parse_topic(raw_url)
             return await self._parse_blog(raw_url)

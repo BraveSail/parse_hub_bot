@@ -301,15 +301,21 @@ def test_a_top_level_floor_still_quotes_the_opening_post():
     assert "irohard" in quoted and "最近视奸" in quoted, quoted
 
 
-def test_a_sub_reply_without_a_parent_falls_back_to_the_opening():
-    """父楼不在页面上（被删）→ 退回主楼，别丢上下文"""
-    main = _main("主楼正文")
-    sub = _floor(
-        "7", "#2-1", "2026-10-7 00:28", "甲", "a", "楼中楼", cls="sub_reply_bg clearit", body_cls="cmt_sub_content"
+def test_a_sub_reply_without_a_parent_gets_no_context():
+    """**核心**: 父楼不在页面上（被删）→ **不带上下文**（用户：「没有就保持空白」）。
+
+    不能退回主楼：主楼不是它回的那层，引上去等于编造上下文。
+    """
+    from parsehub.provider_api.bangumi import BangumiFloor
+
+    opening = BangumiFloor(label="#1", dom_id="1", markdown="主楼正文", author_name="楼主")
+    orphan = BangumiFloor(
+        label="#2-1", dom_id="7", is_sub=True, parent_dom_id="999", markdown="楼中楼", author_name="甲"
     )
-    topic = _from_html(sub, floor_id="7", main=main)
-    assert "主楼正文" in topic.markdown_content
-    assert topic.floors  # 父楼不在页面上的情形由解析层给 parent_dom_id 兜底
+    topic = BangumiTopic._build("1", "标题", "小组", "", opening, orphan, [opening, orphan], [], 0)
+    assert not [ln for ln in topic.markdown_content.splitlines() if ln.startswith("> ")], topic.markdown_content
+    assert "楼中楼" in topic.markdown_content
+    assert topic.quote_roles == [], "没有引用块就不该声明角色"
 
 
 def test_the_parent_is_recorded_for_sub_replies_only():

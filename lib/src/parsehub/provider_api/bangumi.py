@@ -49,10 +49,14 @@ GROUP_TOPIC_API = "https://bgm.tv/group/topic/{topic_id}"
 #: 条目讨论版（``/subject/topic/<id>``）—— **楼层结构与小组话题完全同构**，
 #: 只有头部不同（归属是条目而不是小组，标题是页面上**第二个** ``h1``）
 SUBJECT_TOPIC_API = "https://bgm.tv/subject/topic/{topic_id}"
+#: **章节讨论**（``/ep/<id>``）—— 一整集的吐槽箱。与话题页的关键差异：
+#: **没有主楼**（``.postTopic`` 为 0），只有一层层吐槽；回复数由站点给的「吐槽箱 N」
+#: 而不是数楼层（那个数含已删楼层）。
+EPISODE_API = "https://bgm.tv/ep/{topic_id}"
 
 #: 归属 → 规范页面模板。``/rakuen/topic/<归属>/<id>``（「超展开」里的入口）也走这两个
 #: —— 它与规范路径是**同一个话题**（实测正文逐块相同），归一化后零新增解析逻辑。
-_TOPIC_APIS = {"group": GROUP_TOPIC_API, "subject": SUBJECT_TOPIC_API}
+_TOPIC_APIS = {"group": GROUP_TOPIC_API, "subject": SUBJECT_TOPIC_API, "ep": EPISODE_API}
 
 #: 页面上内联的 emoji 状态数据（按楼层 id 组织，**不用额外请求**）::
 #:
@@ -68,6 +72,8 @@ _LIKES_LIST_RE = re.compile(r"var data_likes_list\s*=\s*(\{.*?\});", re.S)
 #: 后者要 ``rakuen/topic/``），所以匹配顺序不影响结果 —— 实测两个方向都试过。
 _TOPIC_URL_RE = re.compile(r"/(group|subject)/topic/(\d+)")
 _RAKUEN_URL_RE = re.compile(r"/rakuen/topic/(group|subject)/(\d+)")
+#: 章节讨论页 ``/ep/<id>``（锚点是 ``#post_<id>``，与话题页同一套）
+_EPISODE_URL_RE = re.compile(r"/ep/(\d+)")
 
 #: bgm 的**服务器时区**。页面上的时间是站点本地时间（``2026-10-7 00:24``，不带偏移），
 #: 按 UTC 解释会让整条消息差 8 小时（用户报「时间好像有问题？多 8 小时」）。
@@ -302,6 +308,16 @@ def _simplify(entry: Any) -> None:
     for q in entry.find_all("q"):
         q.unwrap()
 
+def _is_episode_page(soup: BeautifulSoup) -> bool:
+    """这个页面是不是**章节讨论**（``/ep/<id>``）。
+
+    判据取"章节页特有两样都齐"：``#headerSubject`` 里有条目链接（章节页挂在条目下）
+    且有个 ``h1``。**不按"没有主楼"判** —— 结构变动导致的空页面也会没有主楼，
+    那种情况该走"结构不认识"的报错，而不是被当成章节页解析出空结果。
+    """
+    return bool(soup.select_one("#headerSubject a[href^='/subject/']")) and bool(soup.find("h1"))
+
+
 def _to_markdown(html: str) -> str:
     """HTML → markdown；马赛克标记换成 Telegram 剧透语法。"""
     if not html:
@@ -454,10 +470,14 @@ class BangumiTopic:
         - ``/group/topic/<id>``         小组话题
         - ``/subject/topic/<id>``       条目讨论版
         - ``/rakuen/topic/<归属>/<id>`` 「超展开」列表里的入口（页面更精简，但同构）
+        - ``/ep/<id>``                   章节讨论（一整集的吐槽箱；**没有主楼**）
         """
         for pattern in (_RAKUEN_URL_RE, _TOPIC_URL_RE):
             if match := pattern.search(url or ""):
                 return match.group(1), match.group(2)
+        # 章节页没有归属段（``/ep/<id>``）—— 归属固定是 ``ep``
+        if match := _EPISODE_URL_RE.search(url or ""):
+            return "ep", match.group(1)
         return "", ""
 
     @staticmethod
@@ -485,7 +505,7 @@ class BangumiTopic:
             raise BangumiError(f"链接里没有话题 id: {url}")
         # rakuen 的入口归一化到**规范路径**再抓：它的页面更精简（16KB vs 26KB），
         # 归属链指向条目而不是小组，header 分支与规范页面也不同 —— 归一化后
-        # 复用已验证的那两条路径，零新增解析逻辑。
+        # 复用已验证的那两条路径，零新增解析逻辑。章节页（ep）本身就是规范路径。
         api = _TOPIC_APIS[kind].format(topic_id=topic_id)
         try:
             async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
@@ -496,19 +516,25 @@ class BangumiTopic:
             raise BangumiError(f"话题 {topic_id} 不存在")
         response.raise_for_status()
         html = response.content.decode("utf-8", errors="replace")
-        return cls._from_html(html, topic_id, floor_id=cls.get_floor_id_by_url(url))
+        return cls._from_html(html, topic_id, floor_id=cls.get_floor_id_by_url(url), kind=kind)
 
     @classmethod
-    def _from_html(cls, html: str, topic_id: str, *, floor_id: str = "") -> BangumiTopic:
+    def _from_html(
+        cls, html: str, topic_id: str, *, floor_id: str = "", kind: str = ""
+    ) -> BangumiTopic:
         soup = BeautifulSoup(html, "lxml")
 
+        # **主楼是可选的**：章节讨论页（``/ep/<id>``）只有一层层吐槽、没有主楼
+        # （实测 ``.postTopic`` 为 0）。这条差分很关键 —— 当成"有主楼"会把 #1 吐槽
+        # 误当楼主，于是给它做引用块、回复数也少算一条。
         main_post = soup.select_one(".postTopic")
-        if main_post is None:
+        is_episode = kind == "ep" or (main_post is None and _is_episode_page(soup))
+        if main_post is None and not is_episode:
             if _ERROR_MARKER in html:
-                raise BangumiError(f"小组话题 {topic_id} 不存在或不可见")
-            raise BangumiError(f"小组话题 {topic_id} 页面结构不认识（bgm.tv 可能改版了）")
+                raise BangumiError(f"话题 {topic_id} 不存在或不可见")
+            raise BangumiError(f"话题 {topic_id} 页面结构不认识（bgm.tv 可能改版了）")
 
-        title, context_name, context_url = cls._parse_header(soup)
+        title, context_name, context_url = cls._parse_header(soup, kind="ep" if is_episode else "")
 
         # ⚠️ **图片先抽**：解析楼层时会 `decompose()` 掉嵌在父楼正文里的楼中楼节点，
         # 那之后楼中楼里的图就找不到了（它们在树上已经不存在）。
@@ -521,17 +547,43 @@ class BangumiTopic:
                     images.append(img)
 
         all_floors = cls._collect_floors(soup, main_post)
-        # 整帖统计（页脚用）: 状态数是**所有楼层**的表情回应人数之和;
-        # 回复数是楼层总数 − 1（主楼不算回复）
+        # 整帖统计（页脚用）: 状态数是**所有楼层**的表情回应人数之和
         state_count = cls._parse_state_count(html)
-        opening = next((f for f in all_floors if f.label == "#1"), None)
-        if opening is None and all_floors:
-            opening = all_floors[0]
 
-        # **只发一层**：锚点指定的那层，没有锚点就是主楼
-        current = cls._pick_floor(all_floors, opening, floor_id)
+        # **主楼**：话题页是 ``#1`` 楼层；章节页是**官方章节信息**（``div.epDesc``）——
+        # 页面上没有用户的楼主帖，但那段章节信息就在主楼的位置（用户：「主楼就抓 ep.1 …」）。
+        # 章节信息**没有就留空**（用户：「没有就保持空白」）⇒ opening 为 None，
+        # 一级吐槽于是不引任何东西（章节页的第一层吐槽**不是**主楼，不能顶替）。
+        episode_body = cls._parse_episode_desc(soup) if is_episode else ""
+        if is_episode:
+            opening = BangumiFloor(markdown=episode_body) if episode_body else None
+        else:
+            opening = next((f for f in all_floors if f.label == "#1"), None)
+            if opening is None and all_floors:
+                opening = all_floors[0]
+
+        # **只发一层**：锚点指定的那层；没有锚点时话题页发主楼、章节页发第一层
+        current = cls._pick_floor(all_floors, opening or (all_floors[0] if all_floors else None), floor_id)
+
+        # 回复数: 章节页用站点给的「吐槽箱 N」（含已删楼层，比数楼层准）;
+        # 话题页用"楼层总数 − 1"（主楼不算回复）
+        reply_count = None if is_episode else max(1, len(all_floors)) - 1
+        if is_episode and (site_count := cls._parse_reply_count(soup)) is not None:
+            reply_count = site_count
+        episode_name = cls._parse_episode_name(soup) if is_episode else ""
+
         return cls._build(
-            topic_id, title, context_name, context_url, opening, current, all_floors, images, state_count
+            topic_id,
+            title,
+            context_name,
+            context_url,
+            opening,
+            current,
+            all_floors,
+            images,
+            state_count,
+            reply_count=reply_count,
+            episode_name=episode_name,
         )
 
     @staticmethod
@@ -564,8 +616,12 @@ class BangumiTopic:
         all_floors: list[BangumiFloor],
         images: list[BangumiImage],
         state_count: int = 0,
+        *,
+        reply_count: int | None = None,
+        episode_name: str = "",
     ) -> BangumiTopic:
         """组装结果：本层正文（+ 不是主楼时把主楼做成引用块，与 linux.do 同一形态）。"""
+        # 主楼位置的当前层（章节页的章节信息也是"主楼"）
         is_opening = current is opening
         body = current.markdown if current else ""
         plain = current.plain if current else ""
@@ -573,12 +629,19 @@ class BangumiTopic:
         # 引用谁当上下文：**楼中楼引用父楼**（它回复的那层），其余引用主楼。
         # 用户定案「引用父楼（#4，它实际回复的那层）」—— 楼中楼在 DOM 上嵌在父楼里，
         # 拿主楼当上下文等于答非所问（#4-1 回的明明是 #4 的话）。
+        #
+        # 父楼**不在页面上**（被删）时**不引任何东西**（用户：「没有就保持空白」）——
+        # 退回主楼是错的：主楼不是它回的那层，引上去等于编造上下文。
         context_floor = opening
-        if current is not None and current.is_sub and current.parent_dom_id:
-            parent = next((f for f in all_floors if f.dom_id == current.parent_dom_id), None)
+        if current is not None and current.is_sub:
+            parent = (
+                next((f for f in all_floors if f.dom_id == current.parent_dom_id), None)
+                if current.parent_dom_id
+                else None
+            )
             if parent is None:
-                logger.warning(f"楼中楼 {current.label} 的父楼 {current.parent_dom_id} 不在页面上, 退回主楼当上下文")
-            context_floor = parent or opening
+                logger.warning(f"楼中楼 {current.label} 的父楼不在页面上, 不带上下文")
+            context_floor = parent
 
         context_quote = ""
         quoted_media = 0
@@ -594,9 +657,14 @@ class BangumiTopic:
             ]
             quoted_media = len([i for i in images if i.url in context_urls])
 
-        # 归属行**不进正文** —— 它是元信息，渲染层放在标题与作者行之间
+        # 归属行**不进正文** —— 它是元信息，渲染层放在标题与作者行之间。
+        # 章节页给**章节名**（带 ``/ep/<id>`` 链接）—— 用户看的是"哪部番的哪一集"，
+        # 条目名已经在标题里了。
         origin_line = ""
-        if context_name:
+        if episode_name:
+            url = f"https://bgm.tv/ep/{topic_id}"
+            origin_line = f'**<a href="{url}">{html.escape(episode_name)}</a>**'
+        elif context_name:
             label = (
                 f'<a href="{html.escape(context_url, quote=True)}">{html.escape(context_name)}</a>'
                 if context_url
@@ -626,11 +694,55 @@ class BangumiTopic:
             context_url=context_url,
             origin_line=origin_line,
             state_count=state_count,
-            reply_count=max(1, len(all_floors)) - 1,
+            reply_count=reply_count if reply_count is not None else max(1, len(all_floors)) - 1,
             floors=[f for f in all_floors if f is not opening],
         )
 
     # ------------------------------------------------------------------ 解析
+
+    @staticmethod
+    def _parse_episode_name(soup: BeautifulSoup) -> str:
+        """章节页的章节名 —— ``#columnEpA h2.title``（形如 ``ep.1 オスガキにも穴は…``）。
+
+        ⚠️ 页面上还有别的 ``h2``（「吐槽箱 N」「这个条目的其他章节」），所以按容器取，
+        不靠"第一个 h2"的顺序（顺序不是契约）。
+        """
+        node = soup.select_one("#columnEpA h2.title") or soup.select_one("h2.title")
+        return re.sub(r"\s+", " ", node.get_text(" ", strip=True)) if node else ""
+
+    @classmethod
+    def _parse_episode_desc(cls, soup: BeautifulSoup) -> str:
+        """章节页的**主楼内容**：``div.epDesc``（时长/首播 + 简介 + STAFF）。
+
+        这是章节页唯一的"主楼" —— 页面上没有用户的楼主帖，官方这段章节信息就是
+        主楼位置的内容（用户给定：「主楼就抓 ep.1 …」，并把这段贴了出来）。
+
+        - 去掉**编辑入口**（``/ep/<id>/edit``、``patch.bgm38.tv``）—— 那是给已登录用户
+          的页面 UI，不是内容（用户贴出来的文本里带着它们，正是从页面上复制的）
+        - ``<br/>`` 换行保留（走 ``_to_markdown``，它把 br 转成"行尾两空格+换行"，
+          服务端渲染才是分行而不是被并成一行）
+        - **没有就返回空串**（用户：「没有就保持空白」）—— 不臆造、不放占位
+        """
+        node = soup.select_one("#columnEpA .epDesc") or soup.select_one(".epDesc")
+        if node is None:
+            return ""
+        for anchor in node.select("a"):
+            href = str(anchor.get("href") or "")
+            if "/edit" in href or "patch.bgm38" in href:
+                anchor.decompose()
+        _simplify(node)
+        return _to_markdown(str(node)).strip()
+
+    @staticmethod
+    def _parse_reply_count(soup: BeautifulSoup) -> int | None:
+        """站点给的**回复数** —— 章节页的「吐槽箱 N」（``h2.subtitle > span.tip``）。
+
+        用站点的数而不是数楼层：实测页面 214 个楼层节点、站点写 216
+        （差值来自已删楼层），站点那个才是真实计数。取不到时返回 ``None``
+        （话题页走"楼层数 − 1"那条路）。
+        """
+        node = soup.select_one("h2.subtitle span.tip")
+        return to_int(node.get_text(strip=True)) if node else None
 
     @staticmethod
     def _parse_state_count(html: str) -> int:
@@ -659,13 +771,25 @@ class BangumiTopic:
         return total
 
     @staticmethod
-    def _parse_header(soup: BeautifulSoup) -> tuple[str, str, str]:
-        """取 (标题, 归属名, 归属链接)。**两个页面形态不同**：
+    def _parse_header(soup: BeautifulSoup, *, kind: str = "") -> tuple[str, str, str]:
+        """取 (标题, 归属名, 归属链接)。
+
+        **章节页（ep）单独一条路**：标题是**条目名**（``#headerSubject h1``），
+        章节名在 ``h2``（形如 ``ep.1 オスガキにも穴はあるんだよな…``）——
+        章节名由 ``_parse_episode_name`` 单独取，这里只给条目名与条目链接。
+
+        **两个话题页面形态不同**：
 
         - **小组话题**：``#pageHeader h1`` 里是「小组 » 讨论<br/>标题」—— 标题在 ``<br/>`` 之后
         - **条目讨论版**：页面上有**两个 h1** —— ``#headerSubject`` 里那个是**条目名**，
           真正的标题在 ``.comment-header h1``。归属是条目（``/subject/<id>``）。
         """
+        if kind == "ep":
+            subject = soup.select_one("#headerSubject a[href^='/subject/']")
+            name = subject.get_text(" ", strip=True) if subject else ""
+            url = f"https://bgm.tv{subject['href']}" if subject else ""
+            return re.sub(r"\s+", " ", name), name, url
+
         # 小组话题
         node = soup.select_one("#pageHeader h1")
         if node is not None:
@@ -694,7 +818,7 @@ class BangumiTopic:
         return re.sub(r"\s+", " ", title), "", ""
 
     @classmethod
-    def _collect_floors(cls, soup: BeautifulSoup, main_post: Any) -> list[BangumiFloor]:
+    def _collect_floors(cls, soup: BeautifulSoup, main_post: Any | None) -> list[BangumiFloor]:
         """按页面顺序收集楼层：主楼 → 一级回复（含各自的楼中楼）。
 
         楼中楼**在 DOM 上嵌在父楼的正文容器里**（``div.topic_reply_<父id>``），
@@ -705,10 +829,14 @@ class BangumiTopic:
         （实测：45 个节点只解析出 38 条，7 条楼中楼全空）。逆序（子 → 父）就没有这个问题。
         """
         # (节点, 是否楼中楼, 楼中楼所回复的那一层的 dom id)
-        nodes: list[tuple[Any, bool, str]] = [(main_post, False, "")]
-        # 主楼**可能也出现在 comment_list 里**（页面结构变动时会出现；抽 fixture 时我
-        # 就踩到过）—— 不去重的话主楼会进两次，第一层被当正文、第二层又当楼层出现。
-        seen_ids = {main_post.get("id")}
+        # 章节页（ep）**没有主楼** —— main_post 为 None 时这里就是空的
+        nodes: list[tuple[Any, bool, str]] = []
+        seen_ids: set = set()
+        if main_post is not None:
+            nodes.append((main_post, False, ""))
+            # 主楼**可能也出现在 comment_list 里**（页面结构变动时会出现；抽 fixture 时我
+            # 就踩到过）—— 不去重的话主楼会进两次，第一层被当正文、第二层又当楼层出现。
+            seen_ids.add(main_post.get("id"))
         comment_list = soup.find(id="comment_list")
         if comment_list is not None:
             for node in comment_list.find_all(id=re.compile(r"^post_\d+$"), recursive=False):
@@ -753,6 +881,10 @@ class BangumiTopic:
             break
 
         dom_id = str(node.get("id") or "").removeprefix("post_")
+        # 楼中楼的判据**不只看 DOM 层级**：楼层号带 ``-``（``#4-1``）就是楼中楼 ——
+        # 父楼被删时它会被提升成 ``comment_list`` 的直接子节点，那时层级判据失效、
+        # 会被误当一级楼层（于是引主楼 = 编造上下文）。楼层号是页面自己给的，更可靠。
+        is_sub = is_sub or "-" in label
         body = node.select_one(_FLOOR_BODY_SELECTOR)
         markdown = ""
         plain = ""

@@ -181,8 +181,26 @@ def format_quote_block(text: str, author: str = "", *, sign_only: bool = False) 
     head = f"> <i>{author}</i>\n" if author else ""
     if not body:
         return f"{head}\n" if (head and sign_only) else ""
-    lines = "\n".join(f"> <i>{line}</i>" if line.strip() else ">" for line in body.splitlines())
+    lines = "\n".join(_quote_line(line) for line in body.splitlines())
     return f"{head}{lines}\n\n"
+
+
+def _quote_line(line: str) -> str:
+    """引用块里的一行 —— 整行斜体, 但**行尾的硬换行标记要留在标签外面**。
+
+    ⚠️ markdown 的硬换行是"行尾两个空格 + 换行"。把整行包进 ``<i>…</i>`` 时那两空格
+    就跑到了标签**里面**, 行尾字符变成 ``>`` 的 ``</i>`` —— 服务端不再当硬换行,
+    **多行会被并成一行**（实测: ``> <i>行1  </i>`` + ``> <i>行2</i>`` 渲染成 1 行；
+    两空格挪到 ``</i>`` 之后才是 2 行）。
+
+    章节信息（bgm 的 ``div.epDesc``：时长/首播、简介、STAFF）正是靠 br 分行的，
+    所以这条对它们是必需的。
+    """
+    stripped = line.rstrip()
+    if not stripped:
+        return ">"
+    trailing = line[len(stripped) :]  # 行尾空白（markdownify 的 br 给两空格）
+    return f"> <i>{stripped}</i>{trailing}"
 
 
 def run_sync[T](coro: Coroutine[Any, Any, T]) -> T:
