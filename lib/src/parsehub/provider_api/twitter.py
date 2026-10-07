@@ -1,6 +1,7 @@
 # mypy: disable-error-code=no-untyped-def
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -162,44 +163,18 @@ class Twitter:
 
         full_text = self._restore_short_urls(full_text, url_entities)
 
-        media = legacy["entities"].get("media", [])
-        media_list: list[TwitterVideo | TwitterPhoto | TwitterAni] = []
-        for i in media:
-            original_info = i.get("original_info", {})
-            height = original_info.get("height", 0)
-            width = original_info.get("width", 0)
-            media_url_https = i["media_url_https"]
+        media_list: list[TwitterVideo | TwitterPhoto | TwitterAni] = [
+            parsed for i in (legacy["entities"].get("media") or []) if (parsed := self._media_from_dict(i))
+        ]
 
-            match i["type"]:
-                case "photo":
-                    media_list.append(
-                        TwitterPhoto(
-                            url=self._build_img_url(media_url_https, "orig"),
-                            width=width,
-                            height=height,
-                            thumb_url=self._build_img_url(media_url_https, "small"),
-                        )
-                    )
-                case "video":
-                    video_info = i.get("video_info", {})
-                    media_list.append(
-                        TwitterVideo(
-                            url=video_info["variants"][-1]["url"],
-                            height=height,
-                            width=width,
-                            duration_millis=video_info.get("duration_millis", 0),
-                            thumb_url=self._build_img_url(media_url_https, "medium"),
-                        )
-                    )
-                case "animated_gif":
-                    media_list.append(
-                        TwitterAni(
-                            url=i["video_info"]["variants"][-1]["url"],
-                            height=height,
-                            width=width,
-                            thumb_url=self._build_img_url(media_url_https, "small"),
-                        )
-                    )
+        # 「统一卡片」(``unified_card``) 里的媒体 —— **视频常常只在这里**。
+        # 实测 ``x.com/Apple/status/2104922864910815586``：``legacy`` 上只有 ``entities``
+        # （连 ``extended_entities`` 都没有）、一个 media 都没有，视频全在
+        # ``card.legacy.binding_values.unified_card`` 这个 **JSON 字符串**的
+        # ``media_entities`` 里（``amplify_video``，三档 mp4 + 一个 m3u8）。
+        # 以前只读 ``entities.media`` ⇒ 这条推文发出来只剩正文，视频整段丢失
+        # （用户报「抓不到视频」）。
+        media_list.extend(self._parse_unified_card_media(node))
 
         if card_photo := self._parse_card_photo(node):
             # 外链卡片的预览图排在推文自带媒体**之后** (与 X 上的显示顺序一致)
@@ -271,6 +246,114 @@ class Twitter:
             is_final=bool(final) if isinstance(final, bool) else False,
         )
 
+    @classmethod
+    def _media_from_dict(cls, i: dict) -> TwitterPhoto | TwitterVideo | TwitterAni | None:
+        """把一份媒体对象转成媒体。
+
+        ``legacy.entities.media`` 与 unified card 的 ``media_entities`` **字段同构**
+        （``type`` / ``media_url_https`` / ``video_info`` / ``original_info``），
+        所以两条路共用这一个转换 —— 以前是内联在媒体循环里的，接卡片时才发现要复用。
+
+        字段缺失时返回 ``None``（跳过这一项），不让一条坏媒体毁掉整条解析。
+        """
+        mtype = i.get("type")
+        if not mtype:
+            return None
+        info = i.get("original_info") or {}
+        width, height = info.get("width", 0), info.get("height", 0)
+        media_url_https = str(i.get("media_url_https") or "")
+
+        if mtype == "photo":
+            if not media_url_https:
+                return None
+            return TwitterPhoto(
+                url=cls._build_img_url(media_url_https, "orig"),
+                width=width,
+                height=height,
+                thumb_url=cls._build_img_url(media_url_https, "small"),
+            )
+
+        video_info = i.get("video_info") or {}
+        url = cls._best_video_url(video_info.get("variants") or [])
+        if not url:
+            return None
+        if mtype == "video":
+            return TwitterVideo(
+                url=url,
+                height=height,
+                width=width,
+                duration_millis=video_info.get("duration_millis", 0),
+                thumb_url=cls._build_img_url(media_url_https, "medium"),
+            )
+        if mtype == "animated_gif":
+            return TwitterAni(
+                url=url,
+                height=height,
+                width=width,
+                thumb_url=cls._build_img_url(media_url_https, "small"),
+            )
+        return None
+
+    @staticmethod
+    def _best_video_url(variants: list) -> str:
+        """从 variants 里挑最好的直链。
+
+        **优先最高码率的 mp4**：X 的 variants 里 m3u8 排第一，mp4 的**顺序没有保证** ——
+        实测这条 unified card 是 ``950k → 2176k → 632k``，**最后一个是码率最低的那档**，
+        取 ``variants[-1]`` 等于永远发最糊的。没有 mp4 时回退最后一个变体（HLS）。
+        """
+        mp4s = [v for v in variants if v.get("content_type") == "video/mp4" and v.get("url")]
+        if mp4s:
+            best = max(mp4s, key=lambda v: v.get("bitrate") or v.get("bit_rate") or 0)
+            return str(best["url"])
+        return str(variants[-1]["url"]) if variants else ""
+
+    @classmethod
+    def _parse_unified_card_media(cls, node: dict) -> list:
+        """「统一卡片」里的媒体 —— 内容是一段 **JSON 字符串**，藏在
+        ``card.legacy.binding_values[key=unified_card].value.string_value``。
+
+        结构（``type`` 为 ``video_website`` / ``image_website`` 等）::
+
+            {
+              "type": "video_website",
+              "component_objects": {"details_1": …, "media_1": …},
+              "destination_objects": {"browser_with_docked_media_1": {"data": {"url_data": …}}},
+              "media_entities": {"13_<media_id>": {"type": "video", "video_info": …, …}},
+              "components": ["media_1", "details_1"]
+            }
+
+        媒体在 ``media_entities`` 里（键是 ``media_key``），字段与 legacy 的 media 同构。
+        """
+        card = ((node.get("card") or {}).get("legacy")) or {}
+        if (card.get("name") or "") != "unified_card":
+            return []
+        raw = next(
+            (
+                (b.get("value") or {}).get("string_value")
+                for b in (card.get("binding_values") or [])
+                if b.get("key") == "unified_card"
+            ),
+            None,
+        )
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            logger.warning("unified_card 不是合法 JSON, 跳过")
+            return []
+        if not isinstance(data, dict):
+            return []
+
+        entities = data.get("media_entities") or {}
+        values = entities.values() if isinstance(entities, dict) else entities
+        out: list[TwitterPhoto | TwitterVideo | TwitterAni] = []
+        for i in values:
+            if isinstance(i, dict) and (parsed := cls._media_from_dict(i)):
+                out.append(parsed)
+        return out
+
     @staticmethod
     def _parse_card_photo(node: dict) -> TwitterPhoto | None:
         """外链卡片的预览图 —— 推文贴了链接时, X 会给那个网页生成一张卡片图。
@@ -286,8 +369,10 @@ class Twitter:
         card = ((node.get("card") or {}).get("legacy")) or {}
         # player 类 (YouTube 等) 与 poll 类都不走这里: 前者是正文里的链接,
         # 后者的图是选项配图, 都不是"外链预览图"。
+        # ``unified_card`` 也不走: 它的媒体由 `_parse_unified_card_media` 取
+        # (那是**推文主体**的媒体, 不是外链预览图), 否则同一张图可能进两次。
         name = card.get("name") or ""
-        if "player" in name or name.startswith("poll"):
+        if "player" in name or name.startswith("poll") or name == "unified_card":
             return None
 
         values = {b.get("key"): (b.get("value") or {}) for b in (card.get("binding_values") or [])}

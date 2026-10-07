@@ -1,0 +1,77 @@
+{
+ "data": {
+  "tweetResult": {
+   "result": {
+    "__typename": "Tweet",
+    "rest_id": "2104922864910815586",
+    "tweet": {
+     "rest_id": "2104922864910815586",
+     "legacy": {
+      "id_str": "2104922864910815586",
+      "full_text": "用 iPhone 18 Pro 全新相機控制，影相拍片更出色。",
+      "created_at": "Tue Sep 29 13:14:53 +0000 2026",
+      "lang": "ja",
+      "conversation_id_str": "2104922864910815586",
+      "user_id_str": "380749300",
+      "entities": {},
+      "favorite_count": 25,
+      "retweet_count": 0,
+      "reply_count": 1
+     },
+     "card": {
+      "legacy": {
+       "binding_values": [
+        {
+         "key": "unified_card",
+         "value": {
+          "string_value": "{\"type\": \"video_website\", \"component_objects\": {\"details_1\": {\"type\": \"details\", \"data\": {\"title\": {\"content\": \"​\", \"is_rtl\": false}, \"subtitle\": {\"content\": \"apple.com\", \"is_rtl\": false}, \"destination\": \"browser_with_docked_media_1\"}}, \"media_1\": {\"type\": \"media\", \"data\": {\"id\": \"13_2104922396662874112\", \"destination\": \"browser_with_docked_media_1\"}}}, \"destination_objects\": {\"browser_with_docked_media_1\": {\"type\": \"browser_with_docked_media\", \"data\": {\"url_data\": {\"url\": \"https://www.apple.com/hk/iphone-18-pro/?cid=wwa-hk-soc-iphn-trpw-socl-twit-skvf-tmln-cpc-and-mob-aandt-gnt-broa-prlp-actniu-hktc-trpccl-video-11ar-10s-trip-cmra-na-na-na-na-na-07453773&mpid=7453773&variant=android&link=variable-aperture\", \"vanity\": \"apple.com\"}, \"media_id\": \"13_2104922396662874112\"}}}, \"components\": [\"media_1\", \"details_1\"], \"media_entities\": {\"13_2104922396662874112\": {\"id\": 2104922396662874112, \"id_str\": \"2104922396662874112\", \"indices\": [0, 0], \"media_url\": \"\", \"media_url_https\": \"https://pbs.twimg.com/amplify_video_thumb/2104922396662874112/img/bihtKgKRfc_Nz9O5.jpg\", \"url\": \"\", \"display_url\": \"\", \"expanded_url\": \"\", \"type\": \"video\", \"original_info\": {\"width\": 1440, \"height\": 1800}, \"sizes\": {\"medium\": {\"w\": 960, \"h\": 1200, \"resize\": \"fit\"}, \"small\": {\"w\": 544, \"h\": 680, \"resize\": \"fit\"}, \"large\": {\"w\": 1440, \"h\": 1800, \"resize\": \"fit\"}, \"thumb\": {\"w\": 150, \"h\": 150, \"resize\": \"crop\"}}, \"source_user_id\": 380749300, \"source_user_id_str\": \"380749300\", \"video_info\": {\"aspect_ratio\": [4, 5], \"duration_millis\": 10000, \"variants\": [{\"content_type\": \"application/x-mpegURL\", \"url\": \"https://video.twimg.com/amplify_video/2104922396662874112/pl/cCirYYBI1jqcUV_u.m3u8?tag=14\"}, {\"bitrate\": 950000, \"content_type\": \"video/mp4\", \"url\": \"https://video.twimg.com/amplify_video/2104922396662874112/vid/avc1/480x600/zwFnp73qE97Y6mbw.mp4?tag=14\"}, {\"bitrate\": 2176000, \"content_type\": \"video/mp4\", \"url\": \"https://video.twimg.com/amplify_video/2104922396662874112/vid/avc1/720x900/nZUAXIBlF33JkOqB.mp4?tag=14\"}, {\"bitrate\": 632000, \"content_type\": \"video/mp4\", \"url\": \"https://video.twimg.com/amplify_video/2104922396662874112/vid/avc1/320x400/Z3aeCiTEdnsHVCeK.mp4?tag=14\"}]}, \"media_key\": \"13_2104922396662874112\"}}}",
+          "type": "STRING"
+         }
+        },
+        {
+         "key": "card_url",
+         "value": {
+          "scribe_key": "card_url",
+          "string_value": "https://twitter.com",
+          "type": "STRING"
+         }
+        }
+       ],
+       "card_platform": {
+        "platform": {
+         "audience": {
+          "name": "production"
+         },
+         "device": {
+          "name": "Swift",
+          "version": "12"
+         }
+        }
+       },
+       "name": "unified_card",
+       "url": "card://2104922862855536640",
+       "user_refs_results": []
+      }
+     },
+     "core": {
+      "user_results": {
+       "result": {
+        "__typename": "User",
+        "rest_id": "380749300",
+        "legacy": {
+         "screen_name": "Apple",
+         "name": "Apple",
+         "followers_count": 10005692
+        }
+       }
+      }
+     },
+     "views": {
+      "count": "410225",
+      "state": "EnabledWithCount"
+     }
+    }
+   }
+  }
+ }
+}
