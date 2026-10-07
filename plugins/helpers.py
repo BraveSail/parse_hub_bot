@@ -329,7 +329,18 @@ def build_rich_markdown(
     if tag_line := format_tags(parse_result):
         parts.append(tag_line)
 
-    parts.extend(wrap_collage(media_placeholders))
+    # 图集超过阈值时把多出来的折进按钮; 手动打码时整组内容本来就要进 details,
+    # 再套一层折叠客户端没有保证 ⇒ 那时不给摘要 (wrap_collage 就不折)。
+    if hide_content:
+        parts.extend(wrap_collage(media_placeholders))
+    else:
+        # 摘要里的张数写成**局部变量**再进 f-string: i18n 的 key 取的是占位符**源码**，
+        # 直接写表达式会得到一整串 `len(...) - _COLLAGE_FOLD_THRESHOLD` 进键名。
+        collage_summary = ""
+        if lang and len(media_placeholders) > _COLLAGE_FOLD_THRESHOLD:
+            count = len(media_placeholders) - _COLLAGE_FOLD_THRESHOLD
+            collage_summary = t_[lang](f"🖼 展开其余 {count} 张图片")
+        parts.extend(wrap_collage(media_placeholders, fold_summary=collage_summary))
 
     if quote and not config.hide_desc:
         # 被引用/被回复的卡片: 主推自己的媒体要排在它上面 (与 X 上的观感一致)
@@ -900,15 +911,39 @@ def render_quote_card(quote: str, media: Sequence[str] = (), *, summary: str = "
     return [marked]
 
 
-def wrap_collage(placeholders: Sequence[str]) -> list[str]:
-    """多张媒体包成一个图集块。
+#: 图集超过这个张数就把**多出来的**折进按钮 (用户: 「图片超过4张的也按钮折叠一下」)。
+#: 前 ``_COLLAGE_FOLD_THRESHOLD`` 张留在外面当预览 —— 与正文长文折叠同一套观感
+#: (收起时不能只剩一个按钮, 那样看不到一点内容)。
+_COLLAGE_FOLD_THRESHOLD = 4
+
+
+def _collage(placeholders: Sequence[str]) -> str:
+    """把若干媒体占位符包成一个图集块。
 
     富文本里多个独立的图片块会渲染成各自分散的图; 包进 ``<tg-collage>`` 才是图集。
-    单张直接返回原样。
+    """
+    return "<tg-collage>\n\n" + "\n".join(placeholders) + "\n\n</tg-collage>"
+
+
+def wrap_collage(placeholders: Sequence[str], *, fold_summary: str = "") -> list[str]:
+    """多张媒体包成一个图集块; 超过阈值时把多出来的折进 ``<details>`` 按钮。
+
+    单张直接返回原样。超过 :data:`_COLLAGE_FOLD_THRESHOLD` 张且给了 ``fold_summary``
+    时切成「前几张图集 + ``<details>`` 折其余」—— 一次铺十几张图会占满整屏。
+
+    ``fold_summary`` 为空则永不折叠: 调用方在**自己已经处于折叠块内**时应当留空
+    (例如引用卡片、手动打码 —— 客户端对嵌套折叠没有保证)。
     """
     if len(placeholders) <= 1:
         return list(placeholders)
-    return ["<tg-collage>\n\n" + "\n".join(placeholders) + "\n\n</tg-collage>"]
+    if not fold_summary or len(placeholders) <= _COLLAGE_FOLD_THRESHOLD:
+        return [_collage(placeholders)]
+    head = placeholders[:_COLLAGE_FOLD_THRESHOLD]
+    tail = placeholders[_COLLAGE_FOLD_THRESHOLD:]
+    return [
+        _collage(head),
+        f"<details><summary>{fold_summary}</summary>\n\n{_collage(tail)}\n\n</details>",
+    ]
 
 
 # 各平台的标签页/标签搜索页. 没有列出的平台退回纯文本 #标签
