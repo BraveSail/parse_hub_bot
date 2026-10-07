@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bs4 import BeautifulSoup
+from loguru import logger
 from markdownify import MarkdownConverter
 
 from ..types.platform import Platform
@@ -120,7 +121,79 @@ class LinuxDoTopic:
         except Exception as e:  # noqa: BLE001 - 被 Cloudflare 拦时会返回 HTML
             raise LinuxDoError("linux.do 返回的不是 JSON, 多半是 Cloudflare 挑战页面 (cookie 失效或缺少指纹)") from e
 
+        # 楼层窗口可能不含主楼/被回复的层 (见 _missing_context_floors), 缺就补一次
+        payload = await cls._with_context_floors(
+            payload, topic_id, post_number, proxy=proxy, cookie=cookie
+        )
         return cls._from_payload(payload, topic_id, post_number=post_number)
+
+    @classmethod
+    def _missing_context_floors(
+        cls, posts: list[dict[str, Any]], wanted: int, reply_to: int | None
+    ) -> list[int]:
+        """窗口里**缺**的上下文楼层 (主楼 / 被回复的层), 需要单独补取。
+
+        Discourse 的楼层窗口是**以目标层为中心**的固定 20 层: 窗口起点 = ``max(1, target - 5)``。
+        实测同一话题: 1~6 楼返回 ``1..20``(含主楼), **7 楼起**返回 ``2..21``、``19..38``、``25..44``
+        —— 主楼落在窗口外。
+
+        缺了不补的后果是**静默**的: ``_context_quotes`` 只是在窗口里找那一层, 找不到就跳过,
+        「分享楼层时带上主楼」这条规则在靠后的楼层上就悄悄失效了 (用户报「怎么没有主楼了」)。
+        """
+        present = {p.get("post_number") for p in posts}
+        missing: list[int] = []
+        for floor in (1, reply_to):
+            if floor and floor != wanted and floor not in present and floor not in missing:
+                missing.append(floor)
+        return missing
+
+    @classmethod
+    async def _with_context_floors(
+        cls,
+        payload: dict[str, Any],
+        topic_id: str,
+        post_number: str,
+        *,
+        proxy: str | None = None,
+        cookie: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """把窗口外的上下文层补进 ``payload`` 的帖子流。
+
+        **只在缺的时候请求** —— 窗口里已有主楼时 (target ≤ 6) 零额外请求, 行为与以前完全一致。
+        补取用与主请求相同的条件 (proxy / cookie), 请求的是那一层自己的窗口 (必含它自己)。
+        """
+        stream = payload.get("post_stream") or {}
+        posts: list[dict[str, Any]] = list(stream.get("posts") or [])
+        wanted = int(post_number) if post_number.isdigit() else 1
+        current = next((p for p in posts if p.get("post_number") == wanted), None)
+        reply_to = (current or {}).get("reply_to_post_number")
+        missing = cls._missing_context_floors(posts, wanted, reply_to)
+        if not missing:
+            return payload
+
+        async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
+            for floor in missing:
+                try:
+                    extra = await client.get(
+                        FLOOR_API.format(topic_id=topic_id, post_number=floor),
+                        headers={"Accept": "application/json"},
+                    )
+                    extra.raise_for_status()
+                    posts.extend((extra.json().get("post_stream") or {}).get("posts") or [])
+                except Exception as e:  # noqa: BLE001
+                    # 补不到不该让整条解析失败: 少一个上下文块, 总好过整条打不开
+                    logger.warning(f"linux.do 补取第 {floor} 楼失败, 该层上下文将缺失: {e}")
+
+        # 去重 (窗口与补取回来的两段会重叠) 并按楼层排序
+        by_number: dict[int, dict[str, Any]] = {}
+        for post in posts:
+            number = post.get("post_number")
+            if number is not None and number not in by_number:
+                by_number[number] = post
+        if by_number:
+            stream["posts"] = [by_number[n] for n in sorted(by_number)]
+            payload["post_stream"] = stream
+        return payload
 
     @classmethod
     def _from_payload(cls, payload: dict[str, Any], topic_id: str, post_number: str = "") -> LinuxDoTopic:

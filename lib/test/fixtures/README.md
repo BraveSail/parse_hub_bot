@@ -18,6 +18,7 @@
 | `instagram_caption.json` | instagram | 2026-10-06 21:05 | `xdt_api__v1__media__shortcode__web_info`（匿名） | ~44 KB | caption 含 `#PeakyBlinders`，证 **只有文本、无实体** |
 | `instagram_post.json` | instagram | 2026-10-06 21:05 | 同 API（匿名，另一条） | ~48 KB | 对照：caption 无 hashtag |
 | `instagram_cookie_execution_error.json` | instagram | 2026-10-06 21:05 | 同 API（**带 cookie**） | 263 B | `execution error` + `data:null`（IG 带 cookie 反而失败，匿名可用） |
+| `linuxdo_floor_24.json` | linux.do | 2026-10-07 10:40 | 带楼层号的帖子 JSON `/t/2989140/24.json`（源 URL `https://linux.do/t/topic/2989140/24`，匿名请求） | ~54 KB | 承载**楼层窗口**实证：窗口 `19..38`，**不含主楼**（对比 `linuxdo_floor_4.json` 窗口 `1..20` 含主楼） |
 | `linuxdo_floor_4.json` | linux.do | 2026-10-07 10:15 | 带楼层号的帖子 JSON `/t/2989140/4.json`（源 URL `https://linux.do/t/topic/2989140/4`，匿名请求） | ~56 KB | 承载**楼层号**实证：`post_stream.posts[].post_number` / `reply_to_post_number`（第 4 楼 `reply_to_post_number=null` = 回复主楼） |
 | `twitter_poll_card.json` | twitter | 2026-10-07 06:39 | 推文详情（`TweetResultByRestId`），id `2107576143285219799`（源 URL `https://twitter.com/thsottiaux/status/2107576143285219799`） | ~3.6 KB | 承载**投票卡**实证：`node["card"].legacy.name == "poll2choice_text_only"`、`binding_values` 里的 `choice{N}_label`/`choice{N}_count` |
 
@@ -42,7 +43,18 @@
 
 - **linux.do 楼层号** — 在 `post_stream.posts[].post_number`（主楼是 `1`）；
   `reply_to_post_number` 是**被回复的楼层**（`null` = 回复主题/主楼）。
-  带楼层号的 URL（`/t/<id>/<n>.json`）返回的帖子流**含主楼**，是以该楼层为中心的窗口。
+- **linux.do 楼层窗口**（关键，踩过）— 带楼层号的 URL（`/t/<id>/<n>.json`）返回**以该层为中心的
+  固定 20 层窗口**，起点 = `max(1, n - 5)`：
+
+  | 分享的楼层 | 窗口 | 含主楼 |
+  | --- | --- | --- |
+  | 1 ~ 6 楼 | `1..20` | **是** |
+  | 7 楼 | `2..21` | 否 |
+  | 24 楼 | `19..38` | 否 |
+  | 30 楼 | `25..44` | 否 |
+
+  ⇒ **n ≥ 7 时主楼不在窗口里**，必须单独补取（`/t/<id>/1.json` 或 `/t/<id>.json`，
+  实测都返回 `1..20` 含主楼）。被回复的楼层同理可能在窗口外。
   渲染上**当前楼层**用结果的 `position_label`（`#N`），**引用块里的其它层**
   由 `_post_to_quote` 自己拼 ` · #N`。
 
