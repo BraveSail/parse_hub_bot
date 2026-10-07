@@ -99,6 +99,51 @@ TAG_LINE_DISPLAY_BUDGET = 60
 
 _METADATA_SEPARATOR = " · "
 
+#: 引用卡片与**图片**之间的一行间距（用户报「图片和引用贴在一起」）。
+#:
+#: 富文本里连续空行会被服务端**折叠**（实测：``块 + 空行 + 正文`` 与
+#: ``块 + 两个空行 + 正文`` 的块结构完全相同），半角空格行同样被折叠 ——
+#: 只有**全角空格**段落能撑出一行高度（实测多出一个 ``Paragraph``，内容是全角空格）。
+#: 所以"一行间距"只能这么写；用户要求「引用/回复块和正文之间弄一行间距」。
+#:
+#: ⚠️ 别改成半角空格或空串 —— 会被折叠，间距直接消失（且没有任何报错）。
+_QUOTE_GAP = "\u3000"
+
+
+def _is_quote_card(part: str) -> bool:
+    """这一段是不是引用卡片。
+
+    两种形态都要认：**短引用**走 ``> …`` 的 markdown 形态（服务端自己解析成引用块），
+    **长引用/带媒体**走 ``<blockquote>`` 容器形态（``render_folded_quote_card``）。
+    """
+    head = part.lstrip()
+    return head.startswith("<blockquote") or head.startswith(">")
+
+
+def _is_media_block(part: str) -> bool:
+    """这一段是不是媒体块（图片/视频占位符或图集容器）。
+
+    ⚠️ 卡片**内部**的图（``> ![](...)``）算卡片的一部分，不走这里 —— 那种图必须
+    和卡片贴在一起（脱离就掉出卡片）。
+    """
+    head = part.lstrip()
+    return head.startswith("![]") or head.startswith("<tg-collage>")
+
+
+def _append_gap_before_media(parts: list[str]) -> None:
+    """媒体块**前面是引用卡片**时，插一行间距。
+
+    用户报「图片和引用贴在一起」—— 卡片与图片是两个相邻的独立块，中间要空一行。
+    """
+    if parts and _is_quote_card(parts[-1]):
+        parts.append(_QUOTE_GAP)
+
+
+def _append_gap_before_card(parts: list[str]) -> None:
+    """引用卡片**前面是媒体块**时，插一行间距（同上，方向相反）。"""
+    if parts and _is_media_block(parts[-1]):
+        parts.append(_QUOTE_GAP)
+
 #: 元数据时间按该时区渲染 (容器是 UTC, 必须显式指定, 否则会差 8 小时)
 _METADATA_TIMEZONE = "Asia/Shanghai"
 
@@ -383,6 +428,9 @@ def build_rich_markdown(
 
     # 图集超过阈值时把多出来的折进按钮; 手动打码时整组内容本来就要进 details,
     # 再套一层折叠客户端没有保证 ⇒ 那时不给摘要 (wrap_collage 就不折)。
+    if media_placeholders:
+        # 卡片与图片之间留一行间距（用户报「图片和引用贴在一起」）
+        _append_gap_before_media(parts)
     if hide_content:
         parts.extend(wrap_collage(media_placeholders))
     else:
@@ -394,6 +442,9 @@ def build_rich_markdown(
             collage_summary = t_[lang](f"🖼 展开其余 {count} 张图片")
         parts.extend(wrap_collage(media_placeholders, fold_summary=collage_summary))
 
+    if (quote or declared_tail) and not config.hide_desc:
+        # 图片与卡片之间同样留一行间距（这时图片在卡片**上**面）
+        _append_gap_before_card(parts)
     if quote and not config.hide_desc:
         # 被引用/被回复的卡片: 主推自己的媒体要排在它上面 (与 X 上的观感一致)
         parts.extend(render_quote_card(quote, quote_media_placeholders, summary=fold_summary))
