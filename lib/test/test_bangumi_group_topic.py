@@ -188,10 +188,11 @@ def test_a_sub_reply_is_rendered_as_a_quote_block():
 
 
 def test_a_sub_reply_head_uses_html_not_markdown_asterisks():
-    """**核心**: 引用块**内 markdown 不解析** —— 楼中楼作者行写字面 ``**`` 会原样显示两个星号。
+    """**核心**: 楼中楼作者行用 HTML ``<i>``，不用 markdown 星号。
 
-    实测（读回服务端块）: 楼中楼的段落内容是 ``[ "**", {RichTextUrl…} ]`` —— 星号成了正文。
-    所以引用块内一律用 HTML（这里 ``<i>``，与 linux.do 引用块的作者行同一写法）。
+    实测（读回服务端块）: 引用**嵌套**时 markdown 星号会字面显示 —— 内容是
+    ``[ "**", {RichTextUrl…} ]``，星号成了正文（bgm 自己的「某人 说:」引用正好是嵌套的）。
+    单层引用块里的 ``**`` 其实是生效的，但**一律用 HTML 更稳**（任何深度都生效）。
     """
     topic = _topic()
     lines = topic.markdown_content.splitlines()

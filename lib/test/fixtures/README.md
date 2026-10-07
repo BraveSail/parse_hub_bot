@@ -18,6 +18,7 @@
 | `instagram_caption.json` | instagram | 2026-10-06 21:05 | `xdt_api__v1__media__shortcode__web_info`（匿名） | ~44 KB | caption 含 `#PeakyBlinders`，证 **只有文本、无实体** |
 | `instagram_post.json` | instagram | 2026-10-06 21:05 | 同 API（匿名，另一条） | ~48 KB | 对照：caption 无 hashtag |
 | `instagram_cookie_execution_error.json` | instagram | 2026-10-06 21:05 | 同 API（**带 cookie**） | 263 B | `execution error` + `data:null`（IG 带 cookie 反而失败，匿名可用） |
+| `bangumi_group_topic_472394.html` | bgm.tv | 2026-10-07 17:10 | 小组话题 HTML `https://bgm.tv/group/topic/472394`（匿名） | 10 KB（抽过：h1 + 主楼 + 前 5 层，含 4 条楼中楼） | 承载**楼层结构**实证：`.postTopic` / `.row_reply` / `.sub_reply_bg`，楼中楼**嵌在父楼正文容器内** |
 | `bangumi_blog_381120.html` | bgm.tv | 2026-10-07 16:20 | 日志页 HTML `https://bgm.tv/blog/381120`（匿名） | 1.4 KB（抽过：只留 `.author`/`.header`/`#entry_content`） | 作者是**数字 uid**（`/user/950407`），有 1 张图与 1 个标签 |
 | `bangumi_blog_381269.html` | bgm.tv | 2026-10-07 16:20 | 日志页 HTML `https://bgm.tv/blog/381269`（匿名） | 1.5 KB（同上抽法） | 作者是**用户名 slug**（`/user/air_chika`）—— 两种标识形态都要收 |
 | `linuxdo_floor_24.json` | linux.do | 2026-10-07 10:40 | 带楼层号的帖子 JSON `/t/2989140/24.json`（源 URL `https://linux.do/t/topic/2989140/24`，匿名请求） | ~54 KB | 承载**楼层窗口**实证：窗口 `19..38`，**不含主楼**（对比 `linuxdo_floor_4.json` 窗口 `1..20` 含主楼） |
@@ -55,6 +56,17 @@
     （只靠 style 区分！）、`[url]`→`<a class="l">`、`[img]`→`<img class="code">`
   - **表情**是 `<img class="smile" alt="(bgm116)" src="/img/smiles/…">` —— 判据看 **src 路径**
     （有表情 img 不带 class）
+- **bgm.tv 小组话题**（同一套 BBCode 渲染，但页面不同构）：
+
+  | | 日志 `/blog/<id>` | 小组话题 `/group/topic/<id>` |
+  | --- | --- | --- |
+  | 标题 | `.header h1.title` | `h1` 里 `<br/>` **之后**（前面是「小组 » 讨论」）|
+  | 正文 | `#entry_content` | `.topic_content` / `.reply_content` / `.cmt_sub_content` |
+  | 结构 | 单篇 | 主楼 + 楼层（一层一个 `div[id^=post_]`）|
+
+  楼层号与时间同在一个 `.post_actions small` 里（`#2 - 2026-10-7 00:24`；楼中楼 `#2-1`）；
+  楼中楼**嵌在父楼的正文容器里**（`div.topic_reply_<父id>`）⇒ 摘它用 `decompose()`
+  会清空内容，**必须先收集节点再逆序解析**；图片也要在解析楼层**之前**抽。
 
 - **linux.do 楼层号** — 在 `post_stream.posts[].post_number`（主楼是 `1`）；
   `reply_to_post_number` 是**被回复的楼层**（`null` = 回复主题/主楼）。

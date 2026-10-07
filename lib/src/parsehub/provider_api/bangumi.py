@@ -297,12 +297,14 @@ class _BgMarkdownConverter(MarkdownConverter):
         return f'<a href="{html.escape(href, quote=True)}">{text}</a>'
 
     def convert_strong(self, el: Any, text: str, parent_tags: Any) -> str:
-        """粗体一律写 HTML ``<b>``。
+        """粗体一律写 HTML ``<b>``（真机验证生效: ``RichTextBold``）。
 
-        ⚠️ 默认的 markdown ``**`` 在**引用块内不解析**（会字面显示星号）。bgm 自己就会
-        在楼中楼里插「某人 说: …」的嵌套引用（原文是 ``<strong>``），那条也在引用块里 ——
-        实测读回的服务端块内容是 ``[ "**", {RichTextUrl…} ]``，星号成了正文。
-        HTML 写法在段落与引用块内都生效。
+        ⚠️ **嵌套引用里的 markdown 星号会字面显示**：bgm 自己在楼中楼里插「某人 说: …」
+        的引用（原文 ``<strong>``），markdownify 会把它转成 ``**名字**``；而读回的服务端块
+        内容是 ``[ "**", {RichTextUrl…} ]`` —— 星号成了正文。
+
+        （实测对照：**单层**引用块里的 ``**`` 是能渲染成 ``RichTextBold`` 的，
+        出问题的是嵌套那一层。这里保守地一律用 HTML —— 段落与各种引用深度都生效。）
         """
         return f"<b>{text}</b>" if text else ""
 
@@ -616,9 +618,9 @@ class BangumiGroupTopic:
 
         if floor.is_sub:
             # 楼中楼：引用块表达层级（与 linux.do 的处理一致）。
-            # ⚠️ **引用块内 markdown 不解析** —— 写 `**粗体**` 会**字面显示两个星号**
-            # （实测块内容里出现孤立的 `"**"`）。所以这里用 HTML `<i>`，
-            # 与 linux.do 引用块的作者行同一写法（那条路已验证生效）。
+            # ⚠️ 这里用 HTML `<i>` 而不是 markdown `**` —— 引用**嵌套**时星号会字面显示
+            # （实测：块内容里出现孤立的 `"**"`；bgm 自己的「某人 说:」引用正好是嵌套的）。
+            # HTML 写法在任何深度都生效，与 linux.do 引用块的作者行同一写法。
             line = _author_markup(link, tag="i")
             head = f"{line} · {meta}" if meta else line
             lines = [f"> {head}"]
