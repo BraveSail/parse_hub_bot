@@ -131,7 +131,7 @@ class LinuxDoTopic:
     def _missing_context_floors(
         cls, posts: list[dict[str, Any]], wanted: int, reply_to: int | None
     ) -> list[int]:
-        """窗口里**缺**的上下文楼层 (主楼 / 被回复的层), 需要单独补取。
+        """窗口里**缺**的上下文楼层 (主楼 / 被回复的层), 需要另取。
 
         Discourse 的楼层窗口是**以目标层为中心**的固定 20 层: 窗口起点 = ``max(1, target - 5)``。
         实测同一话题: 1~6 楼返回 ``1..20``(含主楼), **7 楼起**返回 ``2..21``、``19..38``、``25..44``
@@ -157,10 +157,21 @@ class LinuxDoTopic:
         proxy: str | None = None,
         cookie: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        """把窗口外的上下文层补进 ``payload`` 的帖子流。
+        """把窗口外的上下文层取回来并合进 ``payload`` 的帖子流。
 
         **只在缺的时候请求** —— 窗口里已有主楼时 (target ≤ 6) 零额外请求, 行为与以前完全一致。
-        补取用与主请求相同的条件 (proxy / cookie), 请求的是那一层自己的窗口 (必含它自己)。
+
+        取法分两级 (从省到贵):
+
+        1. **``?print=true`` 一次拿全** —— Discourse 的 ``print_chunk_size`` 是 1000 (普通请求是
+           20, 见 ``lib/topic_view.rb``), 所以这一次请求就带回**所有**楼层, 缺几层都够。
+           实测同一话题: 默认 ``/24.json`` 给 ``19..38``, 加 ``print=true`` 给 ``1..49``。
+        2. **逐层补取兜底** —— print 拿不到的场合: 超过 1000 层的巨型话题、站点关掉了 print
+           (``max_prints_per_hour_per_user`` 为 0 时服务端直接拒)、或被限流。
+           那一级是每个缺层各请求一次 (请求的是那一层自己的窗口, 必含它自己)。
+
+        用与主请求相同的条件 (proxy / cookie); 任何一级失败都**只记 warning** ——
+        少一个上下文块, 总好过整条打不开。
         """
         stream = payload.get("post_stream") or {}
         posts: list[dict[str, Any]] = list(stream.get("posts") or [])
@@ -171,8 +182,24 @@ class LinuxDoTopic:
         if not missing:
             return payload
 
+        target = FLOOR_API.format(topic_id=topic_id, post_number=wanted)
+
         async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
-            for floor in missing:
+            # ① 首选: print=true 一次拿全 (chunk_size 1000)
+            try:
+                response = await client.get(
+                    f"{target}?print=true", headers={"Accept": "application/json"}
+                )
+                if response.status_code == 200:
+                    posts.extend((response.json().get("post_stream") or {}).get("posts") or [])
+                else:
+                    logger.warning(f"linux.do print 取全帖返回 {response.status_code}, 改为逐层补取")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"linux.do print 取全帖失败, 改为逐层补取: {e}")
+
+            # ② 兜底: 还缺的那些逐层补
+            got = {p.get("post_number") for p in posts}
+            for floor in (f for f in missing if f not in got):
                 try:
                     extra = await client.get(
                         FLOOR_API.format(topic_id=topic_id, post_number=floor),
@@ -181,7 +208,6 @@ class LinuxDoTopic:
                     extra.raise_for_status()
                     posts.extend((extra.json().get("post_stream") or {}).get("posts") or [])
                 except Exception as e:  # noqa: BLE001
-                    # 补不到不该让整条解析失败: 少一个上下文块, 总好过整条打不开
                     logger.warning(f"linux.do 补取第 {floor} 楼失败, 该层上下文将缺失: {e}")
 
         # 去重 (窗口与补取回来的两段会重叠) 并按楼层排序
