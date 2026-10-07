@@ -226,9 +226,14 @@ def test_the_parser_matches_both_domains():
 
 
 def test_the_parser_does_not_match_other_bgm_paths():
-    """只做日志 —— 小组话题/条目页结构不同，不该被这个解析器接走"""
-    assert not BangumiParser.match("https://bgm.tv/group/topic/430000")
+    """条目页与小组首页不该被接走。
+
+    小组话题（``/group/topic/<id>``）**是支持的**（见 ``test_bangumi_group_topic.py``）——
+    它有另一条解析路径，因为页面与日志不同构。
+    """
+    assert BangumiParser.match("https://bgm.tv/group/topic/430000")
     assert not BangumiParser.match("https://bgm.tv/subject/400602")
+    assert not BangumiParser.match("https://bgm.tv/group/fillgrids")
 
 
 def test_the_result_requires_a_media_download():
