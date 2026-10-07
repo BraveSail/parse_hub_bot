@@ -9,6 +9,7 @@ from _fakes import FakeResponse, patch_async_get
 
 from parsehub import ParseHub, Platform
 from parsehub.parsers.base.ytdlp import YtParser
+from parsehub.parsers.parser.bangumi import BangumiParser
 from parsehub.parsers.parser.bilibili import BiliParse, BiliYtParse
 from parsehub.parsers.parser.coolapk import CoolapkParser
 from parsehub.parsers.parser.douban import DoubanParser
@@ -30,6 +31,7 @@ from parsehub.parsers.parser.xiaoheihe import XiaoHeiHeParser
 from parsehub.parsers.parser.youtube import YtbParse
 from parsehub.parsers.parser.zhihu import ZhihuParser
 from parsehub.parsers.parser.zuiyou import ZuiYouParser
+from parsehub.provider_api.bangumi import BangumiBlog
 from parsehub.provider_api.bilibili import BiliAPI, BiliDynamic
 from parsehub.provider_api.coolapk import Coolapk
 from parsehub.provider_api.douban import Douban, DoubanTopic
@@ -358,6 +360,7 @@ def test_coolapk_all_result_types(rich, gif):
 
 
 FORWARD_CASES = [
+    (BangumiParser, BangumiBlog, "parse", BangumiBlog(blog_id="1", markdown_content="Body", author_name=AUTHOR)),
     (CoolapkParser, Coolapk, "parse", Coolapk(text_content="Body", author_name=AUTHOR)),
     (DoubanParser, Douban, "parse", DoubanTopic.parse({"author": {"name": AUTHOR}})),
     (

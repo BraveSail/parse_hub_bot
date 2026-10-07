@@ -206,3 +206,45 @@ def test_tag_page_url_platforms():
     assert tag_page_url(Platform.PIXIV, "足裏").startswith("https://www.pixiv.net/tags/")
     assert tag_page_url(Platform.COOLAPK, "x") == ""
     assert tag_page_url(None, "x") == ""
+
+
+def test_bangumi_tags_link_to_the_authors_tag_page():
+    """**核心**: bgm 的日志标签是**用户级**的（``/user/<uid>/blog/tag/<名>``）——
+
+    全站 ``/blog/tag/<名>`` 实测返回 0 字节空响应，指过去等于死链。
+    """
+    from plugins.helpers import format_tags
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.BANGUMI
+    result.raw_url = "https://bgm.tv/blog/381120"
+    result.author_handle = "950407"
+    result.tags = ["动画"]
+
+    line = format_tags(result)
+    assert "https://bgm.tv/user/950407/blog/tag/%E5%8A%A8%E7%94%BB" in line
+    assert ">#动画</a>" in line
+
+
+def test_a_user_scoped_tag_without_a_user_falls_back_to_text():
+    """**核心**: 拿不到作者标识时**不生成打不开的链接**，退回纯文本"""
+    # 模板需要 {id} 而没给 id ⇒ 空串
+    assert tag_page_url(Platform.BANGUMI, "动画") == ""
+    assert tag_page_url(Platform.BANGUMI, "动画", user_id="eidosoma").endswith("/blog/tag/%E5%8A%A8%E7%94%BB")
+
+    from plugins.helpers import format_tags
+
+    result = ImageParseResult(content="正文", photo=[])
+    result.platform = Platform.BANGUMI
+    result.raw_url = "https://bgm.tv/blog/1"
+    result.tags = ["动画"]
+
+    line = format_tags(result)
+    assert "<a href=" not in line  # 没有链接
+    assert "#动画" in line  # 但标签本身还在
+
+
+def test_other_platforms_are_unaffected_by_the_user_scoped_template():
+    """**回归**: 只有 bgm 的模板带 ``{id}`` —— 其它平台给了 user_id 也照旧"""
+    assert tag_page_url(Platform.PIXIV, "足裏", user_id="999").startswith("https://www.pixiv.net/tags/")
+    assert tag_page_url(Platform.LINUXDO, "纯水", user_id="someone").startswith("https://linux.do/tag/")

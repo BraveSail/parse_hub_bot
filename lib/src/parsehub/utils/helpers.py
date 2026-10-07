@@ -62,6 +62,8 @@ def format_author_label(name: str, handle: str = "") -> str:
 # 各平台的作者主页地址模板. ``{handle}`` 用用户名, ``{id}`` 用平台数字/字符串 ID。
 # 平台没有主页概念 (或只有 ID) 时就不列, 对应结果里 author_url 为空串。
 PROFILE_URL_TEMPLATES: dict[Platform, str] = {
+    # bgm 的日志标签页是**用户级**的（``/user/<uid>/blog/tag/<名>``），所以模板要 uid
+    Platform.BANGUMI: "https://bgm.tv/user/{id}",
     Platform.BILIBILI: "https://space.bilibili.com/{id}",
     Platform.DOUBAN: "https://www.douban.com/people/{id}/",
     # sec_uid (短视频平台的用户标识, 与数字 uid 不同 —— 用 uid 打不开主页)

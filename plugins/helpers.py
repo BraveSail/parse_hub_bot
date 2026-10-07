@@ -990,13 +990,24 @@ TAG_PAGE_URLS: dict[Platform, str] = {
     Platform.XHS: "https://www.xiaohongshu.com/search_result?keyword={tag}",
     # Discourse 论坛: /tag/<名字> 会重定向到规范地址 /tag/<slug>/<id>, 浏览器自动跟随
     Platform.LINUXDO: "https://linux.do/tag/{tag}",
+    # bgm 的日志标签是**用户级**的（``/user/<uid>/blog/tag/<名>``）——
+    # 全站 ``/blog/tag/<名>`` 实测返回 0 字节空响应。所以模板需要 ``{id}``。
+    Platform.BANGUMI: "https://bgm.tv/user/{id}/blog/tag/{tag}",
 }
 
 
-def tag_page_url(platform: Platform | None, tag: str) -> str:
-    """平台上的标签页地址; 没有对应模板时返回空串"""
+def tag_page_url(platform: Platform | None, tag: str, *, user_id: str = "") -> str:
+    """平台上的标签页地址; 没有对应模板时返回空串。
+
+    有的平台标签页是**用户级**的（bgm 的日志标签挂在作者名下），模板里带 ``{id}``；
+    这时拿不到 ``user_id`` 就返回空串 —— 宁可退回纯文本，也不生成一个打不开的链接。
+    """
     template = TAG_PAGE_URLS.get(platform) if platform else None
-    return template.format(tag=quote(str(tag), safe="")) if template else ""
+    if not template:
+        return ""
+    if "{id}" in template and not str(user_id or "").strip():
+        return ""
+    return template.format(tag=quote(str(tag), safe=""), id=quote(str(user_id or ""), safe=""))
 
 
 def _tag_label(tag: str, *, linked: bool) -> str:
@@ -1010,9 +1021,12 @@ def _tag_label(tag: str, *, linked: bool) -> str:
     return f"#{escaped}" if linked else f"\\#{escaped}"
 
 
-def _render_tag(platform: Platform | None, tag: str) -> str:
-    """单个标签: 能拿到标签页就渲染成链接, 否则退回纯文本"""
-    url = tag_page_url(platform, tag)
+def _render_tag(platform: Platform | None, tag: str, *, user_id: str = "") -> str:
+    """单个标签: 能拿到标签页就渲染成链接, 否则退回纯文本。
+
+    ``user_id`` 给**用户级标签页**的平台用（bgm 的日志标签挂在作者名下）。
+    """
+    url = tag_page_url(platform, tag, user_id=user_id)
     if not url:
         return _tag_label(tag, linked=False)
     return f'<a href="{html.escape(url, quote=True)}">{_tag_label(tag, linked=True)}</a>'
@@ -1037,6 +1051,9 @@ def format_tags(parse_result: AnyParseResult) -> str:
         getattr(parse_result, "raw_url", "") or ""
     )
 
+    # 用户级标签页的平台要用作者标识拼地址（bgm）；其它平台模板里没有 ``{id}``，传了也不影响
+    user_id = str(getattr(parse_result, "author_handle", "") or "")
+
     rendered: list[str] = []
     width = 0
     for tag in tags:
@@ -1045,7 +1062,7 @@ def format_tags(parse_result: AnyParseResult) -> str:
         if rendered and width + piece > TAG_LINE_DISPLAY_BUDGET:
             rendered.append("…")
             break
-        rendered.append(_render_tag(platform, tag))
+        rendered.append(_render_tag(platform, tag, user_id=user_id))
         width += piece
     return " ".join(rendered)
 

@@ -18,6 +18,8 @@
 | `instagram_caption.json` | instagram | 2026-10-06 21:05 | `xdt_api__v1__media__shortcode__web_info`（匿名） | ~44 KB | caption 含 `#PeakyBlinders`，证 **只有文本、无实体** |
 | `instagram_post.json` | instagram | 2026-10-06 21:05 | 同 API（匿名，另一条） | ~48 KB | 对照：caption 无 hashtag |
 | `instagram_cookie_execution_error.json` | instagram | 2026-10-06 21:05 | 同 API（**带 cookie**） | 263 B | `execution error` + `data:null`（IG 带 cookie 反而失败，匿名可用） |
+| `bangumi_blog_381120.html` | bgm.tv | 2026-10-07 16:20 | 日志页 HTML `https://bgm.tv/blog/381120`（匿名） | 1.4 KB（抽过：只留 `.author`/`.header`/`#entry_content`） | 作者是**数字 uid**（`/user/950407`），有 1 张图与 1 个标签 |
+| `bangumi_blog_381269.html` | bgm.tv | 2026-10-07 16:20 | 日志页 HTML `https://bgm.tv/blog/381269`（匿名） | 1.5 KB（同上抽法） | 作者是**用户名 slug**（`/user/air_chika`）—— 两种标识形态都要收 |
 | `linuxdo_floor_24.json` | linux.do | 2026-10-07 10:40 | 带楼层号的帖子 JSON `/t/2989140/24.json`（源 URL `https://linux.do/t/topic/2989140/24`，匿名请求） | ~54 KB | 承载**楼层窗口**实证：窗口 `19..38`，**不含主楼**（对比 `linuxdo_floor_4.json` 窗口 `1..20` 含主楼） |
 | `linuxdo_floor_4.json` | linux.do | 2026-10-07 10:15 | 带楼层号的帖子 JSON `/t/2989140/4.json`（源 URL `https://linux.do/t/topic/2989140/4`，匿名请求） | ~56 KB | 承载**楼层号**实证：`post_stream.posts[].post_number` / `reply_to_post_number`（第 4 楼 `reply_to_post_number=null` = 回复主楼） |
 | `twitter_poll_card.json` | twitter | 2026-10-07 06:39 | 推文详情（`TweetResultByRestId`），id `2107576143285219799`（源 URL `https://twitter.com/thsottiaux/status/2107576143285219799`） | ~3.6 KB | 承载**投票卡**实证：`node["card"].legacy.name == "poll2choice_text_only"`、`binding_values` 里的 `choice{N}_label`/`choice{N}_count` |
@@ -40,6 +42,19 @@
 - **待验证**：小红书 — `note.noteDetailMap[<id>].note.tagList[].name`（与正文 `#[名][话题]#` 1:1 同序），但**需 cookie**；本机匿名拿不到（快照里 `noteDetailMap == {}`）
 
 **其它字段速查**（非标签）：
+
+- **bgm.tv 日志**（官方 API **没有日志**：`/v0/blogs/<id>` 404、`/blog/<id>.json` 0 字节 ⇒ 抓 HTML）：
+  - 标题 `.header h1.title`、正文 `#entry_content`、时间 `.header .time`（`2026-10-4 19:13 · 1 分钟阅读`）
+  - 作者 `.author` → `/user/<标识>`；**标识两种形态**：老用户数字 uid、新用户 slug
+  - 标签 `.header .tags .badge_tag` → 标签页是**用户级**的 `/user/<uid>/blog/tag/<名>`
+    （全站 `/blog/tag/<名>` 返回 0 字节空响应）
+  - **日志不存在也返回 HTTP 200**，页面写「呜咕，出错了 数据库中没有查询到该日志的信息」
+    ⇒ 判据是「没有 `#entry_content`」
+  - 正文是 **BBCode 渲染**出来的，映射以 `bgm.tv/help/bbcode` 为准：
+    `[b]`→`<strong>`、`[i]`→`<em>`、`[u]`/`[s]`/`[mask]`/`[color]`/`[size]`→**都是 `<span style=…>`**
+    （只靠 style 区分！）、`[url]`→`<a class="l">`、`[img]`→`<img class="code">`
+  - **表情**是 `<img class="smile" alt="(bgm116)" src="/img/smiles/…">` —— 判据看 **src 路径**
+    （有表情 img 不带 class）
 
 - **linux.do 楼层号** — 在 `post_stream.posts[].post_number`（主楼是 `1`）；
   `reply_to_post_number` 是**被回复的楼层**（`null` = 回复主题/主楼）。
