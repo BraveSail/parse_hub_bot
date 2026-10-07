@@ -32,6 +32,8 @@ class ThreadsParser(BaseParser):
             view_count=post.view_count,
             like_count=post.like_count,
             reply_media_count=len(reply_media),
+            # 引用块的角色（被回复帖在最前）—— 渲染层据此归位媒体, 不再靠位置
+            quote_roles=["reply"] if quote else [],
         )
 
     @staticmethod

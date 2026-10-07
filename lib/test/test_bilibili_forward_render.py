@@ -1,7 +1,40 @@
 """bilibili 转发动态的渲染: 剥 //@ 注释、引用块、引用媒体计数。"""
 
+import asyncio
+
 from parsehub.parsers.parser.bilibili import BiliParse
 from parsehub.provider_api.bilibili import BiliDynamic
+
+
+def _async_return(value):
+    async def _inner(*_args, **_kwargs):
+        return value
+
+    return _inner
+
+
+def test_a_forwarded_dynamic_declares_the_quote_role(monkeypatch):
+    """**核心**: 转发动态的引用块在末尾、媒体算在 quoted 段 ⇒ 声明 ``["quoted"]``
+
+    （渲染层据此归位媒体，不再靠"引用块在开头还是末尾"去猜）
+    """
+    forward = _dyn(title="原动态标题", author_name="原作者", author_mid=2, images=[])
+    dynamic = _dyn(content="转发的话 //@原作者:原动态正文", forward=forward, images=None, topics=None)
+    parser = BiliParse()
+    monkeypatch.setattr(parser, "is_dynamic", _async_return(True))
+    monkeypatch.setattr(parser, "get_dynamic_info", _async_return(dynamic))
+    result = asyncio.run(parser._do_parse("https://t.bilibili.com/1"))
+    assert result.quote_roles == ["quoted"], result.quote_roles
+
+
+def test_a_plain_dynamic_declares_nothing(monkeypatch):
+    """普通动态（没有转发）不该声明角色"""
+    dynamic = _dyn(content="就是一条普通动态", forward=None, images=None, topics=None)
+    parser = BiliParse()
+    monkeypatch.setattr(parser, "is_dynamic", _async_return(True))
+    monkeypatch.setattr(parser, "get_dynamic_info", _async_return(dynamic))
+    result = asyncio.run(parser._do_parse("https://t.bilibili.com/1"))
+    assert result.quote_roles == [], result.quote_roles
 
 
 def _dyn(**kw) -> BiliDynamic:

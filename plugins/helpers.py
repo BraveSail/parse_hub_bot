@@ -296,27 +296,56 @@ def build_rich_markdown(
     # 不写「展开全文」—— 折叠按钮的文字对"被藏起来"这件事没有信息量, 而标记本身
     # 说明了为什么藏 (不宜公开 / 剧透); 也不必翻译, 标记是用户输入。
     spoiler_summary = f"⚠️ {hide_content}" if hide_content else SPOILER_FOLD_SUMMARY
+    # 引用块的**角色**决定它拿哪一段媒体。角色由平台显式声明（``quote_roles``，
+    # 按引用块出现顺序，取值为两个媒体通道名 ``reply`` / ``quoted``）——
+    # **位置不参与判断**。没声明时（老缓存 / 未改的平台）走下面那段位置推断。
+    declared_roles = [r for r in (getattr(parse_result, "quote_roles", None) or []) if r]
     reply_media = list(reply_media_placeholders)
-    # 末尾引用块不存在时, 属于它的媒体要交回**头部**引用块 (反之亦然, 下面那段)。
-    # 平台产出"引用块在前"的结构时就会走到这里 (linux.do 把主楼做成引用块放最上面) ——
-    # 不兜的话媒体的归属块为空, render_quote_card 直接丢弃它们 (症状: 图不见了)。
-    if not config.hide_desc and quote_media_placeholders and not quote:
-        if reply_quote:
-            reply_media = [*reply_media, *quote_media_placeholders]
-        else:
-            media_placeholders = [*media_placeholders, *quote_media_placeholders]
-        quote_media_placeholders = ()
-    if reply_quote and not config.hide_desc:
-        # 被回复的卡片也要能折叠: 以前直接拼进 parts, 1294 字的回复块整屏铺开
-        parts.extend(render_quote_card(reply_quote, reply_media, summary=fold_summary))
-        reply_media = []  # 已安置
-    elif not reply_quote:
-        # 没有独立的回复块 (例如正文为空): 媒体不能丢, 兜到末尾引用块或正文媒体里
-        if quote:
-            quote_media_placeholders = [*quote_media_placeholders, *reply_media]
-        else:
-            media_placeholders = [*media_placeholders, *reply_media]
-        reply_media = []
+    if declared_roles:
+        buckets = {"reply": list(reply_media_placeholders), "quoted": list(quote_media_placeholders)}
+        pending = list(declared_roles)
+        head_role = pending.pop(0) if (reply_quote and pending) else ""
+        tail_role = pending.pop(0) if (quote and pending) else ""
+        head_media = buckets.pop(head_role, []) if head_role else []
+        tail_media = buckets.pop(tail_role, []) if tail_role else []
+        # 块多于声明（声明与块对不上）→ 从**还没被消费**的桶里补，优先语义相近的那个。
+        # 不能按位置猜：那样尾部的被回复块会拿到 quoted 段，媒体配错卡片。
+        if reply_quote and not head_media and buckets:
+            pick = "reply" if buckets.get("reply") else next(iter(buckets))
+            logger.warning(f"块多于声明的引用块角色, 头部块取未消费的 {pick} 段媒体")
+            head_media = buckets.pop(pick)
+        if quote and not tail_media and buckets:
+            pick = "quoted" if buckets.get("quoted") else next(iter(buckets))
+            logger.warning(f"块多于声明的引用块角色, 末尾块取未消费的 {pick} 段媒体")
+            tail_media = buckets.pop(pick)
+        # 剩下的媒体段（角色没声明 / 对应块不存在）→ 落到正文媒体，不能丢
+        media_placeholders = [*media_placeholders, *(m for rest in buckets.values() for m in rest)]
+        if reply_quote and not config.hide_desc:
+            parts.extend(render_quote_card(reply_quote, head_media, summary=fold_summary))
+        if not config.hide_desc:
+            quote_media_placeholders = tail_media
+    else:
+        # ---- 未声明角色：按**位置**推断（保持与引入 quote_roles 之前逐字一致）----
+        # 末尾引用块不存在时, 属于它的媒体要交回**头部**引用块 (反之亦然, 下面那段)。
+        # 平台产出"引用块在前"的结构时就会走到这里 (linux.do 把主楼做成引用块放最上面) ——
+        # 不兜的话媒体的归属块为空, render_quote_card 直接丢弃它们 (症状: 图不见了)。
+        if not config.hide_desc and quote_media_placeholders and not quote:
+            if reply_quote:
+                reply_media = [*reply_media, *quote_media_placeholders]
+            else:
+                media_placeholders = [*media_placeholders, *quote_media_placeholders]
+            quote_media_placeholders = ()
+        if reply_quote and not config.hide_desc:
+            # 被回复的卡片也要能折叠: 以前直接拼进 parts, 1294 字的回复块整屏铺开
+            parts.extend(render_quote_card(reply_quote, reply_media, summary=fold_summary))
+            reply_media = []  # 已安置
+        elif not reply_quote:
+            # 没有独立的回复块 (例如正文为空): 媒体不能丢, 兜到末尾引用块或正文媒体里
+            if quote:
+                quote_media_placeholders = [*quote_media_placeholders, *reply_media]
+            else:
+                media_placeholders = [*media_placeholders, *reply_media]
+            reply_media = []
     if body_text and not config.hide_desc:
         # 正文只折叠、不截断: 富文本没有媒体 caption 的 1024 限制,
         # 截断会把长正文变成省略号, 折叠也就轮不上了
@@ -462,6 +491,7 @@ def build_rich_markdown_by_str(
     markdown_content: str = "",
     position_label: str = "",
     hashtags: Sequence[str] | None = None,
+    quote_roles: Sequence[str] = (),
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。
 
@@ -490,6 +520,7 @@ def build_rich_markdown_by_str(
             markdown_content,
             position_label,
             hashtags,
+            quote_roles,
         ),
         config=config,
         lang=lang,
@@ -521,6 +552,7 @@ class _RichFields:
         markdown_content="",
         position_label="",
         hashtags=None,
+        quote_roles=(),
     ):
         self.title = title or ""
         self.content = content or ""
@@ -543,6 +575,9 @@ class _RichFields:
         # 写死空值就是缓存命中时那两处格式消失。
         self.position_label = position_label or ""
         self.hashtags = list(hashtags or [])
+        # 引用块角色（按出现顺序）—— 同属"渲染要用的解析字段"：漏了它缓存命中时
+        # 渲染层只能退回按位置猜引用块的角色。
+        self.quote_roles = list(quote_roles or [])
 
 
 def rich_content(parse_result: AnyParseResult) -> str:

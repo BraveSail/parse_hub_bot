@@ -75,6 +75,10 @@ class LinuxDoTopic:
     #: **当前解析的这一层的楼层号** (主楼是 1)。渲染层用它给作者行标 ``#N`` ——
     #: 引用块里的其它层早就标了 (`_post_to_quote` 的 `` · #N``), 本层不标就不对称。
     post_number: int | None = None
+    #: 上下文引用块的**角色** (按出现顺序)。它们排在正文最前、媒体算在
+    #: ``quoted_media_count`` 里 —— 声明出来渲染层就不用靠位置猜 (以前靠"两个块互相
+    #: 兜底", 正文里一插行就可能错位)。
+    quote_roles: list[str] = field(default_factory=list)
 
     @staticmethod
     def _split_url(url: str) -> tuple[str, str]:
@@ -342,6 +346,8 @@ class LinuxDoTopic:
             tags=tags,
             images=images,
             quoted_media_count=quoted_media_count,
+            # 上下文引用块排在正文最前, 角色是 quoted (它那条媒体计数通道)
+            quote_roles=["quoted"] * len(context_quotes),
             # 只认平台自己的标记: 标签里的 NSFW
             is_sensitive=any(t.casefold() == "nsfw" for t in tags),
             # 当前这一层的楼层号 —— 分享楼层时用它标出"这是第几楼"

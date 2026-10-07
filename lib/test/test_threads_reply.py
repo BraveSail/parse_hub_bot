@@ -193,6 +193,25 @@ def test_from_graphql_without_user_is_empty_handle():
 # ---------- _build_quote: Markdown 引用块 ----------
 
 
+def test_the_reply_role_is_declared(monkeypatch):
+    """**核心**: 被回复帖渲染成引用块时要声明角色（渲染层据此归位媒体，不看位置）"""
+    parser = ThreadsParser()
+    post = ThreadsPost(content="mine", reply_to=reply_post("original"))
+    monkeypatch.setattr(parser, "_parse", _async_return(post))
+    assert asyncio.run(parser._do_parse("https://www.threads.com/@a/post/1")).quote_roles == ["reply"]
+
+    alone = ThreadsPost(content="mine")
+    monkeypatch.setattr(parser, "_parse", _async_return(alone))
+    assert asyncio.run(parser._do_parse("https://www.threads.com/@a/post/1")).quote_roles == []
+
+
+def _async_return(value):
+    async def _inner(*_args, **_kwargs):
+        return value
+
+    return _inner
+
+
 def test_quote_renders_markdown_blockquote():
     post = ThreadsPost(content="mine", reply_to=reply_post("line1\nline2", handle="other"))
     assert ThreadsParser._build_quote(post) == (

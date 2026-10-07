@@ -225,6 +225,12 @@ class CacheParseResult(BaseModel):
     reply_media_count: int = 0
     #: 内容在源站的位置标记（如 linux.do 的楼层号 ``#16``）—— 渲染层接在作者行后
     position_label: str = ""
+    #: 正文里每个**引用块的角色**（按出现顺序，``reply`` / ``quoted``）—— 渲染层靠它
+    #: 把媒体归到正确的卡片里。
+    #:
+    #: ⚠️ 老缓存没有这个字段时**不需要重新解析**：渲染层对空 roles 回退到按位置推断，
+    #: 行为与声明之前一致。所以这里不加"缺了就叫停"的判据（与上述几个字段不同）。
+    quote_roles: list[str] = []
     #: 正文标签名的**平台实体**（twitter ``entities.hashtags[].text`` 等）。
     #: 渲染层用它做精确链接化；缺了会退回正则，日文标点/全角符号处会切错边界。
     hashtags: list[str] = []

@@ -123,6 +123,7 @@ class BiliParse(BaseParser):
 
             # 转发动态: 被转发的原动态渲染成引用块 (文字 + 它自己的媒体)
             quoted_media_count = 0
+            has_forward_quote = False
             if forward := dynamic.forward:
                 content, forward_text = BiliParse._split_forward_comment(content)
                 if forward_text:
@@ -132,6 +133,7 @@ class BiliParse(BaseParser):
                     )
                 if quote := BiliParse._render_forward(forward, extra_text=forward_text):
                     content = f"{content}\n\n{quote}" if content else quote
+                    has_forward_quote = True
                 forward_refs = BiliParse._to_refs(forward.images)
                 quoted_media_count = len(forward_refs)
                 photos.extend(forward_refs)
@@ -146,6 +148,8 @@ class BiliParse(BaseParser):
                 published_at=dynamic.published_at,
                 like_count=dynamic.like_count,
                 quoted_media_count=quoted_media_count,
+                # 引用块的角色（被转发的原动态在末尾）—— 渲染层据此归位媒体
+                quote_roles=["quoted"] if has_forward_quote else [],
             )
         else:
             try:

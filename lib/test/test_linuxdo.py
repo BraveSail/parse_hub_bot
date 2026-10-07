@@ -393,6 +393,10 @@ def test_quote_reply_uses_the_shared_quote_renderer():
     topic = LinuxDoTopic._from_payload(payload, "2979226")
     body = topic.markdown_content
 
+    # ⚠️ 这里测的是**正文内部**的 Discourse 引用 (`aside.quote`) —— 它原地渲染、
+    # 没有独立的媒体段, 所以**不声明角色**（只有"分享楼层时补的上下文层"才声明，
+    # 见 test_linuxdo_floor_window.py 的分享楼层用例）。
+    assert topic.quote_roles == [], topic.quote_roles
     # 作者在引用块内 (带主页链接), 不在块外裸着
     assert '> <i><a href="https://linux.do/u/paomian_1">@paomian_1</a></i>' in body
     # 引用内容整块斜体

@@ -285,6 +285,7 @@ def rich_cache_entry(
             # 只存它会让缓存命中时引用块/链接全塌（见 CacheParseResult.markdown_content）。
             markdown_content=getattr(parse_result, "markdown_content", "") or "",
             position_label=getattr(parse_result, "position_label", "") or "",
+            quote_roles=list(getattr(parse_result, "quote_roles", None) or []),
             hashtags=list(getattr(parse_result, "hashtags", None) or []),
             author_name=get_parse_author_name(parse_result),
             author_handle=getattr(parse_result, "author_handle", ""),
@@ -354,6 +355,7 @@ def build_cached_rich_content(
         # 三个都是"渲染要用的解析字段": 少传一个就是缓存命中时那段格式消失
         markdown_content=entry.parse_result.markdown_content,
         position_label=entry.parse_result.position_label,
+        quote_roles=entry.parse_result.quote_roles,
         hashtags=entry.parse_result.hashtags,
         author_name=entry.parse_result.author_name,
         author_handle=entry.parse_result.author_handle,

@@ -410,9 +410,11 @@ class BangumiTopic:
     author_handle: str = ""
     published_at: datetime | None = None
     images: list[BangumiImage] = field(default_factory=list)
-    #: ``images`` 末尾有多少张属于**引用块**（主楼）——
+    #: ``images`` 末尾有多少张属于**引用块**（被引用/被回复的那层）——
     #: bot 侧据此把它们放进引用块内部（与 linux.do 同一机制）
     quoted_media_count: int = 0
+    #: 引用块的角色（按出现顺序）—— 渲染层据此归位媒体, **不再看位置**
+    quote_roles: list[str] = field(default_factory=list)
     floor_label: str = ""
     """本层的楼层号（``#1`` / ``#5`` / ``#2-1``）"""
     is_opening: bool = False
@@ -580,6 +582,8 @@ class BangumiTopic:
             published_at=to_datetime(current.published_at, default_tz=BGM_TIMEZONE) if current else None,
             images=images,
             quoted_media_count=quoted_media,
+            # 引用块存在 ⇒ 角色是 ``quoted``（它那条媒体计数通道）
+            quote_roles=["quoted"] if context_quote else [],
             floor_label=current.label if current else "",
             is_opening=is_opening,
             context_name=context_name,

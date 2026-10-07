@@ -196,6 +196,52 @@ def test_the_opening_post_has_no_stray_blank_lines():
     assert "\n\n\n" not in _topic().markdown_content
 
 
+def test_the_roles_are_declared_for_the_context_quote():
+    """**核心**: 分享楼层时要声明引用块的角色（渲染层据此归位媒体，不看位置）"""
+    assert _topic("4062141").quote_roles == ["quoted"]
+    assert _topic("4062147").quote_roles == ["quoted"], "楼中楼也要声明"
+    assert _topic().quote_roles == [], "主楼没有引用块，不该声明"
+    assert _topic("99999999").quote_roles == [], "锚点失效退回主楼 → 也没有引用块"
+
+
+def test_the_parser_passes_the_roles_through():
+    """provider 声明了还不够 —— parser 层要透传出来（漏了等于没声明）"""
+    import asyncio
+
+    from parsehub.provider_api import bangumi as mod
+
+    class _Resp:
+        status_code = 200
+
+        def __init__(self, text: str):
+            self.content = text.encode("utf-8")
+
+        def raise_for_status(self) -> None:
+            pass
+
+    class _Client:
+        def __call__(self, **_kwargs):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def get(self, _url: str, **_kwargs):
+            return _Resp(FIXTURE.read_text(encoding="utf-8"))
+
+    original = mod.http.AsyncClient
+    mod.http.AsyncClient = _Client()
+    try:
+        result = asyncio.run(BangumiParser()._do_parse("https://bgm.tv/group/topic/472394#post_4062141"))
+    finally:
+        mod.http.AsyncClient = original
+    assert result.quote_roles == ["quoted"]
+    assert result.quoted_media_count == 0  # 这个 fixture 里主楼没有图
+
+
 def test_the_quote_comes_out_of_the_shared_helper():
     """**自检**: 引用块必须由 ``format_quote_block`` 产出，别手拼 ``"> "`` 前缀。
 

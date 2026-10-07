@@ -47,6 +47,7 @@ class ParseResult(ABC):  # noqa: B024
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        quote_roles: Sequence[str] | None = None,
     ):
         """
         :param title: 标题
@@ -70,6 +71,16 @@ class ParseResult(ABC):  # noqa: B024
         :param position_label: 这段内容在**源站的位置标记**, 渲染层接在作者行后
             (如 linux.do 的楼层号 ``#4``)。平台没有位置概念的留空即可 ——
             通用层不认识楼层语义, ``#`` 由平台侧给。
+        :param quote_roles: 正文里每个引用块的**角色**, 按它们在正文中**出现的顺序**,
+            取值 ``"reply"`` (被回复) / ``"quoted"`` (被引用)。
+
+            **为什么需要它**: 引用块在正文里只是 ``> `` 开头的块, 没有身份标记。
+            渲染层以前靠**位置**猜 (开头→被回复、末尾→被引用), 于是"谁在正文里插了一行"
+            就会让归位漂移 —— bgm 的归属行插在引用块前, 引用块落到末尾, 本层的图就跟
+            引用块贴到一起了。
+
+            现在角色由平台显式声明, 位置不再参与判断; 渲染层按角色取对应的媒体通道。
+            留空时渲染层**回退**到位置推断 (老缓存与未改的平台照旧)。
         """
         self.raw_url: str = ""
         self.title = title.strip()
@@ -90,6 +101,8 @@ class ParseResult(ABC):  # noqa: B024
         self.reply_media_count = max(0, to_int(reply_media_count) or 0)
         self.position_label = (position_label or "").strip()
         """内容在源站的位置标记 (如 linux.do 的楼层号 ``#4``); 无此概念的平台为空串"""
+        self.quote_roles: list[str] = [str(r).strip() for r in (quote_roles or []) if str(r).strip()]
+        """正文里每个引用块的角色 (按出现顺序); 空列表 = 没声明, 渲染层退回位置推断"""
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -375,6 +388,7 @@ class VideoParseResult(ParseResult):
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        quote_roles: Sequence[str] | None = None,
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -393,6 +407,7 @@ class VideoParseResult(ParseResult):
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
             position_label=position_label,
+            quote_roles=quote_roles,
         )
 
 
@@ -418,6 +433,7 @@ class ImageParseResult(ParseResult):
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        quote_roles: Sequence[str] | None = None,
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
@@ -436,6 +452,7 @@ class ImageParseResult(ParseResult):
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
             position_label=position_label,
+            quote_roles=quote_roles,
         )
 
 
@@ -461,6 +478,7 @@ class MultimediaParseResult(ParseResult):
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        quote_roles: Sequence[str] | None = None,
     ):
         super().__init__(
             title=title,
@@ -478,6 +496,7 @@ class MultimediaParseResult(ParseResult):
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
             position_label=position_label,
+            quote_roles=quote_roles,
         )
 
 
@@ -509,6 +528,7 @@ class RichTextParseResult(ParseResult):
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
         position_label: str = "",
+        quote_roles: Sequence[str] | None = None,
     ):
         """
         :param title: 标题
@@ -532,6 +552,7 @@ class RichTextParseResult(ParseResult):
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
             position_label=position_label,
+            quote_roles=quote_roles,
         )
 
     def __repr__(self) -> str:

@@ -57,6 +57,42 @@ def test_reply_media_goes_between_body_and_quoted():
     assert result.quoted_media_count == 1
 
 
+def test_the_roles_are_declared_in_order():
+    """**核心**: 引用块的角色按出现顺序声明（reply 在前、quoted 在后）
+
+    渲染层据此归位媒体 —— 不再靠"引用块在开头还是末尾"去猜。
+    """
+    both = _tweet(
+        full_text="正文",
+        reply_to=_tweet(tweet_id="8", full_text="回复"),
+        quoted_status_id="9",
+        quoted_status=_tweet(tweet_id="9", full_text="引用"),
+    )
+    assert asyncio.run(TwitterParser.media_parse(both)).quote_roles == ["reply", "quoted"]
+
+    only_quoted = _tweet(full_text="正文", quoted_status_id="9", quoted_status=_tweet(tweet_id="9", full_text="引用"))
+    assert asyncio.run(TwitterParser.media_parse(only_quoted)).quote_roles == ["quoted"]
+
+    only_reply = _tweet(full_text="正文", reply_to=_tweet(tweet_id="8", full_text="回复"))
+    assert asyncio.run(TwitterParser.media_parse(only_reply)).quote_roles == ["reply"]
+
+    plain = _tweet(full_text="只有正文")
+    assert asyncio.run(TwitterParser.media_parse(plain)).quote_roles == []
+
+
+def test_the_declared_roles_match_the_blocks_in_the_content():
+    """**不变量**: 声明了角色 → 正文里真的有那么多个引用块（否则媒体配到不存在的块上）"""
+    both = _tweet(
+        full_text="正文",
+        reply_to=_tweet(tweet_id="8", full_text="回复"),
+        quoted_status_id="9",
+        quoted_status=_tweet(tweet_id="9", full_text="引用"),
+    )
+    result = asyncio.run(TwitterParser.media_parse(both))
+    blocks = sum(1 for ln in result.content.splitlines() if ln.startswith("> "))
+    assert len(result.quote_roles) == 2 and blocks > 0, (result.quote_roles, result.content)
+
+
 def test_a_media_only_quoted_tweet_keeps_its_media_in_the_card():
     """**核心**: 引用帖正文为空、只有图（用户报的那条）—— 图必须算进引用块。
 

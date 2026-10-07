@@ -124,6 +124,20 @@ class TwitterParser(BaseParser):
         return TwitterParser._quote_block(tweet.quoted_status) if tweet.quoted_status else ""
 
     @staticmethod
+    def _quote_roles(tweet: TwitterTweet) -> list[str]:
+        """正文里引用块的**角色**, 按出现顺序 (``reply`` 在前、``quoted`` 在后)。
+
+        判据与 ``_compose`` **同源**（都看 ``_build_quote`` / ``_build_quoted_block``
+        是否非空）—— 两处判据分家的话, roles 会说"有块"而正文里没有, 媒体就配不到。
+        """
+        roles: list[str] = []
+        if TwitterParser._build_quote(tweet):
+            roles.append("reply")
+        if TwitterParser._build_quoted_block(tweet):
+            roles.append("quoted")
+        return roles
+
+    @staticmethod
     def _compose(body: str, tweet: TwitterTweet, *, reply_yt: str = "", quoted_yt: str = "") -> str:
         """组装正文: 被回复推文在最前, 被引用推文在最后 (与 X 上的卡片位置一致).
 
@@ -267,6 +281,8 @@ class TwitterParser(BaseParser):
                 like_count=tweet.like_count,
                 quoted_media_count=quoted_total,
                 reply_media_count=reply_total,
+                # 引用块的角色（按出现顺序）—— 渲染层据此归位媒体, 不再看位置
+                quote_roles=TwitterParser._quote_roles(tweet),
                 # 标签走**平台实体**（服务端算好的边界），渲染层据此精确链接化
                 hashtags=TwitterParser._hashtags(tweet),
             )
@@ -284,6 +300,7 @@ class TwitterParser(BaseParser):
             like_count=tweet.like_count,
             quoted_media_count=quoted_total,
             reply_media_count=reply_total,
+            quote_roles=TwitterParser._quote_roles(tweet),
             hashtags=TwitterParser._hashtags(tweet),
         )
 
