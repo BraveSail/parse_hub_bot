@@ -415,6 +415,9 @@ class BangumiTopic:
     quoted_media_count: int = 0
     #: 引用块的角色（按出现顺序）—— 渲染层据此归位媒体, **不再看位置**
     quote_roles: list[str] = field(default_factory=list)
+    #: **归属行**（「小组/条目名 » 讨论」）—— 渲染层放在**标题与作者行之间**的元信息区。
+    #: 放进正文会挤到引用块前面，把引用块的归位搅乱（踩过两次）。
+    origin_line: str = ""
     floor_label: str = ""
     """本层的楼层号（``#1`` / ``#5`` / ``#2-1``）"""
     is_opening: bool = False
@@ -568,7 +571,17 @@ class BangumiTopic:
             ]
             quoted_media = len([i for i in images if i.url in context_urls])
 
-        markdown_content = cls._compose(context_name, context_url, context_quote, body)
+        # 归属行**不进正文** —— 它是元信息，渲染层放在标题与作者行之间
+        origin_line = ""
+        if context_name:
+            label = (
+                f'<a href="{html.escape(context_url, quote=True)}">{html.escape(context_name)}</a>'
+                if context_url
+                else html.escape(context_name)
+            )
+            origin_line = f"**{label}** » 讨论"
+
+        markdown_content = cls._compose(context_quote, body)
         text_content = cls._to_text(context_name, context_quote, plain)
 
         return BangumiTopic(
@@ -588,6 +601,7 @@ class BangumiTopic:
             is_opening=is_opening,
             context_name=context_name,
             context_url=context_url,
+            origin_line=origin_line,
             floors=[f for f in all_floors if f is not opening],
         )
 
@@ -722,31 +736,13 @@ class BangumiTopic:
     # ------------------------------------------------------------------ 组装
 
     @classmethod
-    def _compose(cls, context_name: str, context_url: str, context_quote: str, body: str) -> str:
-        """**引用块 + 归属行 + 本层正文** —— 引用块放**最前**。
+    def _compose(cls, context_quote: str, body: str) -> str:
+        """**引用块 + 本层正文**（引用块在前，与 linux.do 同一形态）。
 
-        形态与 linux.do 的楼层解析一致（上下文引用块在前、本层内容在后）。
-
-        ⚠️ **引用块必须是最前面那一块**：渲染层对「**末尾**引用块」的处理是推特语义
-        （主推的媒体排在引用块上面），媒体会被插到引用块**前面**、贴在一起
-        （用户报「图片和引用贴一起了」）。放在开头走的是「被回复的卡片」那条通道
-        （``reply_quote``），媒体自然跟在它后面。
-
-        以前归属行在引用块之前，于是无正文的纯图楼层里引用块落到了**末尾** ——
-        正好踩中上面那个坑。
+        归属行**不在这里** —— 它是元信息，由 ``origin_line`` 交给渲染层放在
+        标题与作者行之间（以前拼在正文里，会挤到引用块前面、把引用块的归位搅乱）。
         """
-        parts: list[str] = []
-        if context_quote:
-            parts.append(context_quote)
-        if context_name:
-            label = (
-                f'<a href="{html.escape(context_url, quote=True)}">{html.escape(context_name)}</a>'
-                if context_url
-                else html.escape(context_name)
-            )
-            parts.append(f"**{label}** » 讨论")
-        if body:
-            parts.append(body)
+        parts: list[str] = [context_quote, body]
         # strip 每个块: ``format_quote_block`` 末尾自带空行, 直接 join 会堆出多余空行
         # —— 引用块与正文之间会变成 3 个空行, 行间距比别的平台大（用户报「感觉比其他
         # 平台的大一点」）。linux.do 早就这么处理了（见它的 `_context_quotes` 调用点）。

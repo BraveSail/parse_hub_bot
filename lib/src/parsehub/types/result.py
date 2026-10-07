@@ -48,6 +48,7 @@ class ParseResult(ABC):  # noqa: B024
         reply_media_count: int = 0,
         position_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        origin_line: str = "",
     ):
         """
         :param title: 标题
@@ -71,6 +72,9 @@ class ParseResult(ABC):  # noqa: B024
         :param position_label: 这段内容在**源站的位置标记**, 渲染层接在作者行后
             (如 linux.do 的楼层号 ``#4``)。平台没有位置概念的留空即可 ——
             通用层不认识楼层语义, ``#`` 由平台侧给。
+        :param origin_line: **归属行** —— "这条内容属于哪里" (如 bgm 的
+            「小组/条目名 » 讨论」)。渲染层把它放在**标题与作者行之间**的元信息区,
+            因此正文里插什么行都不影响引用块的归位。留空则不显示。
         :param quote_roles: 正文里每个引用块的**角色**, 按它们在正文中**出现的顺序**,
             取值 ``"reply"`` (被回复) / ``"quoted"`` (被引用)。
 
@@ -103,6 +107,8 @@ class ParseResult(ABC):  # noqa: B024
         """内容在源站的位置标记 (如 linux.do 的楼层号 ``#4``); 无此概念的平台为空串"""
         self.quote_roles: list[str] = [str(r).strip() for r in (quote_roles or []) if str(r).strip()]
         """正文里每个引用块的角色 (按出现顺序); 空列表 = 没声明, 渲染层退回位置推断"""
+        self.origin_line = (origin_line or "").strip()
+        """归属行 (这条内容属于哪里); 渲染层放在标题与作者行之间"""
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -389,6 +395,7 @@ class VideoParseResult(ParseResult):
         reply_media_count: int = 0,
         position_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        origin_line: str = "",
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -408,6 +415,7 @@ class VideoParseResult(ParseResult):
             reply_media_count=reply_media_count,
             position_label=position_label,
             quote_roles=quote_roles,
+            origin_line=origin_line,
         )
 
 
@@ -434,6 +442,7 @@ class ImageParseResult(ParseResult):
         reply_media_count: int = 0,
         position_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        origin_line: str = "",
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
@@ -453,6 +462,7 @@ class ImageParseResult(ParseResult):
             reply_media_count=reply_media_count,
             position_label=position_label,
             quote_roles=quote_roles,
+            origin_line=origin_line,
         )
 
 
@@ -479,6 +489,7 @@ class MultimediaParseResult(ParseResult):
         reply_media_count: int = 0,
         position_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        origin_line: str = "",
     ):
         super().__init__(
             title=title,
@@ -497,6 +508,7 @@ class MultimediaParseResult(ParseResult):
             reply_media_count=reply_media_count,
             position_label=position_label,
             quote_roles=quote_roles,
+            origin_line=origin_line,
         )
 
 
@@ -529,6 +541,7 @@ class RichTextParseResult(ParseResult):
         reply_media_count: int = 0,
         position_label: str = "",
         quote_roles: Sequence[str] | None = None,
+        origin_line: str = "",
     ):
         """
         :param title: 标题
@@ -553,6 +566,7 @@ class RichTextParseResult(ParseResult):
             reply_media_count=reply_media_count,
             position_label=position_label,
             quote_roles=quote_roles,
+            origin_line=origin_line,
         )
 
     def __repr__(self) -> str:

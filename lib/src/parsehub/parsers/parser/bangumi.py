@@ -90,6 +90,8 @@ class BangumiParser(BaseParser):
             quoted_media_count=topic.quoted_media_count,
             # 引用块的角色（按出现顺序）—— 渲染层据此归位媒体, 位置不再参与判断
             quote_roles=topic.quote_roles,
+            # 归属行 → 元信息区（标题与作者之间），不进正文
+            origin_line=topic.origin_line,
             # 本层的楼层号（主楼是 ``#1``）—— 通用位置标记机制
             position_label=topic.floor_label,
         )

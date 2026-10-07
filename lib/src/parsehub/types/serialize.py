@@ -104,7 +104,7 @@ def _constructor_param(cls: type) -> str | None:
 _BUILDABLE_PARAMS = frozenset({
     "title", "author_name", "is_sensitive", "published_at", "view_count", "like_count",
     "author_handle", "author_url", "tags", "hashtags", "quoted_media_count", "reply_media_count",
-    "position_label", "quote_roles", "content", "video", "photo", "media", "markdown_content",
+    "position_label", "quote_roles", "origin_line", "content", "video", "photo", "media", "markdown_content",
 })
 
 
@@ -214,6 +214,8 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
         # 引用块的角色 (按出现顺序) —— 渲染层靠它归位媒体; 漏了它缓存命中时
         # 引用块里的媒体会退化成"按位置猜", 又是一次静默的降级
         "quote_roles": list(result.quote_roles),
+        # 归属行（标题与作者之间的那一行）—— 漏了它缓存命中时归属行消失
+        "origin_line": result.origin_line,
         "impl": type(result).__name__,
     }
 
@@ -250,6 +252,7 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
         "reply_media_count": data.get("reply_media_count", 0),
         "position_label": data.get("position_label", ""),
         "quote_roles": data.get("quote_roles") or [],
+        "origin_line": data.get("origin_line", ""),
     }
 
     # content 只在**非 RichText** 时回填 —— 那个类的 content 是派生属性

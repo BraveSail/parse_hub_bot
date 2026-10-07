@@ -163,32 +163,39 @@ def test_the_quote_and_the_body_are_one_blank_line_apart():
     assert lines[last_quote + 2] != "", f"引用块与正文之间插了多余空行: {lines}"
 
 
-def test_the_quote_comes_first_and_the_affiliation_follows():
-    """**核心**: 引用块在**最前**，归属行跟在它后面。
+def test_the_quote_comes_first_with_no_affiliation_in_the_body():
+    """**核心**: 正文里只有「引用块 + 本层正文」，**归属行不在正文里**。
 
-    渲染层对「**末尾**引用块」用的是推特语义（主推的媒体排在引用块上面），媒体会被
-    插到引用块**前面**贴在一起（用户报「图片和引用贴一起了」）。放在开头走
-    「被回复的卡片」那条通道，媒体自然跟在后面 —— 与 linux.do 同一形态。
+    归属行进 ``origin_line``（渲染层放在标题与作者之间）—— 放正文里会挤到引用块
+    前面，把引用块的归位搅乱（踩过两次）。引用块在最前 ⇒ 媒体自然跟在它后面。
     """
     md = _topic("4062141").markdown_content
     lines = md.splitlines()
     assert lines[0].startswith("> <i>"), lines[:2]
+    assert "» 讨论" not in md, "归属行不该出现在正文里"
     last_quote = max(i for i, ln in enumerate(lines) if ln.startswith("> "))
     assert lines[last_quote + 1] == "", lines
-    assert lines[last_quote + 2].endswith("» 讨论"), lines[last_quote : last_quote + 3]
+    assert lines[last_quote + 2] == "两年四百+少了，很喜欢牛逼火腿一句话，你看点短的不就好了", lines
 
 
-def test_the_affiliation_is_last_when_there_is_no_body():
-    """**核心**: 纯图楼层（本层没文字）—— 引用块在开头、归属行在最后,
+def test_the_affiliation_becomes_the_origin_line():
+    """**核心**（用户要求）: 归属行走 ``origin_line``，内容是「条目/小组名 » 讨论」+ 链接"""
+    topic = _topic("4062141")
+    assert topic.origin_line == '**<a href="https://bgm.tv/group/fillgrids">补旧番</a>** » 讨论', topic.origin_line
+    # 主楼那条路也有归属行（只是没有引用块）
+    assert "» 讨论" in _topic().origin_line
 
-    媒体会跟在归属行后面，**不会**贴住引用块。
+
+def test_a_bodyless_floor_keeps_the_quote_in_the_body():
+    """**核心**: 纯图楼层（本层没文字）—— 正文就是那个引用块，媒体跟在它后面。
+
+    （以前归属行在正文里，会把引用块挤到末尾 ⇒ 图被插到它前面贴住。）
     """
     main = _main("主楼正文")
     reply = _floor("6", "#2", "2026-10-7 00:24", "甲", "a", "")
     topic = _from_html(reply, floor_id="6", main=main)
-    lines = topic.markdown_content.splitlines()
-    assert lines[0].startswith("> <i>"), lines
-    assert lines[-1].endswith("» 讨论"), lines[-3:]
+    assert topic.markdown_content.splitlines()[0].startswith("> <i>"), topic.markdown_content
+    assert "» 讨论" not in topic.markdown_content
 
 
 def test_the_opening_post_has_no_stray_blank_lines():
@@ -370,11 +377,11 @@ def test_a_floor_without_a_time_parses_to_none():
     assert topic.published_at is None
 
 
-def test_the_context_line_carries_the_affiliation_only():
+def test_the_origin_line_carries_the_affiliation_only():
     """归属行只写「谁家的讨论」（层数不再需要 —— 只发一层）"""
-    first = _topic().markdown_content.splitlines()[0]
-    assert "补旧番" in first and "» 讨论" in first
-    assert "层" not in first
+    origin = _topic().origin_line
+    assert "补旧番" in origin and "» 讨论" in origin
+    assert "层" not in origin
 
 
 # ---------------------------------------------------------------- 楼层解析（内部）

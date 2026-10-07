@@ -286,6 +286,10 @@ def build_rich_markdown(
         # 以前用的是 `###`(size 3), 结果帖子标题比正文里的一级小节还小
         # (实测某 linux.do 帖: 标题 size=3, 正文 `# 小节` size=1), 完全不像标题。
         meta_parts.append(f"# {title}")
+    # 归属行（"这条内容属于哪里"）夹在**标题与作者行之间** —— 它是元信息，
+    # 放在正文里会挤到引用块前面，把引用块的归位搅乱（bgm 的教训）。
+    if origin := (getattr(parse_result, "origin_line", "") or "").strip():
+        meta_parts.append(origin)
     if author := format_author_line(parse_result):
         meta_parts.append(author)
     parts: list[str] = []
@@ -492,6 +496,7 @@ def build_rich_markdown_by_str(
     position_label: str = "",
     hashtags: Sequence[str] | None = None,
     quote_roles: Sequence[str] = (),
+    origin_line: str = "",
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。
 
@@ -521,6 +526,7 @@ def build_rich_markdown_by_str(
             position_label,
             hashtags,
             quote_roles,
+            origin_line,
         ),
         config=config,
         lang=lang,
@@ -553,6 +559,7 @@ class _RichFields:
         position_label="",
         hashtags=None,
         quote_roles=(),
+        origin_line="",
     ):
         self.title = title or ""
         self.content = content or ""
@@ -578,6 +585,8 @@ class _RichFields:
         # 引用块角色（按出现顺序）—— 同属"渲染要用的解析字段"：漏了它缓存命中时
         # 渲染层只能退回按位置猜引用块的角色。
         self.quote_roles = list(quote_roles or [])
+        # 归属行 —— 同属"渲染要用的解析字段"
+        self.origin_line = origin_line or ""
 
 
 def rich_content(parse_result: AnyParseResult) -> str:
