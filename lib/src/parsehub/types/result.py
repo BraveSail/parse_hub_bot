@@ -46,6 +46,7 @@ class ParseResult(ABC):  # noqa: B024
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        position_label: str = "",
     ):
         """
         :param title: 标题
@@ -66,6 +67,9 @@ class ParseResult(ABC):  # noqa: B024
             (渲染在被引用卡片里, 其余属于正文/被回复内容)
         :param reply_media_count: ``media`` 中, 在 ``quoted_media_count`` 之前的多少个
             属于**被回复内容** (渲染在回复卡片里, 位置在正文之前)
+        :param position_label: 这段内容在**源站的位置标记**, 渲染层接在作者行后
+            (如 linux.do 的楼层号 ``#4``)。平台没有位置概念的留空即可 ——
+            通用层不认识楼层语义, ``#`` 由平台侧给。
         """
         self.raw_url: str = ""
         self.title = title.strip()
@@ -84,6 +88,8 @@ class ParseResult(ABC):  # noqa: B024
         """正文里的标签名 (不含 ``#``), 来自平台实体; 空列表表示拿不到 (渲染层退回正则)"""
         self.quoted_media_count = max(0, to_int(quoted_media_count) or 0)
         self.reply_media_count = max(0, to_int(reply_media_count) or 0)
+        self.position_label = (position_label or "").strip()
+        """内容在源站的位置标记 (如 linux.do 的楼层号 ``#4``); 无此概念的平台为空串"""
         self.name = slugify(
             self.title or self.content, allow_unicode=True, max_length=50, lowercase=False
         ).strip() or str(time.time_ns())
@@ -368,6 +374,7 @@ class VideoParseResult(ParseResult):
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        position_label: str = "",
     ):
         video = VideoRef(url=video) if isinstance(video, str) else video
         super().__init__(
@@ -385,6 +392,7 @@ class VideoParseResult(ParseResult):
             hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            position_label=position_label,
         )
 
 
@@ -409,6 +417,7 @@ class ImageParseResult(ParseResult):
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        position_label: str = "",
     ):
         media = [ImageRef(url=p) if isinstance(p, str) else p for p in photo] if photo else None
         super().__init__(
@@ -426,6 +435,7 @@ class ImageParseResult(ParseResult):
             hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            position_label=position_label,
         )
 
 
@@ -450,6 +460,7 @@ class MultimediaParseResult(ParseResult):
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        position_label: str = "",
     ):
         super().__init__(
             title=title,
@@ -466,6 +477,7 @@ class MultimediaParseResult(ParseResult):
             hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            position_label=position_label,
         )
 
 
@@ -496,6 +508,7 @@ class RichTextParseResult(ParseResult):
         hashtags: Sequence[str] | None = None,
         quoted_media_count: int = 0,
         reply_media_count: int = 0,
+        position_label: str = "",
     ):
         """
         :param title: 标题
@@ -518,6 +531,7 @@ class RichTextParseResult(ParseResult):
             hashtags=hashtags,
             quoted_media_count=quoted_media_count,
             reply_media_count=reply_media_count,
+            position_label=position_label,
         )
 
     def __repr__(self) -> str:

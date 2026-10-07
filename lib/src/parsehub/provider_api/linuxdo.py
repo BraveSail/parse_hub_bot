@@ -68,6 +68,9 @@ class LinuxDoTopic:
     #: 放进引用块内部而不是正文媒体
     quoted_media_count: int = 0
     is_sensitive: bool = False
+    #: **当前解析的这一层的楼层号** (主楼是 1)。渲染层用它给作者行标 ``#N`` ——
+    #: 引用块里的其它层早就标了 (`_post_to_quote` 的 `` · #N``), 本层不标就不对称。
+    post_number: int | None = None
 
     @staticmethod
     def _split_url(url: str) -> tuple[str, str]:
@@ -207,6 +210,8 @@ class LinuxDoTopic:
             quoted_media_count=quoted_media_count,
             # 只认平台自己的标记: 标签里的 NSFW
             is_sensitive=any(t.casefold() == "nsfw" for t in tags),
+            # 当前这一层的楼层号 —— 分享楼层时用它标出"这是第几楼"
+            post_number=to_int(first.get("post_number")),
         )
 
     #: 引用块在正文里的占位标记 (转 markdown 后再替换成渲染结果)

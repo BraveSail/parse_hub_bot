@@ -104,7 +104,7 @@ def _constructor_param(cls: type) -> str | None:
 _BUILDABLE_PARAMS = frozenset({
     "title", "author_name", "is_sensitive", "published_at", "view_count", "like_count",
     "author_handle", "author_url", "tags", "hashtags", "quoted_media_count", "reply_media_count",
-    "content", "video", "photo", "media", "markdown_content",
+    "position_label", "content", "video", "photo", "media", "markdown_content",
 })
 
 
@@ -209,6 +209,8 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
         # ``to_dict()`` 是**公开输出格式**（被测试逐字段冻住），不往里加字段。
         # 标签是渲染层要用的（精确链接化），只走缓存这套格式。
         "hashtags": list(result.hashtags),
+        # 位置标记同理: 渲染层要往作者行上加, 漏了它**缓存命中时楼层号就消失**
+        "position_label": result.position_label,
         "impl": type(result).__name__,
     }
 
@@ -243,6 +245,7 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
         "hashtags": data.get("hashtags") or [],
         "quoted_media_count": data.get("quoted_media_count", 0),
         "reply_media_count": data.get("reply_media_count", 0),
+        "position_label": data.get("position_label", ""),
     }
 
     # content 只在**非 RichText** 时回填 —— 那个类的 content 是派生属性

@@ -18,6 +18,7 @@
 | `instagram_caption.json` | instagram | 2026-10-06 21:05 | `xdt_api__v1__media__shortcode__web_info`（匿名） | ~44 KB | caption 含 `#PeakyBlinders`，证 **只有文本、无实体** |
 | `instagram_post.json` | instagram | 2026-10-06 21:05 | 同 API（匿名，另一条） | ~48 KB | 对照：caption 无 hashtag |
 | `instagram_cookie_execution_error.json` | instagram | 2026-10-06 21:05 | 同 API（**带 cookie**） | 263 B | `execution error` + `data:null`（IG 带 cookie 反而失败，匿名可用） |
+| `linuxdo_floor_4.json` | linux.do | 2026-10-07 10:15 | 带楼层号的帖子 JSON `/t/2989140/4.json`（源 URL `https://linux.do/t/topic/2989140/4`，匿名请求） | ~56 KB | 承载**楼层号**实证：`post_stream.posts[].post_number` / `reply_to_post_number`（第 4 楼 `reply_to_post_number=null` = 回复主楼） |
 | `twitter_poll_card.json` | twitter | 2026-10-07 06:39 | 推文详情（`TweetResultByRestId`），id `2107576143285219799`（源 URL `https://twitter.com/thsottiaux/status/2107576143285219799`） | ~3.6 KB | 承载**投票卡**实证：`node["card"].legacy.name == "poll2choice_text_only"`、`binding_values` 里的 `choice{N}_label`/`choice{N}_count` |
 
 说明：每个平台原始响应仅追加了一个 `_provenance` 键（仿 `douyin_video.json` 的 `_comment` 约定），**原有字段一个未删未改名**。
@@ -38,6 +39,12 @@
 - **待验证**：小红书 — `note.noteDetailMap[<id>].note.tagList[].name`（与正文 `#[名][话题]#` 1:1 同序），但**需 cookie**；本机匿名拿不到（快照里 `noteDetailMap == {}`）
 
 **其它字段速查**（非标签）：
+
+- **linux.do 楼层号** — 在 `post_stream.posts[].post_number`（主楼是 `1`）；
+  `reply_to_post_number` 是**被回复的楼层**（`null` = 回复主题/主楼）。
+  带楼层号的 URL（`/t/<id>/<n>.json`）返回的帖子流**含主楼**，是以该楼层为中心的窗口。
+  渲染上**当前楼层**用结果的 `position_label`（`#N`），**引用块里的其它层**
+  由 `_post_to_quote` 自己拼 ` · #N`。
 
 - **twitter 投票** — **不在 `legacy` 上**，只在 `node["card"].legacy`：
   `name` 形如 `poll{2,3,4}choice_{text_only,image}`，选项是 `choice{N}_label` + `choice{N}_count`

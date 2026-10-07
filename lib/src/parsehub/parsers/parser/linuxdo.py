@@ -58,6 +58,9 @@ class LinuxDoParser(BaseParser):
             "view_count": topic.view_count,
             "like_count": topic.like_count,
             "tags": topic.tags,
+            # 楼层号: 引用块里的其它层早已标了 (` · #N`), 本层不标就不对称
+            # (用户报「主楼标楼层号了但是回复没标」)。主楼解析出来就是 ``#1``。
+            "position_label": f"#{topic.post_number}" if topic.post_number else "",
         }
 
         if topic.markdown_content:

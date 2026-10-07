@@ -1053,6 +1053,10 @@ def format_author_line(parse_result: AnyParseResult) -> str:
 
     **不加冒号** (用户要求「取消冒号」) —— 名字已经可点、@handle 已是小字标识,
     再加冒号只是多余的标点。
+
+    平台给了**位置标记** (如 linux.do 的楼层号) 时接在末尾: ``… @某人 · #4``。
+    这与引用块里其它层的形态一致 (`` · #1``) —— 用户报「主楼标楼层号了但是回复没标」:
+    引用块里的主楼早就标了, 而本层（也就是这条回复）反而没标。
     """
     label = format_author_link(
         get_parse_author_name(parse_result),
@@ -1064,10 +1068,14 @@ def format_author_line(parse_result: AnyParseResult) -> str:
     # **粗体只包名字, 不包 @handle**: 整行包 `**` 时角标里的 handle 会**继承粗体**
     # (服务端块实测是 textSubscript(textBold(textPlain))) —— 用户要的"常规样式"是
     # 名字粗体 + handle 常规小字。所以把 `**` 收在链接结束标签处。
+    # 位置标记在**粗体外面** (与 @handle 一样不进粗体): 粗体标的是"谁写的",
+    # 位置是附带信息。没有这个概念的平台为空串 → 输出与改动前逐字一致。
+    position = str(getattr(parse_result, "position_label", "") or "")
+    suffix = f" · {position}" if position else ""
     if "</a>" in label:
         head, _, tail = label.partition("</a>")
-        return f"**{head}</a>**{tail}"
-    return f"**{label}**"
+        return f"**{head}</a>**{tail}{suffix}"
+    return f"**{label}**{suffix}"
 
 
 _QUOTE_BLOCK_RE = re.compile(r"(?m)^>[^\n]*(?:\n>[^\n]*)*")
