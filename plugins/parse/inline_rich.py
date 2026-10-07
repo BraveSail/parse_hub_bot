@@ -281,6 +281,11 @@ def rich_cache_entry(
         parse_result=CacheParseResult(
             title=parse_result.title,
             content=parse_result.content,
+            # **富文本正文的源**：RichText 平台的 ``content`` 是 markdown 转出来的纯文本,
+            # 只存它会让缓存命中时引用块/链接全塌（见 CacheParseResult.markdown_content）。
+            markdown_content=getattr(parse_result, "markdown_content", "") or "",
+            position_label=getattr(parse_result, "position_label", "") or "",
+            hashtags=list(getattr(parse_result, "hashtags", None) or []),
             author_name=get_parse_author_name(parse_result),
             author_handle=getattr(parse_result, "author_handle", ""),
             author_url=getattr(parse_result, "author_url", ""),
@@ -346,6 +351,10 @@ def build_cached_rich_content(
         config=config,
         lang=lang,
         view_label=view_label,
+        # 三个都是"渲染要用的解析字段": 少传一个就是缓存命中时那段格式消失
+        markdown_content=entry.parse_result.markdown_content,
+        position_label=entry.parse_result.position_label,
+        hashtags=entry.parse_result.hashtags,
         author_name=entry.parse_result.author_name,
         author_handle=entry.parse_result.author_handle,
         author_url=entry.parse_result.author_url,

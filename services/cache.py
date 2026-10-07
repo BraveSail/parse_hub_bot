@@ -200,6 +200,14 @@ class CacheMediaType(StrEnum):
 class CacheParseResult(BaseModel):
     title: str = ""
     content: str = ""
+    #: **富文本正文的源**（``RichTextParseResult.markdown_content``）。
+    #:
+    #: ⚠️ **必须存它**：``content`` 对 RichText 平台是**派生属性**（``plaintext_content``）
+    #: —— 由 markdown 转出来的**纯文本**。只存 content 的话，缓存命中时富文本渲染拿到的是
+    #: 纯文本，**引用块、链接、楼层号全部塌掉**（实测：现场 24 行 → 缓存 18 行，
+    #: ``> <i><a …>作者</a> …</i>`` 变成一行裸文字）。
+    #: 非 RichText 平台没有这个属性，存空串。
+    markdown_content: str = ""
     author_name: str = ""
     author_handle: str = ""
     author_url: str = ""
@@ -215,6 +223,11 @@ class CacheParseResult(BaseModel):
     #: (两者都在各自的引用块内部渲染)
     quoted_media_count: int = 0
     reply_media_count: int = 0
+    #: 内容在源站的位置标记（如 linux.do 的楼层号 ``#16``）—— 渲染层接在作者行后
+    position_label: str = ""
+    #: 正文标签名的**平台实体**（twitter ``entities.hashtags[].text`` 等）。
+    #: 渲染层用它做精确链接化；缺了会退回正则，日文标点/全角符号处会切错边界。
+    hashtags: list[str] = []
 
 
 class CacheMedia(BaseModel):
@@ -279,6 +292,12 @@ class PersistentCache:
         if "tags" not in entry.parse_result.model_fields_set:
             # 旧缓存没有标签: 复用会让 inline 结果缺 tag 行
             self.logger.debug(f"旧缓存缺少标签, 重新解析: key={url}")
+            return None
+
+        if "markdown_content" not in entry.parse_result.model_fields_set:
+            # 旧缓存**只存了纯文本**（RichText 的 content 是 markdown 转出来的派生值），
+            # 复用会让第二次发送时引用块/链接全塌成裸文字 —— 必须重新解析。
+            self.logger.debug(f"旧缓存缺少富文本正文源, 重新解析: key={url}")
             return None
 
         if {"quoted_media_count", "reply_media_count"} - entry.parse_result.model_fields_set:

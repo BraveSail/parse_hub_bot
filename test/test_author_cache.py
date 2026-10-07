@@ -24,6 +24,9 @@ def test_cache_refreshes_only_legacy_entries_missing_author(author, versioned, h
         "parse_result": {
             "title": "T",
             "author_name": author,
+            # 当前条目格式带的字段（缺 markdown_content 会被当成旧条目重新解析,
+            # 那个判据由 test/test_cached_rich_rendering.py 单独钉住）
+            "markdown_content": "",
             "published_at": None,
             "view_count": None,
             "like_count": None,

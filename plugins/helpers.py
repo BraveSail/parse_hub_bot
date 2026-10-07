@@ -459,12 +459,20 @@ def build_rich_markdown_by_str(
     reply_media_placeholders: Sequence[str] = (),
     hide_content: str = "",
     platform: Platform | None = None,
+    markdown_content: str = "",
+    position_label: str = "",
+    hashtags: Sequence[str] | None = None,
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。
 
     ``platform`` **不是可选项**: 渲染里有多处依赖它（标签页链接等）。传 None 时
     调用方应自行用 ``ParseHub().get_platform(raw_url)`` 兜底 —— 否则会静默降级
     （标签变纯文本），而两条路径（现场/缓存）的产物还不一致。
+
+    ``markdown_content`` / ``position_label`` / ``hashtags`` 同理 —— **凡是渲染要用的
+    解析字段，这条路上都得有对应参数**。漏一个的症状是"第一次发对、第二次（命中缓存）不对"。
+    最典型的是 ``markdown_content``：RichText 平台的 ``content`` 是 markdown 转出来的
+    **纯文本**，不给源就等于让富文本渲染吃纯文本（引用块、链接全塌）。
     """
     return build_rich_markdown(
         _RichFields(  # type: ignore[arg-type]
@@ -479,6 +487,9 @@ def build_rich_markdown_by_str(
             like_count,
             tags,
             platform,
+            markdown_content,
+            position_label,
+            hashtags,
         ),
         config=config,
         lang=lang,
@@ -507,6 +518,9 @@ class _RichFields:
         like_count=None,
         tags=None,
         platform=None,
+        markdown_content="",
+        position_label="",
+        hashtags=None,
     ):
         self.title = title or ""
         self.content = content or ""
@@ -522,17 +536,28 @@ class _RichFields:
         # 写死 None 时缓存路径的标签会静默退回纯文本 —— 症状是
         # 「第一次发（现场解析）标签可点，命中缓存那条不可点」（用户报过）。
         self.platform = platform
-        self.markdown_content = ""
+        # 富文本正文的**源**：RichText 平台的 content 是 markdown 转出来的纯文本，
+        # 有 markdown_content 时渲染层优先用它（见 rich_content）。
+        self.markdown_content = markdown_content or ""
+        # 位置标记（楼层号）与标签实体 —— 同属"渲染要用的解析字段"，
+        # 写死空值就是缓存命中时那两处格式消失。
+        self.position_label = position_label or ""
+        self.hashtags = list(hashtags or [])
 
 
 def rich_content(parse_result: AnyParseResult) -> str:
-    """富文本里要用的正文: 长文用 markdown 正文, 其它用纯文本正文。
+    """富文本里要用的正文: **有 markdown 源就用它**, 否则用 content。
 
-    长文的 markdown_content 已经带原文结构, 直接用就能还原排版;
-    其它类型 (视频/图文/多图) 的 content 同样是解析器产出的 markdown 片段。
+    ``markdown_content`` 只在 RichText 结果类上存在（其它平台 ``getattr`` 得到空串），
+    所以"非空"本身就等于"这是长文且有源"—— 不需要再 ``isinstance`` 判断。
+
+    ⚠️ **以前这里判的是 ``isinstance(parse_result, RichTextParseResult)```，于是缓存路径
+    （喂的是 duck-type ``_RichFields``）永远走 ``content`` 分支 —— 而 RichText 的 ``content``
+    是 markdown 转出来的**纯文本**，症状就是"第一次发有引用块、第二次（命中缓存）塌成裸文字"。
+    判据落在**字段**上（有没有 markdown 源），而不是对象的类型，两条路径才都能走对。
     """
     markdown_content = getattr(parse_result, "markdown_content", "")
-    if isinstance(parse_result, RichTextParseResult) and markdown_content:
+    if markdown_content:
         return markdown_content
     return parse_result.content or ""
 
