@@ -53,10 +53,21 @@
   | 24 楼 | `19..38` | 否 |
   | 30 楼 | `25..44` | 否 |
 
-  ⇒ **n ≥ 7 时主楼不在窗口里**，必须单独补取（`/t/<id>/1.json` 或 `/t/<id>.json`，
-  实测都返回 `1..20` 含主楼）。被回复的楼层同理可能在窗口外。
+  ⇒ **n ≥ 7 时主楼不在窗口里**，必须单独补取。被回复的楼层同理可能在窗口外。
   渲染上**当前楼层**用结果的 `position_label`（`#N`），**引用块里的其它层**
   由 `_post_to_quote` 自己拼 ` · #N`。
+
+- **linux.do 取单层：`post_stream.stream` + `posts.json?post_ids[]`**（比窗口省一个数量级）—
+  `stream` 是话题**所有可见层的 post id 列表**（有序），所以 `stream[floor - 1]` 就定位那一层：
+
+  | 取法 | 数据 | 状态 |
+  | --- | --- | --- |
+  | `posts.json?post_ids[]=<id>` | **4.5KB**（单层） | 200 稳定 ← 现行主路径 |
+  | `/<n>.json`（该层窗口） | 53.6KB（20 层） | 200 稳定 ← 兜底 |
+  | `/<n>.json?print=true` | 117KB（全帖） | **422 限流**（连打几次就拒） |
+
+  ⚠️ `stream` 的位置在话题**删过层**时会漂 ⇒ 按 id 取回后**必须校验 `post_number`**，
+  不对就退回该层的窗口。
 
 - **twitter 投票** — **不在 `legacy` 上**，只在 `node["card"].legacy`：
   `name` 形如 `poll{2,3,4}choice_{text_only,image}`，选项是 `choice{N}_label` + `choice{N}_count`
