@@ -1,90 +1,90 @@
-# linux.do：窗口外的上下文楼层，按 id 精确取
+# linux.do 楼层：只用主题端点 + post id 取单层
 
 日期：2026-10-07
-触发：用户「https://linux.do/t/topic/2989140/24?u=libc.so.6 怎么没有主楼了？」
-→ 「为什么4楼可以？」
-→ 「去查discourse文档，我就不信没有querystring能筛选」 ← 对，第一版漏了参数
-→ 「你这样还不如第二次请求1.json？」 ← 也对，第二版把限流端点当成了主路径
+触发链（用户每一句都成立）：
 
-## 为什么 4 楼可以（真机实测 11 个楼层）
+1. 「https://linux.do/t/topic/2989140/24?u=libc.so.6 怎么没有主楼了？」
+2. 「为什么4楼可以？」
+3. 「我就不信没有querystring能筛选」
+4. 「你这样还不如第二次请求1.json？」
+5. 「改成只请求post」
 
-**不是 4 楼特殊** —— 窗口是**固定 20 层**，起点 = `max(1, target - 5)`
+## 结论（最终取法）
+
+```
+主请求 : /t/<topic_id>.json            -> 主题元数据 + stream + 前 20 层（1..20）
+缺的层 : posts.json?post_ids[]=<id>     -> 只回那一层（实测 4.5KB）
+不用   : /t/<id>/<n>.json               -> 以该层为中心的 20 层窗口（50KB+，且不含主楼）
+         /t/<id>/<n>.json?print=true    -> 打印端点，会被限流
+```
+
+**为什么主楼不再是问题**：主题端点总给**前 20 层**，主楼一定在里面 —— 不管分享的是第几楼。
+需要另取的只剩**目标层本身**（可能是第 24、50 楼）和**被回复的层**（也可能在 20 楼之后）。
+
+这比"补取主楼"更根本：不是给漏掉的层打补丁，而是**换掉主请求端点**。
+
+## 两层机制（实测 + 源码）
+
+**① 楼层窗口是固定 20 层、以目标层为中心**
 （源码 `lib/topic_view.rb` 的 `filter_posts_near`：`posts_before = (@limit / 4).floor`，
-limit 默认 = chunk_size = 20 → 5）：
+limit 默认 = chunk_size = 20 → 5；起点 = `max(1, target - 5)`）：
 
-| 分享的楼层 | 窗口 | 含主楼 |
+| 请求 | 窗口 | 含主楼 |
 | --- | --- | --- |
-| 1 楼 | `1..20` | ✓ |
-| 4 楼 | `1..20` | ✓ |
-| 6 楼 | `1..20` | ✓ |
-| **7 楼** | `2..21` | ✗ ← 分界 |
-| 24 楼 | `19..38` | ✗ |
-| 30 楼 | `25..44` | ✗ |
+| `/t/<id>/4.json` | `1..20` | ✓ |
+| `/t/<id>/7.json` | `2..21` | ✗ ← 分界 |
+| `/t/<id>/24.json` | `19..38` | ✗ |
 
-## 根因
+⇒ 1~6 楼恰含主楼（起点被夹到 1），**7 楼起主楼出窗口**。用户"为什么 4 楼可以"的答案。
 
-`_context_quotes` 在窗口里 `next((p for p in posts if post_number == 1), None)` ——
+**② `stream` 是话题所有可见层的 post id 列表**（有序）⇒ `stream[floor - 1]` 就是那一层的 id，
+用它调 `posts.json?post_ids[]` 只要 4.5KB（窗口 50KB+）。
+⚠️ 话题删过层时位置**会漂** ⇒ 取回后**校验 `post_number`**，不对就**丢弃**这一段
+（把别人的话当成"被回复内容"渲染进引用块，比少一段上下文糟糕得多）。
+
+## 根因（原 bug）
+
+`_context_quotes` 是在**手上的 posts 里** `next((p for p in posts if post_number == 1), None)` ——
 找不到就**静默跳过**，不报错也不打日志。于是"分享楼层时带上主楼"这条规则在靠后的楼层上
-悄悄失效。**静默跳过比报错更难发现**，这是它藏这么久的原因。被回复的楼层同理。
+悄悄失效。**静默跳过比报错更难发现**，这是它藏这么久的原因。
 
-## 取单层的三条路（实测对比，这是本节的结论）
+## 走错的两步（都写进 skill 了）
 
-```
-a) /t/<id>/1.json                     20 层  53.6KB  200  ✓     ← 兜底
-b) /t/<id>/posts.json?post_ids[]=<id>  1 层   4.5KB  200  ✓     ← 现行主路径
-c) /t/<id>/1.json?print=true          49 层  117KB  422  ✗     ← 限流
-```
-
-**`stream` 是关键**：响应里的 `post_stream.stream` 是话题**所有可见层的 post id 列表**
-（有序），所以 `stream[floor - 1]` 就定位那一层，按 id 精确取只有 4.5KB —— 比取它的
-20 层窗口小一个数量级。
-
-**`print=true` 不能用**（第二版踩的坑）：它确实能把 `chunk_size` 从 20 提到 1000
-（`TopicView.print_chunk_size`），一次拿全帖看着很美 —— 但它是**打印视图端点，服务端挂了
-rate limiter**（`max_prints_per_hour_per_user`）：
-
-```json
-{"errors":["You've performed this action too many times, please try again later."]}
-```
-
-连打 6 次之后就开始返回 422（我自测时就撞上了），而同一时刻 `/1.json` 与 `posts.json`
-都是 200。**数据量也更大**（117KB vs 4.5KB）。拿它当常规路径 = 迟早整条解析没有上下文。
+- **第一版**：只实测了行为就断言"没有请求能同时含主楼与靠后的层，必须逐层补" ——
+  没读文档。实际有 `print=true`（chunk_size 20→1000）、`page`、`post_ids[]`。
+- **第二版**：把 `print=true` 当成主路径（"一次拿全，省请求数"）—— 它是**打印视图端点**，
+  服务端挂 rate limiter，连打会 `422 too many times`；体积也更大（117KB vs 4.5KB）。
 
 ## 改动（`provider_api/linuxdo.py`）
 
-- `_missing_context_floors(posts, wanted, reply_to)` — 纯函数，算出窗口里缺的上下文层
-- `_post_id_for_floor(payload, floor)` — `stream[floor - 1]`，拿不到返回 `None`
-- `_fetch_floor(client, payload, topic_id, floor)` — **两级取法**：
-  1. 有 id → `posts.json?post_ids[]=<id>`（4.5KB），**校验取回的 `post_number`**
-     （话题删过层时 stream 位置会漂）；
-  2. 拿不到 id / 校验不过 / 请求失败 → 退回 `/<floor>.json`（该层窗口，必含它自己）
-- `_with_context_floors(...)` — 缺则逐层取回并合并（按 `post_number` 去重 + 排序）；
-  取不到**只记 warning**，不让整条解析失败
+| 函数 | 作用 |
+| --- | --- |
+| `parse` | 主请求固定 `TOPIC_API`（主题端点），不再按楼层号选端点 |
+| `_wanted_floor` | URL 楼层号 → int（无则 1） |
+| `_missing_context_floors` | 手上缺的上下文层（主楼、被回复的层） |
+| `_post_id_for_floor` | `stream[floor-1]`；拿不到返回 `None` |
+| `_fetch_floor` | **只走 `posts.json?post_ids[]`**，取回后校验楼层号 |
+| `_with_required_floors` | 先取目标层（后面的 `reply_to` 要靠它），再补上下文层 |
+
+删掉了 `FLOOR_API` 常量（原处留注释说明**不要**再用那个端点）。
+
+**失败处理**：上下文层取不到 → 只记 warning（少一段上下文好过整条打不开）；
+目标层取不到 → 由 `_from_payload` 报"话题里没有第 N 楼"（不能静默换一层给用户）。
 
 ## 验证
 
-生产端到端（第 24 楼），**拦住所有 linux.do 请求记账**：
+生产端到端（第 24 楼）：`position_label='#24'`、引用块里有 `· #1`、发送成功。
 
-```
-200  56.2KB  /t/2989140/24.json                       ← 窗口（保证目标层在内）
-200   4.8KB  /t/2989140/posts.json?post_ids[]=23380274 ← 主楼，按 id 精确取
-请求数 = 2   总下载 = 60.9KB
-position_label='#24'  quoted=1
-引用块里有 #1 = True
-发送 = True
-```
+测试 `lib/test/test_linuxdo_floor_window.py`（21 passed，用话题真实响应当 fixture）：
 
-对比第二版（print）：`56.2 + 117 = 173KB` 且会被 422 ⇒ 现在省 65% 流量且稳定。
+- 主楼总在主题响应里（这就是"24 楼没主楼"的根治点）
+- 前 20 层的楼层 → **零请求**；第 24 楼 → 1 次按 id 取；第 34 楼回复第 26 楼 → 2 次
+- `reply_to` 在前 20 层内 → 不再多取
+- **先取目标层再取上下文层**（顺序有依赖）
+- 取回楼层不对（stream 漂移）→ **丢弃**，不混进来
+- 请求被拒（429/422）→ 只记 warning，不抛错
+- 拿不到 id → 不发无用请求
+- 端到端：24 楼渲染出主楼引用块；34 楼回复 26 楼 → 两个引用块按「主楼 → 被回复」排
+- 目标层取不到 → 报错
 
-测试 `lib/test/test_linuxdo_floor_window.py`（19 passed，两个真实 fixture）：
-
-- 窗口规律：24 楼 → 缺 `[1]`；4 楼 → 不缺；被回复层在窗口外 → `[1, 3]`
-- `stream[floor-1]` 定位；stream 太短 → 拿不到 id
-- **缺主楼走 id 精确取**（一次，且**不取窗口**）；请求的 id 就是主楼
-- 两个缺层 → 两次精确取
-- **不缺时零请求**
-- 退回窗口的三条理由：取回的楼层不对 / 返回非 200 / 请求本身炸了
-- 无 id 时直接走窗口（不发无用请求）；两条路都失败不抛错；重叠楼层去重
-- 端到端：补齐后渲染出主楼引用块（`· #1`、作者 KoaIa）
-
-lib 616 / bot 494 全绿，`scripts/check.sh` 干净。commits `9ecb69c`（实现）、`58cf28b`（文档）。
+lib 618 / bot 494 全绿，`scripts/check.sh` 干净。commit `4065bed`。

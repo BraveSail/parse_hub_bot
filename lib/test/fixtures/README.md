@@ -57,17 +57,17 @@
   渲染上**当前楼层**用结果的 `position_label`（`#N`），**引用块里的其它层**
   由 `_post_to_quote` 自己拼 ` · #N`。
 
-- **linux.do 取单层：`post_stream.stream` + `posts.json?post_ids[]`**（比窗口省一个数量级）—
-  `stream` 是话题**所有可见层的 post id 列表**（有序），所以 `stream[floor - 1]` 就定位那一层：
+- **linux.do 取楼层：主请求用主题端点，缺的层按 id 取** ——
 
-  | 取法 | 数据 | 状态 |
+  | 用途 | 请求 | 数据 |
   | --- | --- | --- |
-  | `posts.json?post_ids[]=<id>` | **4.5KB**（单层） | 200 稳定 ← 现行主路径 |
-  | `/<n>.json`（该层窗口） | 53.6KB（20 层） | 200 稳定 ← 兜底 |
-  | `/<n>.json?print=true` | 117KB（全帖） | **422 限流**（连打几次就拒） |
+  | **主请求** | `/t/<topic_id>.json` | 主题元数据 + `stream` + **前 20 层**（主楼总在内） |
+  | 缺的层 | `posts.json?post_ids[]=<id>` | 只回那一层，**4.5KB** |
+  | ⛔ 不要用 | `/t/<id>/<n>.json` | 以该层为中心的 20 层窗口（50KB+，**7 楼起不含主楼**） |
+  | ⛔ 不要用 | `/t/<id>/<n>.json?print=true` | 打印端点，**会被限流**（422） |
 
-  ⚠️ `stream` 的位置在话题**删过层**时会漂 ⇒ 按 id 取回后**必须校验 `post_number`**，
-  不对就退回该层的窗口。
+  `stream` 是话题**所有可见层的 post id 列表**（有序），`stream[floor - 1]` 即该层 id。
+  ⚠️ 话题**删过层**时位置会漂 ⇒ 按 id 取回后**必须校验 `post_number`**，不对就丢弃。
 
 - **twitter 投票** — **不在 `legacy` 上**，只在 `node["card"].legacy`：
   `name` 形如 `poll{2,3,4}choice_{text_only,image}`，选项是 `choice{N}_label` + `choice{N}_count`
