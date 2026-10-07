@@ -92,13 +92,26 @@ def test_quote_skipped_when_reply_has_no_text():
     assert TwitterParser._build_quote(tweet) == ""
 
 
-def test_quote_skipped_when_reply_text_is_only_media_short_url():
+def test_a_media_only_reply_gets_a_signature_only_quote():
+    """**核心**: 正文为空但**有媒体**的回复帖要给出（只有署名的）引用块。
+
+    旧结论是「没有可显示的引用内容就不生成块」，但**媒体就是内容** —— 不生成的话
+    那几张图会被当成主帖自己的图，与正文图混进同一个图集
+    （用户报「正文图为什么和引用图塞一起」）。图由 ``reply_media_count`` 通道放进块内。
+    """
     reply = TwitterTweet(
         tweet_id="999",
         full_text="https://t.co/MediaTail",
         media=[object()],  # 带媒体时 __init__ 会删掉结尾的媒体短链
         author_handle="other",
     )
+    quote = TwitterParser._build_quote(TwitterTweet(tweet_id="1", reply_to=reply))
+    assert quote == '> <i><a href="https://x.com/other">@other</a></i>\n\n', quote
+
+
+def test_quote_still_skipped_when_the_reply_has_nothing_at_all():
+    """既没文字也没媒体 → 一块孤零零的署名没有意义，仍然不生成"""
+    reply = TwitterTweet(tweet_id="999", full_text="", author_handle="other")
     assert TwitterParser._build_quote(TwitterTweet(tweet_id="1", reply_to=reply)) == ""
 
 

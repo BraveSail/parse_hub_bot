@@ -57,7 +57,17 @@ class TwitterParser(BaseParser):
 
     @staticmethod
     def _quote_block(source: TwitterTweet) -> str:
-        """把一条被回复/被引用的推文渲染成引用块 (排版统一由公共 helper 决定)."""
+        """把一条被回复/被引用的推文渲染成引用块 (排版统一由公共 helper 决定).
+
+        ⚠️ ``sign_only=bool(source.media)``: **正文为空但有媒体的推文**（很常见 ——
+        推文只有一个媒体短链, 还原后正文是空串）必须照样产出引用块。不产的话
+        ``_build_quoted_block`` 返回空 ⇒ 渲染层不知道那几张图属于引用卡片 ⇒
+        它们被当成**正文的图**, 与主帖自己的图混进同一个图集
+        （用户报「正文图为什么和引用图塞一起」）。
+
+        只有署名行没有正文的引用块是合法的 —— 图由 ``quoted_media_count`` 通道
+        放进块内。既没文字也没媒体时仍返回空 (一块孤零零的署名没有意义)。
+        """
         # 投票跟着**它所属的那条推文**的正文走 —— 被引用/被回复的推文带投票时,
         # 表格渲染在它自己的引用块里（与 X 上一致）。
         body = source.full_text or ""
@@ -70,6 +80,7 @@ class TwitterParser(BaseParser):
                 source.author_handle or "",
                 profile_url(Platform.TWITTER, source.author_handle or ""),
             ),
+            sign_only=bool(source.media),
         )
 
     @staticmethod

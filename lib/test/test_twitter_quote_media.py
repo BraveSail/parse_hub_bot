@@ -57,6 +57,63 @@ def test_reply_media_goes_between_body_and_quoted():
     assert result.quoted_media_count == 1
 
 
+def test_a_media_only_quoted_tweet_keeps_its_media_in_the_card():
+    """**核心**: 引用帖正文为空、只有图（用户报的那条）—— 图必须算进引用块。
+
+    实测 ``x.com/sim_dr1/status/2107780697251574187``：主帖正文只有 ``＃ステラソラ``、
+    1 张图；被引用帖**正文是空串**（原文只有一个媒体短链）、1 张图。
+    引用块为空时 ``quoted_media_count`` 是 0 ⇒ 引用帖的图被当成正文图，
+    两张图混进同一个图集（用户报「正文图为什么和引用图塞一起」）。
+    """
+    tweet = _tweet(
+        full_text="＃ステラソラ",
+        media=[_photo("https://pbs.twimg.com/body.jpg")],
+        quoted_status_id="2107780606574903574",
+        quoted_status=_tweet(
+            tweet_id="2107780606574903574",
+            full_text="",  # 正文为空 —— 原文只有一个媒体短链
+            author_handle="SIM_DR1",
+            author_name="しむ",
+            media=[_photo("https://pbs.twimg.com/quoted.jpg")],
+        ),
+    )
+    result = asyncio.run(TwitterParser.media_parse(tweet))
+    assert len(result.media) == 2
+    assert result.quoted_media_count == 1, "引用帖的图必须归引用块"
+    assert result.reply_media_count == 0
+    assert result.media[-1].url == "https://pbs.twimg.com/quoted.jpg"
+
+    # 引用块本体在正文之后，只有署名行 + 换行（图由计数通道放进块内）
+    md = result.content
+    assert md.startswith("＃ステラソラ"), md
+    tail = [ln for ln in md.splitlines() if ln.startswith("> ")]
+    assert tail == ['> <i><a href="https://x.com/SIM_DR1">しむ</a> <code>@SIM_DR1</code></i>'], tail
+
+
+def test_a_media_only_reply_keeps_its_media_in_the_card():
+    """回复侧的同一个坑（被回复的纯图推文）"""
+    tweet = _tweet(
+        media=[_photo("https://pbs.twimg.com/body.jpg")],
+        reply_to=_tweet(tweet_id="8", full_text="", media=[_photo("https://pbs.twimg.com/reply.jpg")]),
+    )
+    result = asyncio.run(TwitterParser.media_parse(tweet))
+    assert len(result.media) == 2
+    assert result.reply_media_count == 1, "被回复帖的图必须归回复卡片"
+
+
+def test_a_quoted_tweet_with_neither_text_nor_media_adds_nothing():
+    """既没文字也没媒体的引用帖 —— 不该凭空多出一个空引用块与计数"""
+    tweet = _tweet(
+        media=[_photo("https://pbs.twimg.com/body.jpg")],
+        quoted_status_id="9",
+        quoted_status=_tweet(tweet_id="9", full_text=""),
+    )
+    result = asyncio.run(TwitterParser.media_parse(tweet))
+    assert len(result.media) == 1
+    assert result.quoted_media_count == 0
+    assert not [ln for ln in result.content.splitlines() if ln.startswith("> ")]
+
+
 def test_reply_media_without_quote():
     tweet = _tweet(
         reply_to=_tweet(tweet_id="8", media=[_photo("https://pbs.twimg.com/reply.jpg")]),
