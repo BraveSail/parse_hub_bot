@@ -69,14 +69,14 @@ class LinuxDoTopic:
     tags: list[str] = field(default_factory=list)
     images: list[LinuxDoImage] = field(default_factory=list)
     #: images 末尾有多少张属于**上下文引用块** (主楼/被回复楼层), bot 侧据此把它们
-    #: 放进引用块内部而不是正文媒体
-    quoted_media_count: int = 0
+    #: 放进引用块内部而不是正文媒体。块在正文**前** ⇒ 走 ``reply_media_count`` 那一档。
+    reply_media_count: int = 0
     is_sensitive: bool = False
     #: **当前解析的这一层的楼层号** (主楼是 1)。渲染层用它给作者行标 ``#N`` ——
     #: 引用块里的其它层早就标了 (`_post_to_quote` 的 `` · #N``), 本层不标就不对称。
     post_number: int | None = None
-    #: 上下文引用块的**角色** (按出现顺序)。它们排在正文最前、媒体算在
-    #: ``quoted_media_count`` 里 —— 声明出来渲染层就不用靠位置猜 (以前靠"两个块互相
+    #: 上下文引用块的**角色** (按出现顺序)。它们排在正文**最前**、媒体算在
+    #: ``reply_media_count`` 里 —— 声明出来渲染层就不用靠位置猜 (以前靠"两个块互相
     #: 兜底", 正文里一插行就可能错位)。
     quote_roles: list[str] = field(default_factory=list)
 
@@ -301,7 +301,8 @@ class LinuxDoTopic:
         # (用户要求: 分享楼层时把主楼做成回复; 楼层互回时被回复的那层也要带上)
         context_quotes, context_images = cls._context_quotes(posts, first)
         # 上下文层的图片接在 media 末尾 —— bot 侧按"引用块媒体"放进引用块内部
-        quoted_media_count = len(context_images)
+        # （块在正文前 ⇒ reply 那一档）
+        reply_media_count = len(context_images)
         if context_images:
             images = [*images, *context_images]
         if context_quotes:
@@ -345,9 +346,9 @@ class LinuxDoTopic:
             reply_count=to_int(payload.get("reply_count")),
             tags=tags,
             images=images,
-            quoted_media_count=quoted_media_count,
-            # 上下文引用块排在正文最前, 角色是 quoted (它那条媒体计数通道)
-            quote_roles=["quoted"] * len(context_quotes),
+            reply_media_count=reply_media_count,
+            # 上下文引用块排在正文**最前** ⇒ 角色 ``reply``（媒体走 reply 段）
+            quote_roles=["reply"] * len(context_quotes),
             # 只认平台自己的标记: 标签里的 NSFW
             is_sensitive=any(t.casefold() == "nsfw" for t in tags),
             # 当前这一层的楼层号 —— 分享楼层时用它标出"这是第几楼"

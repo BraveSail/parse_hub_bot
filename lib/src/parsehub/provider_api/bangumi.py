@@ -410,9 +410,10 @@ class BangumiTopic:
     author_handle: str = ""
     published_at: datetime | None = None
     images: list[BangumiImage] = field(default_factory=list)
-    #: ``images`` 末尾有多少张属于**引用块**（被引用/被回复的那层）——
-    #: bot 侧据此把它们放进引用块内部（与 linux.do 同一机制）
-    quoted_media_count: int = 0
+    #: ``images`` 末尾有多少张属于**引用块**（上下文那层）——
+    #: bot 侧据此把它们放进引用块内部（与 linux.do 同一机制）。
+    #: 块在正文**前** ⇒ 走 ``reply_media_count`` 那一档。
+    reply_media_count: int = 0
     #: 引用块的角色（按出现顺序）—— 渲染层据此归位媒体, **不再看位置**
     quote_roles: list[str] = field(default_factory=list)
     #: **归属行**（「小组/条目名 » 讨论」）—— 渲染层放在**标题与作者行之间**的元信息区。
@@ -562,9 +563,10 @@ class BangumiTopic:
         quoted_media = 0
         if not is_opening and context_floor is not None:
             context_quote = cls._quote_of(context_floor)
-            # 主楼的图走**引用块媒体**通道 —— 而那个通道的约定是「**末尾** N 张属于引用块」
-            # （见 ParseResult.quoted_media_count）。图片是按 DOM 顺序抽的，主楼在最前面，
-            # 所以这里要**重排**：本层的图在前、主楼的图挪到末尾。
+            # 上下文层的图走**引用块媒体**通道 —— 约定是「末尾这几张属于引用块」
+            # （见 ``reply_media_count``：块在正文前，媒体排在正文媒体之后）。
+            # 图片是按 DOM 顺序抽的、上下文层在最前面，所以这里要**重排**：
+            # 本层的图在前、上下文层的图挪到末尾。
             context_urls = set(context_floor.image_urls)
             images = [i for i in images if i.url not in context_urls] + [
                 i for i in images if i.url in context_urls
@@ -594,9 +596,9 @@ class BangumiTopic:
             # 页面上的时间是北京时间 —— 按 +08:00 解释才能对上（见 BGM_TIMEZONE）
             published_at=to_datetime(current.published_at, default_tz=BGM_TIMEZONE) if current else None,
             images=images,
-            quoted_media_count=quoted_media,
-            # 引用块存在 ⇒ 角色是 ``quoted``（它那条媒体计数通道）
-            quote_roles=["quoted"] if context_quote else [],
+            # 上下文块排在正文**之前** ⇒ 角色是 ``reply``（媒体走 reply_media_count）
+            reply_media_count=quoted_media,
+            quote_roles=["reply"] if context_quote else [],
             floor_label=current.label if current else "",
             is_opening=is_opening,
             context_name=context_name,

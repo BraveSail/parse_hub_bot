@@ -35,19 +35,22 @@ def test_image_only_topic_uses_the_photo_parameter():
     assert [m.url for m in (result.media or [])] == ["https://cdn.ldstatic.com/a.png"]
 
 
-def test_richtext_topic_carries_media_and_the_quoted_tail():
-    """图文话题: 走 RichTextParseResult(media=...), 并带上引用块的媒体计数"""
+def test_richtext_topic_carries_media_and_the_context_tail():
+    """图文话题: 走 RichTextParseResult(media=...), 并带上引用块的媒体计数
+
+    （上下文块排在正文前 ⇒ 走 ``reply_media_count`` 那一档）
+    """
     result = _parse(
         _topic(
             markdown_content="正文",
             images=[LinuxDoImage(url="https://cdn.ldstatic.com/q.png")],
-            quoted_media_count=1,
+            reply_media_count=1,
         )
     )
     assert isinstance(result, LinuxDoRichTextParseResult)
     assert result.markdown_content == "正文"
     assert [m.url for m in (result.media or [])] == ["https://cdn.ldstatic.com/q.png"]
-    assert result.quoted_media_count == 1
+    assert result.reply_media_count == 1
 
 
 def test_image_topic_without_images():

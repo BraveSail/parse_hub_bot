@@ -72,7 +72,7 @@ class BangumiParser(BaseParser):
         """小组话题 / 条目讨论版 —— **只发一层**（分享的楼层，或主楼）。
 
         分享楼层时主楼会作为引用块带上（见 provider 的 ``_quote_of``），
-        它的图片走 ``quoted_media_count`` 那个通道进引用块内部。
+        它的图片走 ``reply_media_count`` 那个通道进引用块内部（块在正文前）。
         """
         topic = await BangumiTopic.parse(
             raw_url,
@@ -87,8 +87,8 @@ class BangumiParser(BaseParser):
             author_handle=topic.author_handle,
             author_url=profile_url(Platform.BANGUMI, user_id=topic.author_handle),
             published_at=topic.published_at,
-            quoted_media_count=topic.quoted_media_count,
-            # 引用块的角色（按出现顺序）—— 渲染层据此归位媒体, 位置不再参与判断
+            # 上下文块在正文**前** ⇒ 角色 ``reply``、媒体走 reply 段
+            reply_media_count=topic.reply_media_count,
             quote_roles=topic.quote_roles,
             # 归属行 → 元信息区（标题与作者之间），不进正文
             origin_line=topic.origin_line,

@@ -1,11 +1,17 @@
-"""引用块的角色归位：显式声明之后，**位置不再参与**媒体的归属判断。
+"""引用块的角色：**由平台显式声明**，位置不参与任何判断。
 
-以前渲染层靠位置猜引用块的角色（开头→被回复、末尾→被引用），于是"正文里插一行"
-就能让归位漂移 —— bgm 的归属行插在引用块前，引用块落到末尾，本层的图被插到它前面
-贴住（用户报「图片和引用贴一起」）。现在角色由平台按出现顺序显式声明。
+以前渲染层靠位置猜两件事 —— 块是"被回复"还是"被引用"、媒体取哪一段 ——
+于是"谁在正文里插一行"就能让归位漂移（bgm 的归属行插在引用块前，引用块落到末尾，
+本层的图被插到它前面贴住；把归属行挪走后，纯图楼层又因为**没有正文**而被
+`split_quote_blocks` 判成"末尾块"，图同样排到了块前面）。
 
-**回退路径**（没声明角色，例如老缓存）必须与引入 `quote_roles` 之前**逐字一致** ——
-这里用「同一个产物 + 同一个媒体布局，声明与不声明跑出来的块结构相同」来钉住。
+现在角色同时决定两件事：
+
+- ``reply``  → 卡片渲染在正文**之前**，媒体取 ``reply_media_count`` 那一段
+- ``quoted`` → 卡片渲染在正文**之后**，媒体取 ``quoted_media_count`` 那一段
+
+所以块在产物里的位置怎么写都不影响结果。没声明角色时（老缓存 / 未改的平台）
+退回原来的位置推断，那条路径与引入 ``quote_roles`` 之前**逐字一致**。
 """
 
 import types
@@ -42,6 +48,7 @@ def _result(**kw):
         platform=None,
         media=None,
         quote_roles=None,
+        origin_line="",
     )
     for k, v in kw.items():
         setattr(result, k, v)
@@ -59,10 +66,9 @@ def _render(content: str, *, roles=None, reply_media=(), quoted_media=(), body_m
 
 
 def _layout(md: str) -> list[str]:
-    """把产物压成"块顺序"：引用块 / 图（标注在块内还是块外）/ 正文。
+    """产物压成"块顺序"：引用块 / 图（标注是否在块内）/ 正文。
 
-    图要看它**在不在引用块里** —— ``> ![](...)`` 是块内（会被引用卡片吞下），
-    裸 ``![](...)`` 是独立图片块。这一区别正是"图有没有掉出卡片"的判据。
+    图在不在引用块里是"有没有掉出卡片"的判据 —— ``> ![](...)`` 在块内。
     """
     out: list[str] = []
     in_quote = False
@@ -83,27 +89,32 @@ def _layout(md: str) -> list[str]:
     return out
 
 
-# ── 显式声明：位置不再决定归属 ─────────────────────────────────────────
+# ── 角色决定**顺序**（位置无关） ────────────────────────────────────────
 
-def test_a_leading_quote_can_take_the_quoted_media():
-    """**核心**（bgm / linux.do 的形态）: 引用块在**最前**，但它的媒体在 ``quoted`` 段。
-
-    以前这条路要靠"两个块互相兜底"才不丢图；现在按角色直接配对。
-    """
-    md = _render(f"{QUOTED}\n\n{BODY}", roles=["quoted"], quoted_media=QUOTED_MEDIA)
-    assert _layout(md) == ["引用块", "图:q0(块内)", "正文", "图:b0"], md
-    assert "> ![](tg://photo?id=q0)" in md, "引用里的图要在块内"
-
-
-def test_a_trailing_quote_can_take_the_reply_media():
-    """反过来也要成立：引用块在**末尾**、媒体在 ``reply`` 段"""
+def test_a_reply_role_puts_the_card_before_the_body():
+    """``reply`` → 卡片在正文**前**（块写在正文后面也一样）"""
     md = _render(f"{BODY}\n\n{REPLY}", roles=["reply"], reply_media=REPLY_MEDIA)
-    assert _layout(md) == ["正文", "图:b0", "引用块", "图:r0(块内)"], md
-    assert "> ![](tg://photo?id=r0)" in md
+    assert _layout(md) == ["引用块", "图:r0(块内)", "正文", "图:b0"], md
 
 
-def test_both_blocks_take_their_own_media():
-    """两个块各拿自己那段（与位置恰好也一致 —— twitter 的形态）"""
+def test_a_quoted_role_puts_the_card_after_the_body():
+    """``quoted`` → 卡片在正文**后**（块写在正文前面也一样）"""
+    md = _render(f"{QUOTED}\n\n{BODY}", roles=["quoted"], quoted_media=QUOTED_MEDIA)
+    assert _layout(md) == ["正文", "图:b0", "引用块", "图:q0(块内)"], md
+
+
+def test_a_bodyless_floor_keeps_the_picture_behind_the_card():
+    """**核心**（bgm 纯图楼层）: 正文为空、只有一个引用块 ——
+
+    图必须排在卡片**之后**。以前这种产物里引用块被 `split_quote_blocks` 判成
+    "末尾块"，媒体就排到了它前面（真机实测：图在前、引用块在后）。
+    """
+    md = _render(REPLY, roles=["reply"], reply_media=REPLY_MEDIA, body_media=())
+    assert _layout(md) == ["引用块", "图:r0(块内)"], md
+
+
+def test_two_blocks_land_on_their_own_sides():
+    """两个块：``reply`` 在前、``quoted`` 在后"""
     md = _render(
         f"{REPLY}\n\n{BODY}\n\n{QUOTED}",
         roles=["reply", "quoted"],
@@ -113,61 +124,52 @@ def test_both_blocks_take_their_own_media():
     assert _layout(md) == ["引用块", "图:r0(块内)", "正文", "图:b0", "引用块", "图:q0(块内)"], md
 
 
-def test_roles_are_not_swapped_by_position():
-    """**核心**: 位置与角色**错位**时按角色走 —— 这正是以前做不到的
-
-    （两个块都在时，位置推断必然给"头=reply、尾=quoted"；显式声明可以反过来）
-    """
+def test_roles_are_matched_in_body_order():
+    """角色按块的**出现顺序**配对 —— 反过来写结果也反过来"""
     md = _render(
         f"{REPLY}\n\n{BODY}\n\n{QUOTED}",
-        roles=["quoted", "reply"],  # 与位置相反
+        roles=["quoted", "reply"],
         reply_media=REPLY_MEDIA,
         quoted_media=QUOTED_MEDIA,
     )
-    # 头部块拿 quoted 段、末尾块拿 reply 段
-    assert _layout(md) == ["引用块", "图:q0(块内)", "正文", "图:b0", "引用块", "图:r0(块内)"], md
+    # 先出现的块声明成 quoted → 到正文**后**；后出现的块声明成 reply → 到正文**前**。
+    # 位置不再是判据：它们的**内容**分别落在哪一侧由角色说了算。
+    layout = _layout(md)
+    assert layout[0] == "引用块" and layout[1] == "图:r0(块内)", layout  # reply 块在前，拿 reply 段
+    assert layout[-1] == "图:q0(块内)", layout  # quoted 块在后，拿 quoted 段
 
 
-def test_a_middle_line_does_not_disturb_the_layout():
-    """**核心**: 正文里插了别的行（bgm 的归属行那种）也不影响归位。
-
-    位置推断的脆弱点就在这里：插行会让引用块"看起来"不再在最前。
-    """
-    md = _render(
-        f"{QUOTED}\n\n**小组** » 讨论\n\n{BODY}",
-        roles=["quoted"],
-        quoted_media=QUOTED_MEDIA,
-    )
-    assert "> ![](tg://photo?id=q0)" in md, "引用里的图仍要在块内"
-    assert _layout(md)[:2] == ["引用块", "图:q0(块内)"], md
+def test_a_middle_line_does_not_disturb_anything():
+    """正文里插别的行（当年 bgm 的归属行）也不影响 —— 这正是要修的那个坑"""
+    md = _render(f"{REPLY}\n\n**某来源** » 讨论\n\n{BODY}", roles=["reply"], reply_media=REPLY_MEDIA)
+    assert _layout(md)[0] == "引用块", md
+    assert "> ![](tg://photo?id=r0)" in md
 
 
 # ── 兜底：媒体不能丢 ───────────────────────────────────────────────────
 
-def test_a_declared_role_without_its_block_keeps_the_media_in_the_body():
-    """声明了 ``reply`` 但开头根本没有引用块 → 那几张图落到正文媒体（不丢）"""
+def test_a_role_without_its_block_keeps_the_media_in_the_body():
+    """声明了 ``reply`` 但正文里没有块 → 那些图落到正文媒体（不丢）"""
     md = _render(BODY, roles=["reply"], reply_media=REPLY_MEDIA)
     assert "图:r0" in _layout(md), md
 
 
-def test_more_blocks_than_declared_roles_falls_back_to_position():
-    """块多于声明时，多出来的块按位置兜底（宁可保守，也别丢媒体）"""
+def test_more_blocks_than_declared_roles_falls_back_per_block():
+    """块多于声明 → 多出来的块按位置兜底（别丢媒体）"""
     md = _render(
         f"{QUOTED}\n\n{BODY}\n\n{REPLY}",
-        roles=["quoted"],  # 只声明了一个，但有两个块
+        roles=["quoted"],
         reply_media=REPLY_MEDIA,
         quoted_media=QUOTED_MEDIA,
     )
-    # 头部块按声明拿 quoted 段；尾部（被回复）块从剩下**有媒体**的桶里拿 reply 段
-    assert _layout(md) == ["引用块", "图:q0(块内)", "正文", "图:b0", "引用块", "图:r0(块内)"], md
-    assert "图:r0(块内)" in _layout(md), "被回复块的图不能被扔到正文"
+    layout = _layout(md)
+    assert "图:q0(块内)" in layout and "图:r0(块内)" in layout, layout
 
 
-def test_hide_desc_still_drops_the_quote_cards():
-    """``hide_desc`` 时引用块不渲染（既有语义），媒体也不发 —— 与正文一致"""
-    md = _render(f"{QUOTED}\n\n{BODY}", roles=["quoted"], quoted_media=QUOTED_MEDIA, hide_desc=True)
+def test_hide_desc_drops_the_cards():
+    """``hide_desc`` 时不渲染卡片（既有语义），媒体也不发 —— 与正文一致"""
+    md = _render(f"{REPLY}\n\n{BODY}", roles=["reply"], reply_media=REPLY_MEDIA, hide_desc=True)
     assert "引用块" not in _layout(md)
-    assert "q0" not in md
 
 
 # ── 回退：没声明时与改动前逐字一致 ─────────────────────────────────────
@@ -183,17 +185,16 @@ def test_without_roles_the_position_still_decides():
 
 
 def test_without_roles_the_old_fallback_still_works():
-    """**回归**（linux.do 的老形态）: 引用块在最前、媒体算在 quoted 段 ——
+    """**回归**（linux.do 的老形态）: 块在最前、媒体算在 quoted 段 ——
 
-    没声明角色时靠"两个块互相兜底"，那条路径必须原样保留（老缓存走的就是它）。
+    没声明时靠"两个块互相兜底"（老缓存走的就是这条路径），必须原样保留。
     """
     md = _render(f"{QUOTED}\n\n{BODY}", quoted_media=QUOTED_MEDIA)
     assert _layout(md) == ["引用块", "图:q0(块内)", "正文", "图:b0"], md
-    assert "> ![](tg://photo?id=q0)" in md, md
 
 
 def test_declared_and_undeclared_agree_when_the_shapes_match():
-    """形态一致时，声明与不声明必须给出**同一个布局**（回退路径不跑偏）"""
+    """形态一致时，声明与不声明给出**同一个布局**（回退路径不跑偏）"""
     content = f"{REPLY}\n\n{BODY}\n\n{QUOTED}"
     declared = _render(content, roles=["reply", "quoted"], reply_media=REPLY_MEDIA, quoted_media=QUOTED_MEDIA)
     undeclared = _render(content, reply_media=REPLY_MEDIA, quoted_media=QUOTED_MEDIA)

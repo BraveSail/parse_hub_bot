@@ -205,8 +205,8 @@ def test_the_opening_post_has_no_stray_blank_lines():
 
 def test_the_roles_are_declared_for_the_context_quote():
     """**核心**: 分享楼层时要声明引用块的角色（渲染层据此归位媒体，不看位置）"""
-    assert _topic("4062141").quote_roles == ["quoted"]
-    assert _topic("4062147").quote_roles == ["quoted"], "楼中楼也要声明"
+    assert _topic("4062141").quote_roles == ["reply"]
+    assert _topic("4062147").quote_roles == ["reply"], "楼中楼也要声明"
     assert _topic().quote_roles == [], "主楼没有引用块，不该声明"
     assert _topic("99999999").quote_roles == [], "锚点失效退回主楼 → 也没有引用块"
 
@@ -245,8 +245,8 @@ def test_the_parser_passes_the_roles_through():
         result = asyncio.run(BangumiParser()._do_parse("https://bgm.tv/group/topic/472394#post_4062141"))
     finally:
         mod.http.AsyncClient = original
-    assert result.quote_roles == ["quoted"]
-    assert result.quoted_media_count == 0  # 这个 fixture 里主楼没有图
+    assert result.quote_roles == ["reply"]  # 上下文块在正文前 ⇒ reply
+    assert result.reply_media_count == 0  # 这个 fixture 里主楼没有图
 
 
 def test_the_quote_comes_out_of_the_shared_helper():
@@ -320,7 +320,7 @@ def test_the_parent_is_recorded_for_sub_replies_only():
 
 
 def test_the_quote_media_count_covers_the_opening_posts_images():
-    """主楼的图走 ``quoted_media_count`` 通道（bot 侧放进引用块内部）"""
+    """上下文层的图走 ``reply_media_count`` 通道（块在正文前，bot 侧放进引用块内部）"""
     main = _main('主楼正文<img class="code" src="//lain.bgm.tv/pic/photo/l/op.jpg"/>')
     reply = _floor(
         "6", "#2", "2026-10-7 00:24", "甲", "a",
@@ -331,10 +331,10 @@ def test_the_quote_media_count_covers_the_opening_posts_images():
         "https://lain.bgm.tv/pic/photo/l/r.jpg",
         "https://lain.bgm.tv/pic/photo/l/op.jpg",
     ]
-    assert topic.quoted_media_count == 1, "只有主楼那张属于引用块"
+    assert topic.reply_media_count == 1, "只有上下文层那张属于引用块"
 
     # 分享主楼时没有引用块 —— 计数必须是 0（否则图会被切进不存在的卡片）
-    assert _from_html(reply, main=main).quoted_media_count == 0
+    assert _from_html(reply, main=main).reply_media_count == 0
 
 
 # ---------------------------------------------------------------- 两个页面形态

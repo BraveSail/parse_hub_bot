@@ -304,30 +304,49 @@ def build_rich_markdown(
     # 按引用块出现顺序，取值为两个媒体通道名 ``reply`` / ``quoted``）——
     # **位置不参与判断**。没声明时（老缓存 / 未改的平台）走下面那段位置推断。
     declared_roles = [r for r in (getattr(parse_result, "quote_roles", None) or []) if r]
+    declared_tail: list[str] = []
+    """声明角色时，"正文之后"那一侧的引用卡片（末尾统一追加）"""
     reply_media = list(reply_media_placeholders)
     if declared_roles:
+        # 角色**同时**决定两件事：媒体取哪一段、块渲染在正文的**哪一侧**。
+        #   ``reply``  → 正文之前（媒体取 reply 段）
+        #   ``quoted`` → 正文之后（媒体取 quoted 段）
+        # 于是位置彻底不参与判断 —— 无正文的产物（纯图楼层）里引用块会被
+        # `split_quote_blocks` 判成"末尾块"，以前媒体就跟着排到它前面去了
+        # （真机实测: 图在前、引用块在后）。
         buckets = {"reply": list(reply_media_placeholders), "quoted": list(quote_media_placeholders)}
         pending = list(declared_roles)
-        head_role = pending.pop(0) if (reply_quote and pending) else ""
-        tail_role = pending.pop(0) if (quote and pending) else ""
-        head_media = buckets.pop(head_role, []) if head_role else []
-        tail_media = buckets.pop(tail_role, []) if tail_role else []
-        # 块多于声明（声明与块对不上）→ 从**还没被消费**的桶里补，优先语义相近的那个。
-        # 不能按位置猜：那样尾部的被回复块会拿到 quoted 段，媒体配错卡片。
-        if reply_quote and not head_media and buckets:
-            pick = "reply" if buckets.get("reply") else next(iter(buckets))
-            logger.warning(f"块多于声明的引用块角色, 头部块取未消费的 {pick} 段媒体")
-            head_media = buckets.pop(pick)
-        if quote and not tail_media and buckets:
-            pick = "quoted" if buckets.get("quoted") else next(iter(buckets))
-            logger.warning(f"块多于声明的引用块角色, 末尾块取未消费的 {pick} 段媒体")
-            tail_media = buckets.pop(pick)
+        # 正文里抽出的块按出现顺序与声明的角色配对
+        paired: list[tuple[str, str, str]] = []  # (位置, 角色, 块)
+        for slot, block in (("head", reply_quote), ("tail", quote)):
+            if not block:
+                continue
+            role = pending.pop(0) if pending else ""
+            if not role:
+                # 声明少于块 —— 按位置兜底（宁可保守，也别把媒体丢了）
+                role = "reply" if slot == "head" else "quoted"
+                logger.warning(f"块多于声明的引用块角色, {slot} 块按位置兜底为 {role}")
+            paired.append((slot, role, block))
+
+        front: list[str] = []
+        back: list[str] = []
+        for _slot, role, block in paired:
+            media = buckets.pop(role, []) if role in buckets else []
+            if not media and buckets:  # 桶已被别的块取走 → 取还没被消费的
+                pick = next(iter(buckets))
+                logger.warning(f"角色 {role} 没有自己的媒体段, 取未消费的 {pick} 段")
+                media = buckets.pop(pick)
+            # 渲染位置由**角色**决定: reply 在正文前、quoted 在正文后
+            (front if role == "reply" else back).append(render_quote_card(block, media, summary=fold_summary)[0])
         # 剩下的媒体段（角色没声明 / 对应块不存在）→ 落到正文媒体，不能丢
         media_placeholders = [*media_placeholders, *(m for rest in buckets.values() for m in rest)]
-        if reply_quote and not config.hide_desc:
-            parts.extend(render_quote_card(reply_quote, head_media, summary=fold_summary))
         if not config.hide_desc:
-            quote_media_placeholders = tail_media
+            # 正文之前那一侧（reply）现在放；正文之后那一侧（quoted）留到末尾
+            parts.extend(front)
+            declared_tail = back
+        # 媒体段已按角色分完，原路径的末尾引用块不再使用
+        quote = ""
+        quote_media_placeholders = ()
     else:
         # ---- 未声明角色：按**位置**推断（保持与引入 quote_roles 之前逐字一致）----
         # 末尾引用块不存在时, 属于它的媒体要交回**头部**引用块 (反之亦然, 下面那段)。
@@ -378,6 +397,8 @@ def build_rich_markdown(
     if quote and not config.hide_desc:
         # 被引用/被回复的卡片: 主推自己的媒体要排在它上面 (与 X 上的观感一致)
         parts.extend(render_quote_card(quote, quote_media_placeholders, summary=fold_summary))
+    # 声明角色时"正文之后"那一侧（quoted）的卡片 —— 与上面原位：在正文与正文媒体之后
+    parts.extend(declared_tail)
 
     if hide_content and (visible := [part for part in parts if part]):
         # 手动遮住: 内容整组进 details —— **正文、引用块、标签、媒体(含图集)全在里面**,
