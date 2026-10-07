@@ -685,7 +685,10 @@ class BangumiTopic:
             parts.append(context_quote)
         if body:
             parts.append(body)
-        return "\n\n".join(p for p in parts if p).strip()
+        # strip 每个块: ``format_quote_block`` 末尾自带空行, 直接 join 会堆出多余空行
+        # —— 引用块与正文之间会变成 3 个空行, 行间距比别的平台大（用户报「感觉比其他
+        # 平台的大一点」）。linux.do 早就这么处理了（见它的 `_context_quotes` 调用点）。
+        return "\n\n".join(p.strip() for p in parts if p and p.strip())
 
     @staticmethod
     def _quote_of(floor: BangumiFloor) -> str:

@@ -148,6 +148,34 @@ def test_the_quote_is_italic_like_every_other_platform():
     assert not any("**" in ln for ln in quoted), quoted
 
 
+def test_the_quote_and_the_body_are_one_blank_line_apart():
+    """**核心**: 引用块与**正文之间只有一个空行** —— 与其他平台同间距。
+
+    ``format_quote_block`` 末尾**自带一个空行**, 直接 ``join`` 会堆成 3 个空行,
+    TG 渲染出来行间距就比其他平台大（用户报「感觉比其他平台的大一点」）。
+    linux.do 早就 strip 过（见它的注释）, bgm 漏了。
+    """
+    md = _topic("4062141").markdown_content
+    assert "\n\n\n" not in md, f"出现了连续两个空行: {md!r}"
+    lines = md.splitlines()
+    last_quote = max(i for i, ln in enumerate(lines) if ln.startswith("> "))
+    assert lines[last_quote + 1] == "", lines
+    assert lines[last_quote + 2] != "", f"引用块与正文之间插了多余空行: {lines}"
+
+
+def test_the_affiliation_and_the_quote_are_one_blank_line_apart():
+    """归属行与引用块之间同理"""
+    md = _topic("4062141").markdown_content
+    lines = md.splitlines()
+    assert lines[0].endswith("» 讨论"), lines[0]
+    assert lines[1] == "" and lines[2].startswith("> <i>"), lines[:4]
+
+
+def test_the_opening_post_has_no_stray_blank_lines():
+    """主楼那条路（没有引用块）也不该有空行堆积"""
+    assert "\n\n\n" not in _topic().markdown_content
+
+
 def test_the_quote_comes_out_of_the_shared_helper():
     """**自检**: 引用块必须由 ``format_quote_block`` 产出，别手拼 ``"> "`` 前缀。
 
