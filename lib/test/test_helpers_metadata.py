@@ -44,6 +44,20 @@ class TestToDatetime:
     def test_naive_iso_is_treated_as_utc(self):
         assert to_datetime("2025-10-02 12:00:00") == datetime(2025, 10, 2, 12, 0, tzinfo=UTC)
 
+    def test_a_naive_string_takes_the_given_timezone(self):
+        """字符串没带偏移时按 ``default_tz`` 解释（默认 UTC 不变）。
+
+        抓网页的平台（bgm）页面上是**站点本地时间**，按 UTC 解释会差 8 小时。
+        """
+        beijing = timezone(timedelta(hours=8))
+        assert to_datetime("2026-10-04 19:13", default_tz=beijing) == datetime(
+            2026, 10, 4, 19, 13, tzinfo=beijing
+        )
+        # 带偏移的字符串不受影响（自己的时区优先）
+        assert to_datetime("2025-10-02T21:00:00+09:00", default_tz=beijing).utcoffset() == timedelta(hours=9)
+        # 默认行为不变
+        assert to_datetime("2026-10-04 19:13") == datetime(2026, 10, 4, 19, 13, tzinfo=UTC)
+
     def test_twitter_format(self):
         """twitter legacy.created_at: 'Wed Oct 01 12:00:00 +0000 2025'"""
         assert to_datetime("Wed Oct 01 12:00:00 +0000 2025") == datetime(2025, 10, 1, 12, 0, tzinfo=UTC)

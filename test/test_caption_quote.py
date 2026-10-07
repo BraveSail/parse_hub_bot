@@ -195,28 +195,30 @@ def test_long_quote_block_is_folded():
     """
     from plugins.helpers import render_quote_card
 
-    quote = "\n".join(["> <i>作者 @handle</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
+    quote = "\n".join(["> 作者 @handle", *[f"> 第{i}行内容  " for i in range(1, 20)]])
     out = render_quote_card(quote, [], summary="展开全文")[0]
     assert out.startswith("<blockquote>"), out[:40]
     assert out.rstrip().endswith("</blockquote>")
     assert "<details><summary>展开全文</summary>" in out   # 统一用按钮折叠
-    assert "<i>作者 @handle</i>" in out                     # 斜体走 HTML 标签
-    assert "<i>第19行内容</i>" in out
+    assert "作者 @handle" in out
+    assert "第19行内容" in out
+    assert "<i>" not in out                                  # 引用块不用斜体
     assert "*" not in out                                    # 不留字面星号
     assert not any(line.startswith("> ") for line in out.splitlines()), "'>' 前缀已剥掉"
 
 
 def test_quote_style_comes_from_the_source_not_a_conversion():
-    """斜体由 parsehub 的 format_quote_block 直接产出 <i> —— 渲染层不做 *→<i> 转换
+    """引用块的样式由 parsehub 的 format_quote_block 决定 —— 渲染层不加任何标记
 
-    (块内 markdown 行内语法不解析, 写 * 会字面显示星号, 所以源头就得是 <i>)
+    (用户: 「引用/回复 不是斜体」；块内 markdown 也不解析，所以源头就不该产出
+    ``*`` 或 ``<i>``)
     """
     from parsehub.utils.helpers import format_quote_block
 
-    assert format_quote_block("斜体行") == "> <i>斜体行</i>\n\n"
-    assert format_quote_block("两段\n\n二") == "> <i>两段</i>\n>\n> <i>二</i>\n\n"
-    # 作者行也在块内, 同样走 <i>
-    assert format_quote_block("正文", "作者") == "> <i>作者</i>\n> <i>正文</i>\n\n"
+    assert format_quote_block("斜体行") == "> 斜体行\n\n"
+    assert format_quote_block("两段\n\n二") == "> 两段\n>\n> 二\n\n"
+    # 作者行也在块内, 同样不加标记
+    assert format_quote_block("正文", "作者") == "> 作者\n> 正文\n\n"
 
 
 def test_unfolded_quote_passes_through_unchanged():
@@ -226,7 +228,7 @@ def test_unfolded_quote_passes_through_unchanged():
     """
     from plugins.helpers import fold_quote_block
 
-    quote = "> <i>作者</i>\n> 短内容"
+    quote = "> 作者\n> 短内容"
     assert fold_quote_block(quote, summary="展开全文") == quote
 
 
@@ -234,7 +236,7 @@ def test_short_quote_block_is_not_folded():
     """短引用块不折叠 (卡片路径也不折)"""
     from plugins.helpers import render_quote_card
 
-    out = render_quote_card("> <i>作者</i>\n> 短内容", [], summary="展开全文")[0]
+    out = render_quote_card("> 作者\n> 短内容", [], summary="展开全文")[0]
     assert "<details>" not in out
     assert out.startswith("> "), out
     assert not out.startswith("<blockquote>")
@@ -244,7 +246,7 @@ def test_media_goes_inside_a_short_quote():
     """不折叠的引用块: 媒体留在块内 (普通 blockquote 里 ![]() 能正常出图)"""
     from plugins.helpers import render_quote_card
 
-    quote = "> <i>作者</i>\n> <i>短内容</i>"
+    quote = "> 作者\n> 短内容"
     parts = render_quote_card(quote, ["![](tg://photo?id=m0)"], summary="展开全文")
     assert len(parts) == 1
     assert "> ![](tg://photo?id=m0)" in parts[0]        # 在引用块内 (带 > 前缀)
@@ -260,7 +262,7 @@ def test_media_stays_inside_a_folded_quote():
     """
     from plugins.helpers import markdown_needs_blocks, render_quote_card
 
-    quote = "\n".join(["> <i>作者</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
+    quote = "\n".join(["> 作者", *[f"> 第{i}行内容  " for i in range(1, 20)]])
     parts = render_quote_card(quote, ["![](tg://photo?id=m0)"], summary="展开全文")
     assert len(parts) == 1
     card = parts[0]
@@ -275,7 +277,7 @@ def test_media_stays_inside_a_folded_quote():
 def test_no_media_means_a_single_part():
     from plugins.helpers import render_quote_card
 
-    quote = "\n".join(["> <i>作者</i>", *[f"> <i>第{i}行内容</i>  " for i in range(1, 20)]])
+    quote = "\n".join(["> 作者", *[f"> 第{i}行内容  " for i in range(1, 20)]])
     assert len(render_quote_card(quote, [], summary="展开全文")) == 1
 
 
@@ -285,7 +287,7 @@ def test_build_rich_markdown_folds_a_long_reply_block():
 
     from plugins.helpers import build_rich_markdown
 
-    reply = "\n".join(["> <i>Vincent @VincentBounce</i>", *[f"> <i>第{i}行</i>  " for i in range(1, 18)]])
+    reply = "\n".join(["> Vincent @VincentBounce", *[f"> 第{i}行  " for i in range(1, 18)]])
     content = reply + "\n\n短正文"
     result = types.SimpleNamespace(
         title="", content=content, raw_url="https://x.com/a/status/1",
@@ -299,7 +301,7 @@ def test_build_rich_markdown_folds_a_long_reply_block():
     assert "<blockquote>" in md
     assert "<details><summary>" in md
     assert "<blockquote expandable>" not in md
-    assert "<i>第1行</i>" in md and "<i>第17行</i>" in md
+    assert "第1行" in md and "第17行" in md
 
 
 def test_fold_summary_follows_locale():

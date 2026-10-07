@@ -196,25 +196,25 @@ def test_from_graphql_without_user_is_empty_handle():
 def test_quote_renders_markdown_blockquote():
     post = ThreadsPost(content="mine", reply_to=reply_post("line1\nline2", handle="other"))
     assert ThreadsParser._build_quote(post) == (
-        '> <i><a href="https://www.threads.com/@other">@other</a></i>\n> <i>line1</i>\n> <i>line2</i>\n\n'
+        '> <a href="https://www.threads.com/@other">@other</a>\n> line1\n> line2\n\n'
     )
 
 
 def test_quote_marks_blank_lines():
     post = ThreadsPost(content="mine", reply_to=reply_post("a\n\nb"))
     assert ThreadsParser._build_quote(post) == (
-        '> <i><a href="https://www.threads.com/@other">@other</a></i>\n> <i>a</i>\n>\n> <i>b</i>\n\n'
+        '> <a href="https://www.threads.com/@other">@other</a>\n> a\n>\n> b\n\n'
     )
 
 
 def test_quote_falls_back_to_author_name():
     post = ThreadsPost(content="mine", reply_to=reply_post("x", handle="", name="夏吉ゆうこ"))
-    assert ThreadsParser._build_quote(post) == "> <i>夏吉ゆうこ</i>\n> <i>x</i>\n\n"
+    assert ThreadsParser._build_quote(post) == "> 夏吉ゆうこ\n> x\n\n"
 
 
 def test_quote_without_author():
     post = ThreadsPost(content="mine", reply_to=reply_post("x", handle="", name=""))
-    assert ThreadsParser._build_quote(post) == "> <i>x</i>\n\n"
+    assert ThreadsParser._build_quote(post) == "> x\n\n"
 
 
 def test_quote_skipped_without_reply():
@@ -252,7 +252,7 @@ def test_do_parse_prefixes_quote():
         media=None,
     )
     result = asyncio.run(_FakeParser(post)._do_parse("https://www.threads.com/@u/post/1"))
-    assert result.content == '> <i><a href="https://www.threads.com/@other">@other</a></i>\n> <i>original</i>\n\nmine'
+    assert result.content == '> <a href="https://www.threads.com/@other">@other</a>\n> original\n\nmine'
 
 
 def test_do_parse_without_reply_is_unchanged():
@@ -265,6 +265,6 @@ def test_do_parse_keeps_media_with_quote():
     media = ThreadsMedia(type=ThreadsMediaType.IMAGE, url="https://img.example/a.jpg", width=5, height=6)
     post = ThreadsPost(content="mine", reply_to=reply_post("original"), media=media)
     result = asyncio.run(_FakeParser(post)._do_parse("https://www.threads.com/@u/post/1"))
-    assert result.content == '> <i><a href="https://www.threads.com/@other">@other</a></i>\n> <i>original</i>\n\nmine'
+    assert result.content == '> <a href="https://www.threads.com/@other">@other</a>\n> original\n\nmine'
     assert len(result.media) == 1
     assert result.media[0].url == "https://img.example/a.jpg"

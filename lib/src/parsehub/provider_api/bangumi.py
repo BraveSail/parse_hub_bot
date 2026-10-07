@@ -32,6 +32,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -40,13 +41,20 @@ from markdownify import MarkdownConverter
 
 from ..types.platform import Platform
 from ..utils import http
-from ..utils.helpers import format_author_link, profile_url
+from ..utils.helpers import format_author_link, profile_url, to_datetime
 
 BLOG_API = "https://bgm.tv/blog/{blog_id}"
 GROUP_TOPIC_API = "https://bgm.tv/group/topic/{topic_id}"
 #: 条目讨论版（``/subject/topic/<id>``）—— **楼层结构与小组话题完全同构**，
 #: 只有头部不同（归属是条目而不是小组，标题是页面上**第二个** ``h1``）
 SUBJECT_TOPIC_API = "https://bgm.tv/subject/topic/{topic_id}"
+
+#: bgm 的**服务器时区**。页面上的时间是站点本地时间（``2026-10-7 00:24``，不带偏移），
+#: 按 UTC 解释会让整条消息差 8 小时（用户报「时间好像有问题？多 8 小时」）。
+#:
+#: 证据：``api.bgm.tv`` 返回的时间戳明确带偏移 ——
+#: ``{"updated_at":"2026-10-07T01:18:56+08:00"}``。
+BGM_TIMEZONE = timezone(timedelta(hours=8))
 
 #: 内容不存在时页面**仍然返回 HTTP 200**（不是 404），正文写「呜咕，出错了 数据库中没有…」
 #: ⇒ 判据只能是「没有正文容器」，不能看状态码。
@@ -87,7 +95,7 @@ class BangumiBlog:
     #: 数字 uid（bgm 没有 @用户名，主页与日志标签页都用 uid）
     author_handle: str = ""
     author_avatar: str = ""
-    published_at: str = ""
+    published_at: datetime | None = None
     tags: list[str] = field(default_factory=list)
     images: list[BangumiImage] = field(default_factory=list)
 
@@ -185,12 +193,17 @@ class BangumiBlog:
         return name, uid, avatar
 
     @staticmethod
-    def _parse_time(soup: BeautifulSoup) -> str:
-        """``2026-10-4 19:13 · 1 分钟阅读`` → ``2026-10-4 19:13``（阅读时长不进页脚）。"""
+    def _parse_time(soup: BeautifulSoup) -> datetime | None:
+        """``2026-10-4 19:13 · 1 分钟阅读`` → 带时区的 datetime（阅读时长不进页脚）。
+
+        ⚠️ 页面上的时间是**北京时间**（见 ``BGM_TIMEZONE``）—— 必须按 +08:00 解释，
+        否则显示出来差 8 小时。
+        """
         node = soup.select_one(".header .time")
         if node is None:
-            return ""
-        return re.split(r"[·|]", node.get_text(" ", strip=True))[0].strip()
+            return None
+        text = re.split(r"[·|]", node.get_text(" ", strip=True))[0].strip()
+        return to_datetime(text, default_tz=BGM_TIMEZONE)
 
 
 
@@ -380,7 +393,7 @@ class BangumiTopic:
     author_name: str = ""
     """**本层**的作者（不是楼主 —— 楼主是主题的创建者，楼层可能不是他）"""
     author_handle: str = ""
-    published_at: str = ""
+    published_at: datetime | None = None
     images: list[BangumiImage] = field(default_factory=list)
     #: ``images`` 末尾有多少张属于**引用块**（主楼）——
     #: bot 侧据此把它们放进引用块内部（与 linux.do 同一机制）
@@ -521,7 +534,8 @@ class BangumiTopic:
             text_content=text_content,
             author_name=current.author_name if current else "",
             author_handle=current.author_handle if current else "",
-            published_at=current.published_at if current else "",
+            # 页面上的时间是北京时间 —— 按 +08:00 解释才能对上（见 BGM_TIMEZONE）
+            published_at=to_datetime(current.published_at, default_tz=BGM_TIMEZONE) if current else None,
             images=images,
             quoted_media_count=quoted_media,
             floor_label=current.label if current else "",
@@ -677,16 +691,15 @@ class BangumiTopic:
     def _quote_of(floor: BangumiFloor) -> str:
         """把主楼渲染成引用块（分享楼层时当上下文用）。
 
-        ⚠️ 作者行用 **HTML ``<i>``**：引用块（尤其是**嵌套**引用）里的 markdown 星号会
-        字面显示 —— 实测读回服务端块时看到过孤立的 `"**"`。HTML 写法在任何深度都生效
-        （与 linux.do 引用块的作者行同一写法）。
+        **不用斜体**（用户: 「引用/回复 不是斜体」），块内也不加任何 markdown 强调 ——
+        引用块（尤其**嵌套**引用）里的 markdown 星号会字面显示（实测读到过孤立的 `"**"`）。
         """
         link = format_author_link(
             floor.author_name,
             floor.author_handle,
             profile_url(Platform.BANGUMI, user_id=floor.author_handle),
         )
-        head = f"<i>{link}</i>" if link else ""
+        head = link
         meta = " · ".join(x for x in (floor.label, floor.published_at) if x)
         line = f"{head} · {meta}" if head and meta else (head or meta)
         lines = [f"> {line}".rstrip()]

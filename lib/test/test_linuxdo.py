@@ -321,7 +321,7 @@ def test_floor_reply_to_the_topic_quotes_the_opening_post():
     assert "这是主楼的正文" in md            # 主楼带上来了
     assert "回复主题的话" in md              # 本层内容也在
     assert md.index("这是主楼的正文") < md.index("回复主题的话")   # 主楼在前
-    assert md.count("<blockquote") == 1 or md.count("> <i>") >= 2  # 是引用块形态
+    assert md.count("<blockquote") == 1 or md.count("> ") >= 2  # 是引用块形态
 
 
 def test_floor_reply_to_another_floor_orders_op_then_replied_floor():
@@ -394,13 +394,14 @@ def test_quote_reply_uses_the_shared_quote_renderer():
     body = topic.markdown_content
 
     # 作者在引用块内 (带主页链接), 不在块外裸着
-    assert '> <i><a href="https://linux.do/u/paomian_1">@paomian_1</a></i>' in body
-    # 引用内容整块斜体
-    assert "> <i>被引用的第一段</i>" in body
-    assert "> <i>被引用的第二段</i>" in body
+    assert '> <a href="https://linux.do/u/paomian_1">@paomian_1</a>' in body
+    assert "> 被引用的第一段" in body
+    assert "> 被引用的第二段" in body
+    # 引用块**不用斜体** (用户: 「引用/回复 不是斜体」)
+    assert "<i>" not in body
     # 不写 "引用/回复" 标签字样 (引用内容本身可能含这些字)
-    assert "<i>引用" not in body
-    assert "<i>回复" not in body
+    assert "> 引用" not in body
+    assert "> 回复" not in body
     # 引用块之外的正文仍在, 且不在引用块里
     assert "我的回复" in body
     assert not any(line.startswith("> ") and "我的回复" in line for line in body.splitlines())

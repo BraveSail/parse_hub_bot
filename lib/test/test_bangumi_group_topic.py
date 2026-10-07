@@ -20,12 +20,13 @@ fixture ``bangumi_group_topic_472394.html`` 是真实话题（抽过：h1 + 主�
 """
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from parsehub.parsers.parser.bangumi import BangumiParser, BangumiParseResult
-from parsehub.provider_api.bangumi import BangumiError, BangumiTopic
+from parsehub.provider_api.bangumi import BGM_TIMEZONE, BangumiError, BangumiTopic
 
 FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE = FIXTURES / "bangumi_group_topic_472394.html"
@@ -133,11 +134,15 @@ def test_an_anchored_floor_brings_the_opening_post_as_a_quote():
     assert any("#1" in ln for ln in quoted), "引用块里的主楼没有楼层号"
 
 
-def test_the_quote_head_uses_html_not_markdown_asterisks():
-    """引用块内（尤其嵌套引用）的 markdown 星号会字面显示 —— 作者行必须用 HTML"""
-    line = next(ln for ln in _topic("4062141").markdown_content.splitlines() if ln.startswith("> ") and "irohard" in ln)
-    assert "<i>" in line, line
-    assert "**" not in line, line
+def test_the_quote_carries_no_emphasis_markup_at_all():
+    """引用块**不用斜体**（用户: 「引用/回复 不是斜体」），也不用 markdown 星号
+
+    （引用块内、尤其**嵌套**引用里的 markdown 星号会字面显示 —— 实测读到过孤立的 ``"**"``）
+    """
+    quoted = [ln for ln in _topic("4062141").markdown_content.splitlines() if ln.startswith("> ")]
+    line = next(ln for ln in quoted if "irohard" in ln)
+    assert "<i>" not in line and "**" not in line, line
+    assert all("<i>" not in ln and "**" not in ln for ln in quoted), quoted
 
 
 def test_an_anchored_sub_reply_can_be_selected_too():
@@ -191,6 +196,26 @@ def test_the_subject_header_gives_the_subject_and_the_second_h1():
     assert topic.title == "我说涩谷亮介身边缺一个平野宏树有没有懂的"
     assert topic.context_name == "無職転生Ⅲ"
     assert topic.context_url == "https://bgm.tv/subject/501963"
+
+
+def test_the_floor_time_is_beijing_time_too():
+    """楼层时间与日志同一个坑：页面给 ``2026-10-7 00:24``（无偏移）→ 按 +08:00 解释
+
+    按 UTC 解释的话渲染出来晚 8 小时（用户报「时间好像有问题？多 8 小时」）。
+    """
+    topic = _topic("4062141")
+    assert topic.published_at is not None
+    assert topic.published_at.utcoffset() == BGM_TIMEZONE.utcoffset(None)
+    # 页面上写的是 10-7 00:24（北京）→ UTC 是前一日的 16:24
+    assert topic.published_at.astimezone(UTC) == datetime(2026, 10, 6, 16, 24, tzinfo=UTC)
+
+
+def test_a_floor_without_a_time_parses_to_none():
+    main = _floor(
+        "0", "#1", "", "楼主", "op", "没有任何时间", cls="postTopic light_odd clearit", body_cls="topic_content"
+    )
+    topic = _from_html("", main=main)
+    assert topic.published_at is None
 
 
 def test_the_context_line_carries_the_affiliation_only():

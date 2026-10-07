@@ -5,11 +5,11 @@
 **取证**（同一条内容，两条路径逐字 diff）::
 
     现场（24 行）: **<a href=".../u/HatsuneMiku">Angel</a>** <code>@HatsuneMiku</code> · #16
-                   > <i><a href=".../u/tophnanfong">Only Linux Can Do(OLCD)</a> <code>@tophnanfong</code> · #1</i>
+                   > <a href=".../u/tophnanfong">Only Linux Can Do(OLCD)</a> <code>@tophnanfong</code> · #1
                    >
                    > ---
                    >
-                   > <i>国产手机芯片恐成最大赢家？</i>
+                   > 国产手机芯片恐成最大赢家？
 
     缓存（18 行）: **<a href=".../u/HatsuneMiku">Angel</a>** <code>@HatsuneMiku</code>
                    Only Linux Can Do(OLCD) @tophnanfong · #1
@@ -40,8 +40,8 @@ RAW_URL = "https://linux.do/t/topic/2977838/16"
 
 #: 真实形态：引用块（主楼上下文）+ 本层正文 + 楼层号 + 标签实体
 _QUOTE_LINE = (
-    '> <i><a href="https://linux.do/u/tophnanfong">Only Linux Can Do(OLCD)</a> '
-    "<code>@tophnanfong</code> · #1</i>"
+    '> <a href="https://linux.do/u/tophnanfong">Only Linux Can Do(OLCD)</a> '
+    "<code>@tophnanfong</code> · #1"
 )
 MARKDOWN = (
     _QUOTE_LINE
@@ -49,7 +49,7 @@ MARKDOWN = (
 >
 > ---
 >
-> <i>国产手机芯片恐成最大赢家？</i>
+> 国产手机芯片恐成最大赢家？
 
 本层正文（有换行，也有 **粗体**）。
 """
@@ -114,7 +114,7 @@ def test_a_rich_text_post_renders_identically_from_the_cache():
 def test_the_quoted_block_survives_the_cache():
     """**用户报的那处**: 引用块（`>`、`<a>`、分割线）不能在缓存路径上塌成裸文字"""
     out = _render_cached(_rich())
-    assert "> <i><a href=" in out, out
+    assert "> <a href=" in out, out
     assert "Only Linux Can Do(OLCD)" in out
     assert "\n>\n" in out, "引用块内的空行（分割线那段）丢了"
 

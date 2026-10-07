@@ -40,17 +40,17 @@ def test_format_author_link_collapses_same_name():
 def test_format_quote_block_is_italic_and_labelless():
     """引用块不写 引用/回复 字样, 整块斜体, 作者行在前"""
     block = format_quote_block("line1\nline2", 'Jason Lee <a href="u">@h</a>')
-    assert block == '> <i>Jason Lee <a href="u">@h</a></i>\n> <i>line1</i>\n> <i>line2</i>\n\n'
+    assert block == '> Jason Lee <a href="u">@h</a>\n> line1\n> line2\n\n'
     assert "引用" not in block
     assert "回复" not in block
 
 
 def test_format_quote_block_keeps_blank_lines():
-    assert format_quote_block("a\n\nb") == "> <i>a</i>\n>\n> <i>b</i>\n\n"
+    assert format_quote_block("a\n\nb") == "> a\n>\n> b\n\n"
 
 
 def test_format_quote_block_without_author():
-    assert format_quote_block("x") == "> <i>x</i>\n\n"
+    assert format_quote_block("x") == "> x\n\n"
 
 
 def test_format_quote_block_empty_text():
@@ -62,7 +62,7 @@ def test_format_quote_block_empty_text():
 
 def test_format_quote_block_sign_only_keeps_the_author_line():
     """sign_only: 只署名也出块 —— 给"被引用对象是纯图/无文字但有媒体"的调用方用"""
-    assert format_quote_block("", "author", sign_only=True) == "> <i>author</i>\n\n"
+    assert format_quote_block("", "author", sign_only=True) == "> author\n\n"
     # 有文字时与普通调用一致
     assert format_quote_block("正文", "author", sign_only=True) == format_quote_block("正文", "author")
     # 连作者都没有 -> 仍然是空串 (sign_only 也救不了)

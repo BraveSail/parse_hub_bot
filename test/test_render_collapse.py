@@ -17,7 +17,7 @@ from plugins.helpers import (
     format_text,
 )
 
-QUOTE = "> <i><a href=\"https://linux.do/u/someone\">@someone</a></i> 这是一段引用内容, 长度普通。"
+QUOTE = "> <a href=\"https://linux.do/u/someone\">@someone</a> 这是一段引用内容, 长度普通。"
 
 
 def _post(quote_count: int = 12, *, filler: int = 0) -> str:

@@ -171,16 +171,16 @@ def test_the_byline_is_separated_from_the_body_by_a_divider():
     块内写法是独立一行的 ``---``（容器路径）与 ``> ---``（短引用路径），
     服务端都解析成 ``RichBlockDivider``（实测）。
     """
-    author = '<i><a href="https://x.com/a">作者名</a> <code>@handle</code></i>'
+    author = '<a href="https://x.com/a">作者名</a> <code>@handle</code>'
 
     # 折叠(容器)路径
-    long_body = "\n\n".join(f"<i>第{i}行内容</i>" for i in range(1, 20))
+    long_body = "\n\n".join(f"第{i}行内容" for i in range(1, 20))
     folded = _render(_quote(f"{author}\n{long_body}"), [PLACEHOLDER])
     assert f"{author}\n\n---\n\n" in folded, folded[:200]
 
     # 短引用路径
-    short = _render(_quote(f"{author}\n<i>一句话正文</i>"))
-    assert f"> {author}\n>\n> ---\n>\n> <i>一句话正文</i>" in short, short
+    short = _render(_quote(f"{author}\n一句话正文"))
+    assert f"> {author}\n>\n> ---\n>\n> 一句话正文" in short, short
 
 
 def test_no_divider_without_a_byline():
@@ -196,8 +196,8 @@ def test_blocks_keep_the_divider_and_the_media():
     from pyrogram.types import InputMediaPhoto
     from pyrogram.types.input_content.input_rich_block import InputRichBlockPhoto
 
-    author = '<i><a href="https://x.com/a">作者名</a> <code>@handle</code></i>'
-    quote = _quote(f"{author}\n<i>一句话正文</i>")
+    author = '<a href="https://x.com/a">作者名</a> <code>@handle</code>'
+    quote = _quote(f"{author}\n一句话正文")
     marked = quote_with_divider(quote)
     from plugins.helpers import attach_quote_media
 

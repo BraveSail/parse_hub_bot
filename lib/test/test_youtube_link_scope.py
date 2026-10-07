@@ -61,7 +61,7 @@ def test_a_link_in_the_main_body_is_left_alone():
     assert len(result.media or []) == 0, "主帖正文的链接不该产出媒体"
     assert result.quoted_media_count == 0
     assert result.reply_media_count == 0
-    assert "> <i><a" not in result.content, result.content
+    assert "> <a" not in result.content, result.content
     assert YT in result.content, "链接本身照旧留在正文"
 
 
@@ -77,7 +77,7 @@ def test_a_link_inside_the_quoted_post_gets_a_card_and_cover():
     assert len(result.media or []) == 1
     assert isinstance(result.media[0], ImageRef)
     assert result.media[0].url == COVER
-    assert "> <i><a" in result.content, result.content
+    assert "> <a" in result.content, result.content
     assert result.reply_media_count == 0
 
 
@@ -120,7 +120,7 @@ def test_a_link_inside_the_replied_post_gets_a_card_and_cover():
     assert result.reply_media_count == 1
     assert result.quoted_media_count == 0
     assert result.media[0].url == COVER
-    assert "> <i><a" in result.content
+    assert "> <a" in result.content
 
 
 def test_reply_and_quoted_links_land_in_their_own_tiers():

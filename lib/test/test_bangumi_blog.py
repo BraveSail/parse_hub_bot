@@ -14,12 +14,13 @@ fixture：
 """
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from parsehub.parsers.parser.bangumi import BangumiParser, BangumiParseResult
-from parsehub.provider_api.bangumi import BangumiBlog, BangumiError
+from parsehub.provider_api.bangumi import BGM_TIMEZONE, BangumiBlog, BangumiError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -57,8 +58,30 @@ def test_the_metadata_comes_off_the_real_page():
     assert blog.title == "【学生会也有洞！】ep1观后感"
     assert blog.author_name == "HuangfengXwX"
     assert blog.author_handle == "950407"  # 数字 uid
-    assert blog.published_at == "2026-10-4 19:13"  # 阅读时长被剥掉
+    # 页面上的时间是**北京时间**（见下面的 test_the_time_is_beijing_time）；阅读时长被剥掉
+    assert blog.published_at == datetime(2026, 10, 4, 19, 13, tzinfo=BGM_TIMEZONE)
     assert blog.tags == ["动画"]
+
+
+def test_the_time_is_beijing_time_not_utc():
+    """**核心**: 页面上的时间按**北京时间**解释（用户报「时间好像有问题？多 8 小时」）。
+
+    bgm 的页面只给 ``2026-10-4 19:13``（没有偏移）。按 UTC 解释的话，渲染出来
+    （客户端按本地时区显示）会整整晚 8 小时。证据是 ``api.bgm.tv`` 返回的时间戳
+    明确带偏移：``{"updated_at":"2026-10-07T01:18:56+08:00"}``。
+    """
+    blog = _blog("bangumi_blog_381120.html", "381120")
+    assert blog.published_at is not None
+    assert blog.published_at.utcoffset() == timedelta(hours=8)
+    # 换算成 UTC 是 11:13 —— 按 UTC 解释会得到 19:13Z，那才是多 8 小时的来源
+    assert blog.published_at.astimezone(UTC) == datetime(2026, 10, 4, 11, 13, tzinfo=UTC)
+
+
+def test_a_missing_time_is_none_not_an_empty_string():
+    """页面没有时间时是 ``None``（不是空串）—— 渲染层按 None 跳过那一段"""
+    html = '<html><body><div class="header"><h1 class="title">没有时间</h1></div>'
+    html += '<div id="entry_content">正文</div></body></html>'
+    assert BangumiBlog._from_html(html, "1").published_at is None
 
 
 def test_a_slug_author_is_read_too():
