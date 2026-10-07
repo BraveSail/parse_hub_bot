@@ -53,8 +53,8 @@ SUBJECT_TOPIC_API = "https://bgm.tv/subject/topic/{topic_id}"
 #: —— 它与规范路径是**同一个话题**（实测正文逐块相同），归一化后零新增解析逻辑。
 _TOPIC_APIS = {"group": GROUP_TOPIC_API, "subject": SUBJECT_TOPIC_API}
 
-#: 话题 URL 的三种入口。⚠️ 顺序有意义：``/rakuen/topic/subject/1`` 里也含
-#: ``topic/subject``，所以带 ``rakuen`` 的那条要**先**匹配，或者用互斥的形态描述。
+#: 话题 URL 的三种入口。两条正则**互斥**（前者要 ``group|subject/topic/``，
+#: 后者要 ``rakuen/topic/``），所以匹配顺序不影响结果 —— 实测两个方向都试过。
 _TOPIC_URL_RE = re.compile(r"/(group|subject)/topic/(\d+)")
 _RAKUEN_URL_RE = re.compile(r"/rakuen/topic/(group|subject)/(\d+)")
 
