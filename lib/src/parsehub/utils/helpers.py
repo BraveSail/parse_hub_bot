@@ -158,7 +158,7 @@ def format_author_link(name: str, handle: str = "", url: str = "") -> str:
 
 
 def format_quote_block(text: str, author: str = "", *, sign_only: bool = False) -> str:
-    """把一段文本渲染成引用块, 文本为空时返回空串。
+    """把一段文本渲染成斜体的引用块, 文本为空时返回空串。
 
     :param sign_only: 文本为空时**仍输出署名行**。给"被引用对象没有文字、但有媒体"
         的场景用 (纯图楼层、纯图转发动态) —— 那种情况下引用块只有署名, 图片由调用
@@ -166,20 +166,22 @@ def format_quote_block(text: str, author: str = "", *, sign_only: bool = False) 
         照样能带图。**默认 False**: 没有媒体配套的调用方 (threads) 拿到的空引用块
         是一行孤零零的署名, 不如不显示。
 
-    不写 "回复/引用" 字样: 引用块本身已经表明关系。作者行在前。
+    不写 "回复/引用" 字样: 引用块本身已经表明关系。**整块斜体**, 作者行在前。
 
-    **不用斜体**（用户: 「引用/回复 不是斜体」）—— 以前整块包 ``<i>``，现在作者行与
-    正文都按原样输出，块内不加任何强调。
+    **斜体用 ``<i>`` 而不是 markdown 的 ``*…*``**: 引用块所在的渲染路径
+    (富文本的 blockquote) **不解析块内的 markdown**, 写 ``*`` 会原样显示星号 ——
+    以前靠调用方事后把 ``*行*`` 转成 ``<i>行</i>`` 来补救, 现在在源头直接产出
+    正确的标记, 不需要转换。
 
-    ⚠️ 块内 markdown **不解析**（富文本的 blockquote 路径），所以调用方若确实需要
-    强调，只能用 HTML（``<b>`` / ``<i>``）；但作者行与正文默认不加。
+    ⚠️ **新平台一律用这个函数**, 不要自己拼 ``"> "`` 前缀 —— 手写的版本会漏掉斜体
+    等形态, 于是同一套引用块在各平台长得不一样（bgm 就是这么漂掉的）。
     """
     body = (text or "").strip()
     # 署名不加冒号 (与作者行统一 —— 用户要求「取消冒号」)
-    head = f"> {author}\n" if author else ""
+    head = f"> <i>{author}</i>\n" if author else ""
     if not body:
         return f"{head}\n" if (head and sign_only) else ""
-    lines = "\n".join(f"> {line}" if line.strip() else ">" for line in body.splitlines())
+    lines = "\n".join(f"> <i>{line}</i>" if line.strip() else ">" for line in body.splitlines())
     return f"{head}{lines}\n\n"
 
 

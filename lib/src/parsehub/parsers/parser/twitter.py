@@ -164,7 +164,7 @@ class TwitterParser(BaseParser):
             if card:
                 href = html.escape(card.url, quote=True)
                 label = html.escape(card.title)
-                return f'> <a href="{href}">{label}</a>', [ImageRef(url=card.cover_url)]
+                return f'> <i><a href="{href}">{label}</a></i>', [ImageRef(url=card.cover_url)]
         return "", []
 
     @staticmethod

@@ -41,7 +41,7 @@ from markdownify import MarkdownConverter
 
 from ..types.platform import Platform
 from ..utils import http
-from ..utils.helpers import format_author_link, profile_url, to_datetime
+from ..utils.helpers import format_author_link, format_quote_block, profile_url, to_datetime
 
 BLOG_API = "https://bgm.tv/blog/{blog_id}"
 GROUP_TOPIC_API = "https://bgm.tv/group/topic/{topic_id}"
@@ -691,22 +691,20 @@ class BangumiTopic:
     def _quote_of(floor: BangumiFloor) -> str:
         """把主楼渲染成引用块（分享楼层时当上下文用）。
 
-        **不用斜体**（用户: 「引用/回复 不是斜体」），块内也不加任何 markdown 强调 ——
-        引用块（尤其**嵌套**引用）里的 markdown 星号会字面显示（实测读到过孤立的 `"**"`）。
+        **走公共 helper ``format_quote_block``**（与其他平台同一形态：作者行在前 +
+        整块斜体）。⚠️ 别在这里手拼 ``"> "`` 前缀 —— 手写的版本会漏掉形态细节
+        （bgm 的引用块就是因为手写而漏了斜体，与其他平台不一致），
+        公共 helper 才是唯一权威。
         """
-        link = format_author_link(
+        author = format_author_link(
             floor.author_name,
             floor.author_handle,
             profile_url(Platform.BANGUMI, user_id=floor.author_handle),
         )
-        head = link
         meta = " · ".join(x for x in (floor.label, floor.published_at) if x)
-        line = f"{head} · {meta}" if head and meta else (head or meta)
-        lines = [f"> {line}".rstrip()]
-        body = floor.markdown.strip()
-        if body:
-            lines.extend(f"> {ln}" if ln.strip() else ">" for ln in body.splitlines())
-        return "\n".join(lines)
+        if author and meta:
+            author = f"{author} · {meta}"
+        return format_quote_block(floor.markdown, author)
 
     @classmethod
     def _to_text(cls, context_name: str, context_quote: str, plain: str) -> str:

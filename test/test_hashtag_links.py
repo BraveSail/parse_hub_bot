@@ -63,14 +63,11 @@ def test_a_tag_does_not_swallow_a_following_html_tag():
     实测症状（linux.do 引用块署名行 ``作者 · #1``）: 标签正则不排除 ``<`` ``>`` ``/``，
     于是 ``#1</i>`` 整段被当成标签名 —— ``</i>`` 变成链接文字、闭合标签丢失，
     后面所有 ``<i>`` 就裸露在消息里（用户报「引用里为什么有个 i 标签」）。
-
-    那处署名行现在不再用 ``<i>``（引用块不用斜体），但防护要留着 ——
-    正文里完全可能有别的 HTML 紧跟标签（``#tag</b>``）。
     """
-    out = link_hashtags("#tag</b>", platform=Platform.TWITTER)
-    assert "</b>" in out, f"闭合标签必须保留: {out!r}"
-    assert "&lt;" not in out, out
-    assert "<a href=" in out, f"标签本身仍要链接: {out!r}"
+    out = link_hashtags("> <i>SUN · #1</i>", platform=Platform.TWITTER)
+    assert "</i>" in out, f"闭合标签必须保留: {out!r}"
+    assert "&lt;/i&gt;" not in out and "&amp;lt;/i&amp;gt;" not in out, out
+    assert out.count("<i>") == out.count("</i>"), out
 
 
 def test_a_pure_number_is_not_a_tag():

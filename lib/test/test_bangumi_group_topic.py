@@ -134,15 +134,33 @@ def test_an_anchored_floor_brings_the_opening_post_as_a_quote():
     assert any("#1" in ln for ln in quoted), "引用块里的主楼没有楼层号"
 
 
-def test_the_quote_carries_no_emphasis_markup_at_all():
-    """引用块**不用斜体**（用户: 「引用/回复 不是斜体」），也不用 markdown 星号
+def test_the_quote_is_italic_like_every_other_platform():
+    """**核心**: bgm 的引用块与其他平台**同形态** —— 作者行在前、**整块斜体**。
 
-    （引用块内、尤其**嵌套**引用里的 markdown 星号会字面显示 —— 实测读到过孤立的 ``"**"``）
+    用户报「其他平台都是斜体，这个不是」。根因在这儿手拼 ``"> "`` 前缀造了轮子，
+    漏掉了斜体（公共 helper 的形态是每行 ``> <i>…</i>``）。
+
+    块内**不用 markdown 星号**：嵌套引用里会字面显示（实测读到过孤立的 ``"**"``）。
     """
     quoted = [ln for ln in _topic("4062141").markdown_content.splitlines() if ln.startswith("> ")]
-    line = next(ln for ln in quoted if "irohard" in ln)
-    assert "<i>" not in line and "**" not in line, line
-    assert all("<i>" not in ln and "**" not in ln for ln in quoted), quoted
+    assert quoted, "缺主楼引用块"
+    assert all(ln.startswith("> <i>") for ln in quoted), quoted
+    assert not any("**" in ln for ln in quoted), quoted
+
+
+def test_the_quote_comes_out_of_the_shared_helper():
+    """**自检**: 引用块必须由 ``format_quote_block`` 产出，别手拼 ``"> "`` 前缀。
+
+    手写的版本会漂（bgm 就是这样漏掉斜体、与别的平台不一致）。所以直接拿
+    公共 helper 的输出与之一行行对 —— 形态一旦分叉这个测试就红。
+    """
+    from parsehub.utils.helpers import format_quote_block
+
+    quoted = [ln for ln in _topic("4062141").markdown_content.splitlines() if ln.startswith("> ")]
+    expected = [ln for ln in format_quote_block("正文第一行", "作者行").splitlines() if ln.strip()]
+    # 同一套形态：署名行 + 正文行都是 ``> <i>…</i>``
+    for lines in (quoted, expected):
+        assert lines and all(ln.startswith("> <i>") and ln.endswith("</i>") for ln in lines), lines
 
 
 def test_an_anchored_sub_reply_can_be_selected_too():

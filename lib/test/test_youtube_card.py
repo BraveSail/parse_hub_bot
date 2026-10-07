@@ -65,7 +65,7 @@ def test_twitter_adds_card_only_when_the_cover_is_available(text, card, want_quo
     assert bool(quote) is want_quote
     assert len(media) == want_media
     if want_quote:
-        assert quote.startswith("> <a href=")
+        assert quote.startswith("> <i><a href=")
         assert LINK in quote
         assert "频道名" in quote
         assert isinstance(media[0], ImageRef)

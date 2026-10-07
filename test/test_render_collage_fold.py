@@ -152,12 +152,12 @@ def test_no_summary_means_no_fold():
 
 
 #: 长引用（超阈值）—— 卡片的文字会折, 但它的媒体不该**再**折一层
-LONG_QUOTE = "> 作者\n" + "\n".join(f"> 第 {i} 行引用内容" for i in range(1, 14))
+LONG_QUOTE = "> <i>作者</i>\n" + "\n".join(f"> 第 {i} 行引用内容" for i in range(1, 14))
 
 
 def test_a_short_quoted_card_does_not_fold_its_media():
     """短引用卡片不折（本来就没到阈值）"""
-    out = render_quote_card("> 作者\n> 引用正文", MEDIA[:8], summary="展开全文")[0]
+    out = render_quote_card("> <i>作者</i>\n> 引用正文", MEDIA[:8], summary="展开全文")[0]
     assert "<details>" not in out, out
     for i in range(8):
         assert f"m{i})" in out

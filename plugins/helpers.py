@@ -794,21 +794,11 @@ def _quote_body(quote: str) -> str:
     return "\n".join(line[1:].lstrip() if line.startswith(">") else line for line in lines)
 
 
-#: 引用块的**署名行**（``format_quote_block`` 在开头加的作者行）。
-#:
-#: 作者行是**链接开头**的整行：``<a href=…>名字</a> <code>@handle</code>``，
-#: 后面可能跟 `` · #1`` / `` · 时间`` 这类元信息。正文行不会长这样 —— 正文里的链接
-#: 是裸 URL（渲染时才 linkify）或 markdown 写法，这个阶段都还不是 ``<a href=``，
-#: 除非正文本身就是个纯链接（那种情况把它提到外面也无害）。
-#:
-#: ⚠️ 以前靠 ``<i>…</i>`` 包裹来认（引用块整块斜体）。用户要求引用**不用斜体**后
-#: 那层信号没了，改成按**结构**认：链接开头 + 只允许 handle 与元信息跟在后面。
-_QUOTE_AUTHOR_RE = re.compile(
-    r"^<a\s+href=[^>]*>.*?</a>"  # 作者名（链接）
-    r"(?:\s*<code>[^<]*</code>)?"  # ``@handle``（等宽）
-    r"(?:\s*·[^<]*)?$",  # 可选元信息（楼层号 / 时间）
-    re.S,
-)
+#: 引用块的**署名行**（``format_quote_block`` 在开头加的作者行）:
+#: 整行是 ``<i>…</i>`` 且行内含链接（引用块整块斜体，这一行也是）。
+#: 正文行不会长这样（正文是 ``<i>文字</i>``，除非它本身就是个纯链接 ——
+#: 那种情况把它提到外面也无害）。
+_QUOTE_AUTHOR_RE = re.compile(r"^<i>.*?<a\s+href=.*?</i>$", re.S)
 
 
 def _split_quote_author(body: str) -> tuple[str, str]:
@@ -1190,7 +1180,7 @@ def _strip_quote_markers(block: str) -> str:
     """去掉引用块每行行首的 '>', 并中和块内文本自己的 markdown 定界符。
 
     中和是为了防止引用内容里的 ``*`` ``_`` 被 markdown 阶段误当定界符吃掉;
-    强调标记由 ``parsehub`` 在**源头**产出（引用块默认不加强调）,
+    斜体标记本身由 ``parsehub`` 的 ``format_quote_block`` 直接产出 ``<i>``,
     这里没有"把 ``*`` 转成 ``<i>``"这一步。
     """
     lines = block.rstrip("\n").split("\n")

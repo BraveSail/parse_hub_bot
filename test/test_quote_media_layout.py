@@ -39,11 +39,11 @@ def _result(**kw):
 
 def test_split_takes_both_ends():
     head, middle, tail = split_quote_blocks(
-        "> 回复的作者\n> 回复内容\n\n正文\n\n> 引用的作者\n> 引用内容"
+        "> <i>回复的作者</i>\n> <i>回复内容</i>\n\n正文\n\n> <i>引用的作者</i>\n> <i>引用内容</i>"
     )
-    assert head == "> 回复的作者\n> 回复内容"
+    assert head == "> <i>回复的作者</i>\n> <i>回复内容</i>"
     assert middle == "正文"
-    assert tail == "> 引用的作者\n> 引用内容"
+    assert tail == "> <i>引用的作者</i>\n> <i>引用内容</i>"
 
 
 def test_split_without_quotes():
@@ -52,24 +52,24 @@ def test_split_without_quotes():
 
 
 def test_split_only_trailing():
-    head, middle, tail = split_quote_blocks("正文\n\n> 引用内容")
+    head, middle, tail = split_quote_blocks("正文\n\n> <i>引用内容</i>")
     assert head == ""
     assert middle == "正文"
-    assert tail == "> 引用内容"
+    assert tail == "> <i>引用内容</i>"
 
 
 def test_split_single_quote_block_is_treated_as_the_trailing_one():
     """只有一块引用时归为末尾块 (它本来就在最后), 不能判成"开头块 + 空正文"而丢内容"""
-    head, middle, tail = split_quote_blocks("> 只有引用")
+    head, middle, tail = split_quote_blocks("> <i>只有引用</i>")
     assert head == ""
     assert middle == ""
-    assert tail == "> 只有引用"
+    assert tail == "> <i>只有引用</i>"
 
 
 def test_reply_media_never_dropped_when_the_block_is_ambiguous():
     """只有一块引用时, 回复媒体要落到那块里 —— 绝不能凭空消失"""
     md = build_rich_markdown(
-        _result(content="> 只有引用"),
+        _result(content="> <i>只有引用</i>"),
         config=_Cfg(),
         lang="zh-hans",
         reply_media_placeholders=["![](tg://photo?id=reply)"],
@@ -91,24 +91,24 @@ def test_body_media_never_dropped_without_any_quote_block():
 # ── attach_quote_media ──────────────────────────────────────────────────
 
 def test_attach_adds_the_quote_prefix():
-    out = attach_quote_media("> 引用文字", ["![](tg://photo?id=m0)"])
-    assert out == "> 引用文字\n> ![](tg://photo?id=m0)"
+    out = attach_quote_media("> <i>引用文字</i>", ["![](tg://photo?id=m0)"])
+    assert out == "> <i>引用文字</i>\n> ![](tg://photo?id=m0)"
 
 
 def test_attach_wraps_multiple_in_a_collage():
-    out = attach_quote_media("> 引用文字", ["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"])
+    out = attach_quote_media("> <i>引用文字</i>", ["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"])
     assert "> <tg-collage>" in out
     assert "> ![](tg://photo?id=m0)" in out
     assert "> ![](tg://photo?id=m1)" in out
 
 
 def test_attach_without_media_is_identity():
-    assert attach_quote_media("> 引用文字", []) == "> 引用文字"
+    assert attach_quote_media("> <i>引用文字</i>", []) == "> <i>引用文字</i>"
 
 
 def test_attach_keeps_every_line_inside_the_block():
     """每行都要带 > , 否则会被踢出引用块"""
-    out = attach_quote_media("> 引用文字", ["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"])
+    out = attach_quote_media("> <i>引用文字</i>", ["![](tg://photo?id=m0)", "![](tg://photo?id=m1)"])
     assert all(line.startswith(">") for line in out.split("\n") if line.strip())
 
 
@@ -121,7 +121,7 @@ def test_quoted_media_falls_back_to_the_leading_quote_block():
     这时 split_quote_blocks 把它归到 reply_quote, quote 为空 —— 媒体的归属块
     为空就会被 render_quote_card 丢弃 (症状: 主楼的图不见了)。
     """
-    content = "> @楼主 · #1\n\n本层正文"
+    content = "> <i>@楼主 · #1</i>\n\n本层正文"
     md = build_rich_markdown(
         _result(content=content),
         config=_Cfg(),
@@ -146,7 +146,7 @@ def test_quoted_media_falls_back_to_the_body_when_no_quote_block_at_all():
 
 def test_quoted_media_stays_in_the_trailing_block_when_it_exists():
     """末尾引用块存在时不做兜底 (回归)"""
-    content = "正文\n\n> @被引用者\n> 引用内容"
+    content = "正文\n\n> <i>@被引用者</i>\n> <i>引用内容</i>"
     md = build_rich_markdown(
         _result(content=content),
         config=_Cfg(),
@@ -157,7 +157,7 @@ def test_quoted_media_stays_in_the_trailing_block_when_it_exists():
 
 
 def test_reply_and_quoted_media_land_in_their_blocks():
-    content = "> 回复者 @a\n> 被回复的话\n\n正文内容\n\n> 引用者 @b\n> 被引用的话"
+    content = "> <i>回复者 @a</i>\n> <i>被回复的话</i>\n\n正文内容\n\n> <i>引用者 @b</i>\n> <i>被引用的话</i>"
     md = build_rich_markdown(
         _result(content=content),
         config=_Cfg(),
@@ -173,18 +173,18 @@ def test_reply_and_quoted_media_land_in_their_blocks():
     # 回复块(含其媒体) → 正文媒体 → 引用块(含其媒体)
     assert i_reply_media < i_body_media < i_quoted_media
     # 三个块各自的位置也要对
-    assert lines.index("> 被回复的话") < i_reply_media
+    assert lines.index("> <i>被回复的话</i>") < i_reply_media
     assert lines.index("正文内容") < i_body_media
-    assert lines.index("> 被引用的话") < i_quoted_media
+    assert lines.index("> <i>被引用的话</i>") < i_quoted_media
 
 
 def test_no_reply_media_keeps_the_body_where_it_was():
     """没有引用媒体时排版不该变 (回归)"""
     md = build_rich_markdown(
-        _result(content="正文\n\n> 引用"),
+        _result(content="正文\n\n> <i>引用</i>"),
         config=_Cfg(),
         lang="zh-hans",
         media_placeholders=["![](tg://photo?id=body)"],
     )
     lines = [line for line in md.split("\n") if line.strip()]
-    assert lines.index("正文") < lines.index("![](tg://photo?id=body)") < lines.index("> 引用")
+    assert lines.index("正文") < lines.index("![](tg://photo?id=body)") < lines.index("> <i>引用</i>")
