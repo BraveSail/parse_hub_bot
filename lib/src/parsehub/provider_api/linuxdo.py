@@ -28,6 +28,9 @@ from ..utils import http
 from ..utils.helpers import format_author_link, format_quote_block, profile_url, to_int
 
 TOPIC_API = "https://linux.do/t/topic/{topic_id}.json"
+#: 按 post id **精确**取指定楼层 —— 体积比楼层窗口小一个数量级 (实测单层 4.5KB vs 窗口 54KB)
+POSTS_API = "https://linux.do/t/{topic_id}/posts.json?post_ids[]={post_id}"
+
 #: 带楼层号: Discourse 返回以该楼层为中心的窗口
 FLOOR_API = "https://linux.do/t/{topic_id}/{post_number}.json"
 
@@ -147,6 +150,56 @@ class LinuxDoTopic:
                 missing.append(floor)
         return missing
 
+    @staticmethod
+    def _post_id_for_floor(payload: dict[str, Any], floor: int) -> int | None:
+        """楼层号 → post id (话题的 ``post_stream.stream`` 就是**所有可见层的 id 列表**, 有序)。
+
+        拿得到 id 就能按 id **精确**取那一层 (``POSTS_API``), 体积比楼层窗口小一个数量级
+        (实测单层 4.5KB vs 窗口 53.6KB)。位置可能有偏差 (话题里删过层时 stream 会变短),
+        所以调用方**必须校验取回来的 ``post_number``**。
+        """
+        stream = (payload.get("post_stream") or {}).get("stream") or []
+        if 1 <= floor <= len(stream):
+            return stream[floor - 1]
+        return None
+
+    @classmethod
+    async def _fetch_floor(
+        cls, client: Any, payload: dict[str, Any], topic_id: str, floor: int
+    ) -> list[dict[str, Any]]:
+        """取**某一层**的 posts: 先按 id 精确取, 校验不过再取那一层的窗口。
+
+        两级都是同一份数据的不同取法:
+
+        - ``posts.json?post_ids[]=<id>`` —— 只回那一层 (实测 4.5KB), 前提是 id 猜对;
+        - ``/<floor>.json`` —— 那一层自己的窗口 (实测 53.6KB), **必含它自己**, 兜底。
+        """
+        post_id = cls._post_id_for_floor(payload, floor)
+        if post_id is not None:
+            # 便宜那条路整个包住: 请求本身炸了也要能落到窗口兜底, 不能让这一层直接丢
+            try:
+                response = await client.get(
+                    POSTS_API.format(topic_id=topic_id, post_id=post_id),
+                    headers={"Accept": "application/json"},
+                )
+                if response.status_code == 200:
+                    posts = (response.json().get("post_stream") or {}).get("posts") or []
+                    # 校验楼层号: stream 的位置在话题删过层时会漂, 取错了必须换路子
+                    if any(p.get("post_number") == floor for p in posts):
+                        return posts
+                    logger.debug(f"linux.do 按 id 取第 {floor} 楼取错了, 改取该层窗口")
+                else:
+                    logger.debug(f"linux.do 按 id 取第 {floor} 楼返回 {response.status_code}, 改取该层窗口")
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"linux.do 按 id 取第 {floor} 楼失败, 改取该层窗口: {e}")
+
+        response = await client.get(
+            FLOOR_API.format(topic_id=topic_id, post_number=floor),
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        return (response.json().get("post_stream") or {}).get("posts") or []
+
     @classmethod
     async def _with_context_floors(
         cls,
@@ -160,17 +213,15 @@ class LinuxDoTopic:
         """把窗口外的上下文层取回来并合进 ``payload`` 的帖子流。
 
         **只在缺的时候请求** —— 窗口里已有主楼时 (target ≤ 6) 零额外请求, 行为与以前完全一致。
+        缺几层就几次请求 (最多两次: 主楼 + 被回复的层)。
 
-        取法分两级 (从省到贵):
+        ⚠️ **不要用 ``?print=true`` 取全帖**: 那个参数确实能把 chunk_size 从 20 提到 1000
+        (``TopicView.print_chunk_size``), 一次就能拿到全帖 —— 但它是**打印视图端点, 服务端挂了
+        限流** (``max_prints_per_hour_per_user``): 实测连打 6 次后第 7 次起返回
+        ``422 {"errors":["You've performed this action too many times, please try again later."]}``。
+        拿它当常规路径 = 迟早整条解析没有上下文。
 
-        1. **``?print=true`` 一次拿全** —— Discourse 的 ``print_chunk_size`` 是 1000 (普通请求是
-           20, 见 ``lib/topic_view.rb``), 所以这一次请求就带回**所有**楼层, 缺几层都够。
-           实测同一话题: 默认 ``/24.json`` 给 ``19..38``, 加 ``print=true`` 给 ``1..49``。
-        2. **逐层补取兜底** —— print 拿不到的场合: 超过 1000 层的巨型话题、站点关掉了 print
-           (``max_prints_per_hour_per_user`` 为 0 时服务端直接拒)、或被限流。
-           那一级是每个缺层各请求一次 (请求的是那一层自己的窗口, 必含它自己)。
-
-        用与主请求相同的条件 (proxy / cookie); 任何一级失败都**只记 warning** ——
+        用与主请求相同的条件 (proxy / cookie); 取不到只**记 warning** ——
         少一个上下文块, 总好过整条打不开。
         """
         stream = payload.get("post_stream") or {}
@@ -182,31 +233,10 @@ class LinuxDoTopic:
         if not missing:
             return payload
 
-        target = FLOOR_API.format(topic_id=topic_id, post_number=wanted)
-
         async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
-            # ① 首选: print=true 一次拿全 (chunk_size 1000)
-            try:
-                response = await client.get(
-                    f"{target}?print=true", headers={"Accept": "application/json"}
-                )
-                if response.status_code == 200:
-                    posts.extend((response.json().get("post_stream") or {}).get("posts") or [])
-                else:
-                    logger.warning(f"linux.do print 取全帖返回 {response.status_code}, 改为逐层补取")
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"linux.do print 取全帖失败, 改为逐层补取: {e}")
-
-            # ② 兜底: 还缺的那些逐层补
-            got = {p.get("post_number") for p in posts}
-            for floor in (f for f in missing if f not in got):
+            for floor in missing:
                 try:
-                    extra = await client.get(
-                        FLOOR_API.format(topic_id=topic_id, post_number=floor),
-                        headers={"Accept": "application/json"},
-                    )
-                    extra.raise_for_status()
-                    posts.extend((extra.json().get("post_stream") or {}).get("posts") or [])
+                    posts.extend(await cls._fetch_floor(client, payload, topic_id, floor))
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"linux.do 补取第 {floor} 楼失败, 该层上下文将缺失: {e}")
 
