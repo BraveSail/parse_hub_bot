@@ -296,6 +296,20 @@ class _BgMarkdownConverter(MarkdownConverter):
             return text or ""
         return f'<a href="{html.escape(href, quote=True)}">{text}</a>'
 
+    def convert_strong(self, el: Any, text: str, parent_tags: Any) -> str:
+        """粗体一律写 HTML ``<b>``。
+
+        ⚠️ 默认的 markdown ``**`` 在**引用块内不解析**（会字面显示星号）。bgm 自己就会
+        在楼中楼里插「某人 说: …」的嵌套引用（原文是 ``<strong>``），那条也在引用块里 ——
+        实测读回的服务端块内容是 ``[ "**", {RichTextUrl…} ]``，星号成了正文。
+        HTML 写法在段落与引用块内都生效。
+        """
+        return f"<b>{text}</b>" if text else ""
+
+    def convert_em(self, el: Any, text: str, parent_tags: Any) -> str:
+        """斜体同上（``<i>``）—— 与 linux.do 引用块的作者行同一写法（已验证）。"""
+        return f"<i>{text}</i>" if text else ""
+
     def convert_u(self, el: Any, text: str, parent_tags: Any) -> str:
         """下划线：markdown 没有这个语法（markdownify 会**整段丢掉** `<u>`）——
         富文本认 ``<u>``（真机实测回来是 RichTextUnderline），所以原样留着。
@@ -307,16 +321,21 @@ class _BgMarkdownConverter(MarkdownConverter):
         return f"<s>{text}</s>" if text else ""
 
 
-def _bold_author(label: str) -> str:
-    """把作者名包成粗体（**只包名字**，不含 ``@handle`` 那一段）。
+def _author_markup(label: str, *, tag: str, bold_only_name: bool = False) -> str:
+    """给作者行加**强调**标记。
 
-    与 bot 侧 ``format_author_line`` 同一形态 —— 所有平台的作者行都长这样，
-    主楼那行由渲染层做，楼层这行在 provider 里做，两处得一致。
+    - ``bold_only_name=True`` → 用 markdown ``**`` 且**只包名字**（与 bot 侧
+      ``format_author_line`` 同一形态：整行包起来会让 ``@handle`` 也继承粗体）
+    - 否则 → 用 HTML 标签包整行（引用块内 markdown 不解析，只能走 HTML）
     """
-    if "</a>" not in label:
-        return f"**{label}**" if label else ""
-    head, _, tail = label.partition("</a>")
-    return f"**{head}</a>**{tail}"
+    if not label:
+        return ""
+    if bold_only_name:
+        if "</a>" not in label:
+            return f"**{label}**"
+        head, _, tail = label.partition("</a>")
+        return f"**{head}</a>**{tail}"
+    return f"<{tag}>{label}</{tag}>"
 
 
 def _absolute_url(url: Any) -> str:
@@ -588,23 +607,34 @@ class BangumiGroupTopic:
 
     @classmethod
     def _floor_markdown(cls, floor: BangumiFloor) -> str:
-        head = _bold_author(
-            format_author_link(
-                floor.author_name,
-                floor.author_handle,
-                profile_url(Platform.BANGUMI, user_id=floor.author_handle),
-            )
+        link = format_author_link(
+            floor.author_name,
+            floor.author_handle,
+            profile_url(Platform.BANGUMI, user_id=floor.author_handle),
         )
         meta = " · ".join(x for x in (floor.label, floor.published_at) if x)
-        line = f"{head} · {meta}" if meta else head
-        body = floor.markdown.strip()
+
         if floor.is_sub:
-            # 楼中楼：引用块表达层级（与 linux.do 的处理一致）
-            lines = [f"> {line}"]
+            # 楼中楼：引用块表达层级（与 linux.do 的处理一致）。
+            # ⚠️ **引用块内 markdown 不解析** —— 写 `**粗体**` 会**字面显示两个星号**
+            # （实测块内容里出现孤立的 `"**"`）。所以这里用 HTML `<i>`，
+            # 与 linux.do 引用块的作者行同一写法（那条路已验证生效）。
+            line = _author_markup(link, tag="i")
+            head = f"{line} · {meta}" if meta else line
+            lines = [f"> {head}"]
+            body = floor.markdown.strip()
             if body:
                 lines.extend(f"> {ln}" if ln.strip() else ">" for ln in body.splitlines())
             return "\n".join(lines)
-        return f"{line}\n\n{body}" if body else line
+
+        # 一级楼层在普通段落里，markdown 生效，用粗体（只包名字）
+        line = _author_markup(link, tag="strong", bold_only_name=True)
+        head = f"{line} · {meta}" if meta else line
+        body = floor.markdown.strip()
+        if not body:
+            return head
+        # 楼层头与正文分两段，读起来才分得清谁说的
+        return f"{head}\n\n{body}"
 
     @classmethod
     def _to_text(cls, group_name: str, body: str, floors: list[BangumiFloor]) -> str:

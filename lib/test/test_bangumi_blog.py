@@ -156,16 +156,20 @@ def test_underline_and_strikethrough_are_kept():
 
 
 def test_bold_and_italic_are_plain_tags():
-    """``[b]``→``<strong>``、``[i]``→``<em>``（标准标签，直接转成 markdown）"""
+    """``[b]``→``<strong>``、``[i]``→``<em>``，但我们**输出 HTML** ``<b>``/``<i>``。
+
+    用 markdown 的 ``**`` 在**引用块内不解析**（会字面显示星号）—— bgm 自己就会在楼中楼里
+    插粗体的「某人 说:」（见 ``test_bangumi_group_topic.py``）。HTML 写法两处都生效。
+    """
     blog = _parse("<strong>粗</strong>和<em>斜</em>")
-    assert "**粗**" in blog.markdown_content
-    assert "*斜*" in blog.markdown_content
+    assert "<b>粗</b>" in blog.markdown_content
+    assert "<i>斜</i>" in blog.markdown_content
 
 
 def test_a_font_weight_span_is_also_bold():
     """编辑器会出 ``<span style="font-weight:bold;">``（指南里没有，但真实日志里有）"""
     blog = _parse('<span style="font-weight:bold;">粗体</span>')
-    assert "**粗体**" in blog.markdown_content
+    assert "<b>粗体</b>" in blog.markdown_content
 
 
 def test_color_and_size_keep_the_text_and_drop_the_style():

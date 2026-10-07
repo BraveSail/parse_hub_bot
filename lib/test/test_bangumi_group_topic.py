@@ -187,6 +187,41 @@ def test_a_sub_reply_is_rendered_as_a_quote_block():
     assert any(ln.startswith("> ") and "经常看到你在新番里评论" in ln for ln in lines[sub_at : sub_at + 6])
 
 
+def test_a_sub_reply_head_uses_html_not_markdown_asterisks():
+    """**核心**: 引用块**内 markdown 不解析** —— 楼中楼作者行写字面 ``**`` 会原样显示两个星号。
+
+    实测（读回服务端块）: 楼中楼的段落内容是 ``[ "**", {RichTextUrl…} ]`` —— 星号成了正文。
+    所以引用块内一律用 HTML（这里 ``<i>``，与 linux.do 引用块的作者行同一写法）。
+    """
+    topic = _topic()
+    lines = topic.markdown_content.splitlines()
+    sub_line = next(ln for ln in lines if ln.startswith("> ") and "#2-1" in ln)
+    assert "<i>" in sub_line, sub_line
+    assert "**" not in sub_line, f"引用块里的作者行不能带 markdown 星号: {sub_line}"
+
+
+def test_the_whole_quote_block_carries_no_literal_asterisks():
+    """整条楼中楼（含正文）都不该出现字面 ``**`` —— 它们在引用块里不会被解析。
+
+    bgm 自己会在楼中楼里插「某人 说: …」的嵌套引用（原文是 ``<strong>``）——
+    那一条也会变成字面星号，所以粗体得走 HTML（``<b>``）。
+    """
+    topic = _topic()
+    quoted = [ln for ln in topic.markdown_content.splitlines() if ln.startswith(">")]
+    assert quoted, "fixture 里应该有楼中楼"
+    bad = [ln for ln in quoted if "**" in ln]
+    assert not bad, bad
+
+
+def test_a_top_level_reply_head_keeps_markdown_bold():
+    """一级楼层在普通段落里，markdown 生效 —— 保持粗体（与其它平台的作者行一致）"""
+    topic = _topic()
+    lines = topic.markdown_content.splitlines()
+    top_line = next(ln for ln in lines if "· #2 ·" in ln and not ln.startswith(">"))
+    assert top_line.startswith("**<a href="), top_line
+    assert top_line.count("**") == 2, "粗体只该包名字"
+
+
 def test_a_top_level_reply_is_not_a_quote_block():
     """一级回复不是引用块（只有楼中楼才是）"""
     topic = _topic()
