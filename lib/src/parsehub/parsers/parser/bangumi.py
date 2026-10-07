@@ -10,7 +10,7 @@
 条目页（``/subject/<id>``）与小组首页（``/group/<slug>``）都不走这里。
 """
 
-from ...provider_api.bangumi import BangumiBlog, BangumiError, BangumiGroupTopic
+from ...provider_api.bangumi import BangumiBlog, BangumiError, BangumiTopic
 from ...types import ImageRef, ParseError, Platform, RichTextParseResult
 from ...utils.helpers import profile_url
 from ..base.base import BaseParser
@@ -27,14 +27,15 @@ class BangumiParseResult(RichTextParseResult):
 class BangumiParser(BaseParser):
     __platform__ = Platform.BANGUMI
     __supported_type__ = ["图文"]
-    # 锚定 ``blog/<数字>`` 与 ``group/topic/<数字>``：bgm.tv 与 bangumi.tv 两个域名都有人用。
-    # **不接** ``/subject/<id>``（官方 API 覆盖）与 ``/group/<slug>``（小组首页，不是话题）。
-    __match__ = r"^(http(s)?://)?(bgm|bangumi)\.tv/(blog/\d+|group/topic/\d+)"
+    # 锚定 ``blog/<数字>``、``group/topic/<数字>``、``subject/topic/<数字>``：
+    # bgm.tv 与 bangumi.tv 两个域名都有人用。
+    # **不接** ``/subject/<id>``（条目页本身，官方 API 覆盖）与 ``/group/<slug>``（小组首页）。
+    __match__ = r"^(http(s)?://)?(bgm|bangumi)\.tv/(blog/\d+|(group|subject)/topic/\d+)"
 
     async def _do_parse(self, raw_url: str) -> "BangumiParseResult":
         try:
-            if "/group/topic/" in raw_url:
-                return await self._parse_group_topic(raw_url)
+            if "/topic/" in raw_url:
+                return await self._parse_topic(raw_url)
             return await self._parse_blog(raw_url)
         except BangumiError as e:
             raise ParseError(str(e)) from e
@@ -62,8 +63,13 @@ class BangumiParser(BaseParser):
             tags=blog.tags,
         )
 
-    async def _parse_group_topic(self, raw_url: str) -> "BangumiParseResult":
-        topic = await BangumiGroupTopic.parse(
+    async def _parse_topic(self, raw_url: str) -> "BangumiParseResult":
+        """小组话题 / 条目讨论版 —— **只发一层**（分享的楼层，或主楼）。
+
+        分享楼层时主楼会作为引用块带上（见 provider 的 ``_quote_of``），
+        它的图片走 ``quoted_media_count`` 那个通道进引用块内部。
+        """
+        topic = await BangumiTopic.parse(
             raw_url,
             proxy=self.proxy,
             cookie=self.cookie.get_value() if self.cookie else None,
@@ -76,8 +82,9 @@ class BangumiParser(BaseParser):
             author_handle=topic.author_handle,
             author_url=profile_url(Platform.BANGUMI, user_id=topic.author_handle),
             published_at=topic.published_at,
-            # 主楼就是第 1 层 —— 用通用的位置标记标出来（各平台同一机制）
-            position_label="#1" if topic.author_handle else "",
+            quoted_media_count=topic.quoted_media_count,
+            # 本层的楼层号（主楼是 ``#1``）—— 通用位置标记机制
+            position_label=topic.floor_label,
         )
 
 

@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from bs4 import BeautifulSoup
+from loguru import logger
 from markdownify import MarkdownConverter
 
 from ..types.platform import Platform
@@ -43,10 +44,9 @@ from ..utils.helpers import format_author_link, profile_url
 
 BLOG_API = "https://bgm.tv/blog/{blog_id}"
 GROUP_TOPIC_API = "https://bgm.tv/group/topic/{topic_id}"
-
-#: 楼层太多时只取前 N 层 —— 几百层的长帖整篇塞进一条消息没有意义，
-#: 而且真的会撞到消息体积上限。截断时在文末注明还剩多少层。
-MAX_FLOORS = 60
+#: 条目讨论版（``/subject/topic/<id>``）—— **楼层结构与小组话题完全同构**，
+#: 只有头部不同（归属是条目而不是小组，标题是页面上**第二个** ``h1``）
+SUBJECT_TOPIC_API = "https://bgm.tv/subject/topic/{topic_id}"
 
 #: 内容不存在时页面**仍然返回 HTTP 200**（不是 404），正文写「呜咕，出错了 数据库中没有…」
 #: ⇒ 判据只能是「没有正文容器」，不能看状态码。
@@ -323,22 +323,6 @@ class _BgMarkdownConverter(MarkdownConverter):
         return f"<s>{text}</s>" if text else ""
 
 
-def _author_markup(label: str, *, tag: str, bold_only_name: bool = False) -> str:
-    """给作者行加**强调**标记。
-
-    - ``bold_only_name=True`` → 用 markdown ``**`` 且**只包名字**（与 bot 侧
-      ``format_author_line`` 同一形态：整行包起来会让 ``@handle`` 也继承粗体）
-    - 否则 → 用 HTML 标签包整行（引用块内 markdown 不解析，只能走 HTML）
-    """
-    if not label:
-        return ""
-    if bold_only_name:
-        if "</a>" not in label:
-            return f"**{label}**"
-        head, _, tail = label.partition("</a>")
-        return f"**{head}</a>**{tail}"
-    return f"<{tag}>{label}</{tag}>"
-
 
 def _absolute_url(url: Any) -> str:
     """bgm 的图片是**协议相对**的（``//lain.bgm.tv/…``）—— 不补 https 会被当站内路径。"""
@@ -358,10 +342,12 @@ _FLOOR_BODY_SELECTOR = ".topic_content, .reply_content, .cmt_sub_content"
 
 @dataclass
 class BangumiFloor:
-    """小组话题里的一层（含楼中楼）。"""
+    """话题里的一层（含楼中楼）。"""
 
+    dom_id: str = ""
+    """节点的 ``id``（``post_<数字>`` 后面那串数字）—— URL 锚点用的就是它"""
     label: str = ""
-    """楼层号，如 ``#2`` / ``#2-1``（bgm 自己的编号，楼中楼带 ``-``）"""
+    """楼层号，如 ``#2`` / ``#2-1``（bgm 自己的编号，楼中楼带 ``-``；与 dom_id 无关）"""
     author_name: str = ""
     author_handle: str = ""
     published_at: str = ""
@@ -370,29 +356,57 @@ class BangumiFloor:
     """纯文本形态（纯图话题走 text_content 那条路要用）"""
     is_sub: bool = False
     """楼中楼（回复某个楼层，而不是回复主楼）"""
+    image_urls: list[str] = field(default_factory=list)
+    """这一层自己的图片（用来切分引用块媒体）"""
 
 
 @dataclass
-class BangumiGroupTopic:
-    """一个小组话题（主楼 + 楼层）。"""
+class BangumiTopic:
+    """bgm 的讨论话题（小组话题 ``/group/topic`` 或条目讨论版 ``/subject/topic``）。
+
+    **只发一层**（与 linux.do 的楼层处理同一形态）：
+
+    - 链接不带楼层锚点 → 发**主楼**
+    - 链接带 ``#post_<id>`` 锚点 → 发**那一层**，并把主楼做成引用块当上下文
+      （那一层常常是在回应主楼）
+
+    以前是把主楼 + 全部楼层铺出来，长帖（45 层）整篇塞满消息 —— 用户要求改成只发一层。
+    """
 
     topic_id: str = ""
     title: str = ""
-    group_name: str = ""
-    group_url: str = ""
     markdown_content: str = ""
     text_content: str = ""
     author_name: str = ""
+    """**本层**的作者（不是楼主 —— 楼主是主题的创建者，楼层可能不是他）"""
     author_handle: str = ""
     published_at: str = ""
     images: list[BangumiImage] = field(default_factory=list)
+    #: ``images`` 末尾有多少张属于**引用块**（主楼）——
+    #: bot 侧据此把它们放进引用块内部（与 linux.do 同一机制）
+    quoted_media_count: int = 0
+    floor_label: str = ""
+    """本层的楼层号（``#1`` / ``#5`` / ``#2-1``）"""
+    is_opening: bool = False
+    """本层是不是主楼（主楼不给自己做引用块）"""
+    context_name: str = ""
+    """归属名：小组话题是小组名，条目讨论版是条目名"""
+    context_url: str = ""
     floors: list[BangumiFloor] = field(default_factory=list)
-    total_floors: int = 0
-    """页面上的楼层总数（含被截断的）"""
+    """解析出来的楼层（仅供核对/测试，**不再渲染**）"""
 
     @staticmethod
     def get_id_by_url(url: str) -> str:
-        match = re.search(r"/group/topic/(\d+)", url)
+        match = re.search(r"/(?:group|subject)/topic/(\d+)", url)
+        return match.group(1) if match else ""
+
+    @staticmethod
+    def get_floor_id_by_url(url: str) -> str:
+        """URL 锚点里的楼层 id（``…#post_4062141`` → ``4062141``）；没有则空串。
+
+        bgm 的楼层锚点就是楼层节点的 ``id``，所以拿到它就能定位那一层。
+        """
+        match = re.search(r"#post_(\d+)", url or "")
         return match.group(1) if match else ""
 
     @classmethod
@@ -401,24 +415,25 @@ class BangumiGroupTopic:
         url: str,
         proxy: str | None = None,
         cookie: dict[str, str] | None = None,
-    ) -> BangumiGroupTopic:
+    ) -> BangumiTopic:
         topic_id = cls.get_id_by_url(url)
         if not topic_id:
-            raise BangumiError(f"链接里没有小组话题 id: {url}")
-        api = GROUP_TOPIC_API.format(topic_id=topic_id)
+            raise BangumiError(f"链接里没有话题 id: {url}")
+        template = SUBJECT_TOPIC_API if "/subject/topic/" in url else GROUP_TOPIC_API
+        api = template.format(topic_id=topic_id)
         try:
             async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
                 response = await client.get(api)
         except http.HTTPError as e:
             raise BangumiError(f"请求 bgm.tv 失败: {e}") from e
         if response.status_code == 404:
-            raise BangumiError(f"小组话题 {topic_id} 不存在")
+            raise BangumiError(f"话题 {topic_id} 不存在")
         response.raise_for_status()
         html = response.content.decode("utf-8", errors="replace")
-        return cls._from_html(html, topic_id)
+        return cls._from_html(html, topic_id, floor_id=cls.get_floor_id_by_url(url))
 
     @classmethod
-    def _from_html(cls, html: str, topic_id: str) -> BangumiGroupTopic:
+    def _from_html(cls, html: str, topic_id: str, *, floor_id: str = "") -> BangumiTopic:
         soup = BeautifulSoup(html, "lxml")
 
         main_post = soup.select_one(".postTopic")
@@ -427,7 +442,7 @@ class BangumiGroupTopic:
                 raise BangumiError(f"小组话题 {topic_id} 不存在或不可见")
             raise BangumiError(f"小组话题 {topic_id} 页面结构不认识（bgm.tv 可能改版了）")
 
-        title, group_name, group_url = cls._parse_header(soup)
+        title, context_name, context_url = cls._parse_header(soup)
 
         # ⚠️ **图片先抽**：解析楼层时会 `decompose()` 掉嵌在父楼正文里的楼中楼节点，
         # 那之后楼中楼里的图就找不到了（它们在树上已经不存在）。
@@ -440,58 +455,118 @@ class BangumiGroupTopic:
                     images.append(img)
 
         all_floors = cls._collect_floors(soup, main_post)
-        # 主楼（#1）单独拿出来当正文，其余作为楼层
-        main_floor = next((f for f in all_floors if f.label == "#1"), None)
-        if main_floor is None and all_floors:
-            main_floor = all_floors[0]
-        floors = [f for f in all_floors if f is not main_floor]
+        opening = next((f for f in all_floors if f.label == "#1"), None)
+        if opening is None and all_floors:
+            opening = all_floors[0]
 
-        author_name = main_floor.author_name if main_floor else ""
-        author_handle = main_floor.author_handle if main_floor else ""
-        published_at = main_floor.published_at if main_floor else ""
-        body_markdown = main_floor.markdown if main_floor else ""
-        body_text = main_floor.plain if main_floor else ""
+        # **只发一层**：锚点指定的那层，没有锚点就是主楼
+        current = cls._pick_floor(all_floors, opening, floor_id)
+        return cls._build(topic_id, title, context_name, context_url, opening, current, all_floors, images)
 
-        markdown_content = cls._compose(group_name, group_url, len(all_floors), body_markdown, floors)
-        text_content = cls._to_text(group_name, body_text, floors)
+    @staticmethod
+    def _pick_floor(floors: list[BangumiFloor], opening: BangumiFloor | None, floor_id: str) -> BangumiFloor | None:
+        """选要发的那一层。
 
-        return cls(
+        锚点指向的节点就是楼层节点（``id="post_<数字>"``）—— 楼层解析时把 ``node.get("id")``
+        记进了 ``floor.dom_id``，所以这里按 id 找，**不按楼层号**（楼中楼的 ``#2-1``
+        是 bgm 自己编的，与节点 id 无关）。
+
+        锚点找不到（楼层被删 / 链接手改过）时**退回主楼** —— 宁可少一层上下文，
+        也不能因为一个坏锚点整条解析失败。
+        """
+        if floor_id:
+            for floor in floors:
+                if floor.dom_id == floor_id:
+                    return floor
+            logger.warning(f"链接锚点 #post_{floor_id} 在页面上不存在, 改为发送主楼")
+        return opening
+
+    @classmethod
+    def _build(
+        cls,
+        topic_id: str,
+        title: str,
+        context_name: str,
+        context_url: str,
+        opening: BangumiFloor | None,
+        current: BangumiFloor | None,
+        all_floors: list[BangumiFloor],
+        images: list[BangumiImage],
+    ) -> BangumiTopic:
+        """组装结果：本层正文（+ 不是主楼时把主楼做成引用块，与 linux.do 同一形态）。"""
+        is_opening = current is opening
+        body = current.markdown if current else ""
+        plain = current.plain if current else ""
+
+        context_quote = ""
+        quoted_media = 0
+        if not is_opening and opening is not None:
+            context_quote = cls._quote_of(opening)
+            # 主楼的图走**引用块媒体**通道 —— 而那个通道的约定是「**末尾** N 张属于引用块」
+            # （见 ParseResult.quoted_media_count）。图片是按 DOM 顺序抽的，主楼在最前面，
+            # 所以这里要**重排**：本层的图在前、主楼的图挪到末尾。
+            context_urls = set(opening.image_urls)
+            images = [i for i in images if i.url not in context_urls] + [
+                i for i in images if i.url in context_urls
+            ]
+            quoted_media = len([i for i in images if i.url in context_urls])
+
+        markdown_content = cls._compose(context_name, context_url, context_quote, body)
+        text_content = cls._to_text(context_name, context_quote, plain)
+
+        return BangumiTopic(
             topic_id=topic_id,
             title=title,
-            group_name=group_name,
-            group_url=group_url,
             markdown_content=markdown_content,
             text_content=text_content,
-            author_name=author_name,
-            author_handle=author_handle,
-            published_at=published_at,
+            author_name=current.author_name if current else "",
+            author_handle=current.author_handle if current else "",
+            published_at=current.published_at if current else "",
             images=images,
-            floors=floors,
-            total_floors=len(all_floors),
+            quoted_media_count=quoted_media,
+            floor_label=current.label if current else "",
+            is_opening=is_opening,
+            context_name=context_name,
+            context_url=context_url,
+            floors=[f for f in all_floors if f is not opening],
         )
 
     # ------------------------------------------------------------------ 解析
 
     @staticmethod
     def _parse_header(soup: BeautifulSoup) -> tuple[str, str, str]:
-        """``<h1>`` 里是「小组 » 讨论<br/>标题」—— 标题在 ``<br/>`` 之后。"""
-        node = soup.select_one("#pageHeader h1") or soup.select_one("h1")
-        if node is None:
-            return "", "", ""
-        group_name = ""
-        group_url = ""
-        for a in node.find_all("a", href=True):
-            if (match := re.search(r"/group/([^/?]+)", a["href"])) and "/forum" not in a["href"]:
-                group_url = f"https://bgm.tv/group/{match.group(1)}"
-                group_name = a.get_text(strip=True)
-                break
-        # 标题：取 ``<br/>`` 之后的文本；没有 br 时退化为整块文本
-        br = node.find("br")
-        if br is not None:
-            title = " ".join(str(s) for s in br.next_siblings).strip()
-        else:
-            title = node.get_text(" ", strip=True)
-        return re.sub(r"\s+", " ", title), group_name, group_url
+        """取 (标题, 归属名, 归属链接)。**两个页面形态不同**：
+
+        - **小组话题**：``#pageHeader h1`` 里是「小组 » 讨论<br/>标题」—— 标题在 ``<br/>`` 之后
+        - **条目讨论版**：页面上有**两个 h1** —— ``#headerSubject`` 里那个是**条目名**，
+          真正的标题在 ``.comment-header h1``。归属是条目（``/subject/<id>``）。
+        """
+        # 小组话题
+        node = soup.select_one("#pageHeader h1")
+        if node is not None:
+            name = ""
+            url = ""
+            for a in node.find_all("a", href=True):
+                if (match := re.search(r"/group/([^/?]+)", a["href"])) and "/forum" not in a["href"]:
+                    url = f"https://bgm.tv/group/{match.group(1)}"
+                    name = a.get_text(strip=True)
+                    break
+            # 标题：取 ``<br/>`` 之后的文本；没有 br 时退化为整块文本
+            br = node.find("br")
+            title = (
+                " ".join(str(s) for s in br.next_siblings).strip() if br is not None else node.get_text(" ", strip=True)
+            )
+            return re.sub(r"\s+", " ", title), name, url
+
+        # 条目讨论版：标题在 .comment-header 里；条目名与链接在 #headerSubject
+        title_node = soup.select_one(".comment-header h1")
+        title = title_node.get_text(" ", strip=True) if title_node else ""
+        subject_node = soup.select_one("#headerSubject a[href^='/subject/']")
+        if subject_node is not None:
+            name = subject_node.get_text(" ", strip=True)
+            url = f"https://bgm.tv{subject_node['href']}"
+            return re.sub(r"\s+", " ", title), name, url
+        return re.sub(r"\s+", " ", title), "", ""
 
     @classmethod
     def _collect_floors(cls, soup: BeautifulSoup, main_post: Any) -> list[BangumiFloor]:
@@ -545,9 +620,11 @@ class BangumiGroupTopic:
             author_handle = str(a["href"]).rsplit("/", 1)[-1]
             break
 
+        dom_id = str(node.get("id") or "").removeprefix("post_")
         body = node.select_one(_FLOOR_BODY_SELECTOR)
         markdown = ""
         plain = ""
+        image_urls: list[str] = []
         if body is not None:
             # 摘掉嵌套的楼中楼（它们会单独成条），只留这一层自己的文字
             for nested in body.find_all(id=re.compile(r"^post_\d+$")):
@@ -556,11 +633,14 @@ class BangumiGroupTopic:
                 aside.decompose()
             for action in body.find_all("div", class_="post_actions"):
                 action.decompose()
+            # 图片要在 `_simplify` 之前取（它会 `decompose()` 掉图）
+            image_urls = [i.url for i in _extract_images(body)]
             plain = body.get_text("\n", strip=True)
             _simplify(body)
             markdown = _to_markdown(str(body))
 
         return BangumiFloor(
+            dom_id=dom_id,
             label=label,
             author_name=author_name,
             author_handle=author_handle,
@@ -568,95 +648,70 @@ class BangumiGroupTopic:
             markdown=markdown,
             is_sub=is_sub,
             plain=plain,
+            image_urls=image_urls,
         )
 
     # ------------------------------------------------------------------ 组装
 
     @classmethod
-    def _compose(
-        cls, group_name: str, group_url: str, total: int, body: str, floors: list[BangumiFloor]
-    ) -> str:
-        """主楼正文 + 楼层区。
+    def _compose(cls, context_name: str, context_url: str, context_quote: str, body: str) -> str:
+        """归属行 + （分享楼层时的）主楼引用块 + **本层正文**。
 
-        形态（与项目其它平台同一套「还原原文排版」的取向）：
-
-        - 小组归属单独一行（读者一眼知道出处）；楼层数一并在那里说明
-        - 主楼正文照原样
-        - 主楼与讨论之间一条分割线（区分「话题」与「大家怎么回」）
-        - 每层：作者行（`` · #N · 时间``）+ 正文，**同一段**（楼层头是引子）
-        - **楼中楼用引用块**（``> ``）表达层级 —— 与 linux.do 的楼层上下文同形
+        形态与 linux.do 的楼层解析一致：引用块在前当上下文，本层内容在后。
         """
         parts: list[str] = []
-        if group_name:
+        if context_name:
             label = (
-                f'<a href="{html.escape(group_url, quote=True)}">{html.escape(group_name)}</a>'
-                if group_url
-                else html.escape(group_name)
+                f'<a href="{html.escape(context_url, quote=True)}">{html.escape(context_name)}</a>'
+                if context_url
+                else html.escape(context_name)
             )
-            parts.append(f"**{label}** » 讨论 · {total} 层")
+            parts.append(f"**{label}** » 讨论")
+        if context_quote:
+            parts.append(context_quote)
         if body:
             parts.append(body)
-
-        shown = floors[:MAX_FLOORS]
-        if shown:
-            block: list[str] = ["---"]
-            for floor in shown:
-                block.append(cls._floor_markdown(floor))
-            if len(floors) > len(shown):
-                block.append(f"（还有 {len(floors) - len(shown)} 层未显示）")
-            parts.append("\n\n".join(block))
         return "\n\n".join(p for p in parts if p).strip()
 
-    @classmethod
-    def _floor_markdown(cls, floor: BangumiFloor) -> str:
+    @staticmethod
+    def _quote_of(floor: BangumiFloor) -> str:
+        """把主楼渲染成引用块（分享楼层时当上下文用）。
+
+        ⚠️ 作者行用 **HTML ``<i>``**：引用块（尤其是**嵌套**引用）里的 markdown 星号会
+        字面显示 —— 实测读回服务端块时看到过孤立的 `"**"`。HTML 写法在任何深度都生效
+        （与 linux.do 引用块的作者行同一写法）。
+        """
         link = format_author_link(
             floor.author_name,
             floor.author_handle,
             profile_url(Platform.BANGUMI, user_id=floor.author_handle),
         )
+        head = f"<i>{link}</i>" if link else ""
         meta = " · ".join(x for x in (floor.label, floor.published_at) if x)
-
-        if floor.is_sub:
-            # 楼中楼：引用块表达层级（与 linux.do 的处理一致）。
-            # ⚠️ 这里用 HTML `<i>` 而不是 markdown `**` —— 引用**嵌套**时星号会字面显示
-            # （实测：块内容里出现孤立的 `"**"`；bgm 自己的「某人 说:」引用正好是嵌套的）。
-            # HTML 写法在任何深度都生效，与 linux.do 引用块的作者行同一写法。
-            line = _author_markup(link, tag="i")
-            head = f"{line} · {meta}" if meta else line
-            lines = [f"> {head}"]
-            body = floor.markdown.strip()
-            if body:
-                lines.extend(f"> {ln}" if ln.strip() else ">" for ln in body.splitlines())
-            return "\n".join(lines)
-
-        # 一级楼层在普通段落里，markdown 生效，用粗体（只包名字）
-        line = _author_markup(link, tag="strong", bold_only_name=True)
-        head = f"{line} · {meta}" if meta else line
+        line = f"{head} · {meta}" if head and meta else (head or meta)
+        lines = [f"> {line}".rstrip()]
         body = floor.markdown.strip()
-        if not body:
-            return head
-        # 楼层头与正文分两段，读起来才分得清谁说的
-        return f"{head}\n\n{body}"
+        if body:
+            lines.extend(f"> {ln}" if ln.strip() else ">" for ln in body.splitlines())
+        return "\n".join(lines)
 
     @classmethod
-    def _to_text(cls, group_name: str, body: str, floors: list[BangumiFloor]) -> str:
+    def _to_text(cls, context_name: str, context_quote: str, plain: str) -> str:
         """纯文本兜底（纯图话题那条路要用）。"""
-        lines = [group_name] if group_name else []
-        if body:
-            lines.append(body)
-        for floor in floors[:MAX_FLOORS]:
-            lines.append(f"{floor.author_name} {floor.label} {floor.plain}".strip())
+        lines = [context_name] if context_name else []
+        lines.extend(re.sub(r"^>\s?", "", ln).strip() for ln in context_quote.splitlines())
+        if plain:
+            lines.append(plain)
         return "\n".join(x for x in lines if x)
-
 
 
 __all__ = [
     "BLOG_API",
     "GROUP_TOPIC_API",
-    "MAX_FLOORS",
+    "SUBJECT_TOPIC_API",
     "BangumiBlog",
     "BangumiError",
     "BangumiFloor",
-    "BangumiGroupTopic",
     "BangumiImage",
+    "BangumiTopic",
 ]

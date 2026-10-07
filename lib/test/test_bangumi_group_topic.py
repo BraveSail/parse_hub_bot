@@ -1,18 +1,22 @@
-"""bgm.tv 小组话题（``/group/topic/<id>``）解析。
+"""bgm.tv 讨论话题（``/group/topic/<id>`` 与 ``/subject/topic/<id>``）解析。
 
-与日志**不同构**（选择器、正文容器、楼层结构都不一样），所以是独立的一条路径；
-只有 BBCode → markdown 的转换是共用的。
+**只发一层**（用户要求，与 linux.do 的楼层处理同一形态）：
 
-**取证的三个关键结构**（真实页面）::
+- 链接不带楼层锚点 → 发**主楼**
+- 链接带 ``#post_<id>`` 锚点 → 发**那一层**，主楼作为引用块当上下文
 
-    标题 : h1 里是「<a>小组名</a> » <a>讨论</a><br/>真正的标题」—— 标题在 <br/> 之后
-    主楼 : div.postTopic          → 正文 div.topic_content
-    回复 : div.row_reply          → 正文 div.reply_content
-    楼中楼: div.sub_reply_bg      → 正文 div.cmt_sub_content
-            ⚠️ **DOM 上嵌在父楼的正文容器里**（div.topic_reply_<父id>），不是兄弟节点
-    楼层号: .post_actions small 的文本，形如 ``#2 - 2026-10-7 00:24``（楼中楼是 ``#2-1``）
+（上一版把主楼 + 全部楼层铺出来 —— 45 层的帖子整篇塞满消息，用户要求改掉。）
 
-fixture ``bangumi_group_topic_472394.html`` 是真实话题（抽过：只留 h1 + 主楼 + 前 5 层）。
+**两个页面同构但头部不同**（实测）::
+
+    group/topic   : 标题在 ``#pageHeader h1`` 的 ``<br/>`` 之后；归属是小组（/group/<slug>）
+    subject/topic : 页面上**两个 h1** —— ``#headerSubject`` 里是条目名，
+                    真正的标题在 ``.comment-header h1``；归属是条目（/subject/<id>）
+
+**楼层结构两个页面完全一样**（主楼 ``.postTopic`` / 回复 ``.row_reply`` /
+楼中楼 ``.sub_reply_bg``，正文容器 ``.topic_content`` / ``.reply_content`` / ``.cmt_sub_content``）。
+
+fixture ``bangumi_group_topic_472394.html`` 是真实话题（抽过：h1 + 主楼 + 前 5 层）。
 """
 
 import asyncio
@@ -21,27 +25,14 @@ from pathlib import Path
 import pytest
 
 from parsehub.parsers.parser.bangumi import BangumiParser, BangumiParseResult
-from parsehub.provider_api.bangumi import MAX_FLOORS, BangumiError, BangumiGroupTopic
+from parsehub.provider_api.bangumi import BangumiError, BangumiTopic
 
 FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE = FIXTURES / "bangumi_group_topic_472394.html"
 
 
-def _topic() -> BangumiGroupTopic:
-    return BangumiGroupTopic._from_html(FIXTURE.read_text(encoding="utf-8"), "472394")
-
-
-def _from_html(html: str, topic_id: str = "1", *, main: str | None = None) -> BangumiGroupTopic:
-    """``html`` 是 **comment_list 的内容**（楼层）；主楼按真实结构放在它**外面**。"""
-    page = f"""<html><body><div id="viewEntry">
-      <div id="pageHeader"><h1>
-        <span><a href="/group/testgrp"><img class="avatar" src="//lain.bgm.tv/g.jpg"/>测试小组</a>
-        » <a href="/group/testgrp/forum">讨论</a></span><br/>话题标题</h1>
-      </div>
-      {main if main is not None else _main()}
-      <div id="comment_list" class="commentList">{html}</div>
-    </div></body></html>"""
-    return BangumiGroupTopic._from_html(page, topic_id)
+def _topic(floor_id: str = "") -> BangumiTopic:
+    return BangumiTopic._from_html(FIXTURE.read_text(encoding="utf-8"), "472394", floor_id=floor_id)
 
 
 def _floor(
@@ -72,267 +63,247 @@ def _floor(
 
 
 def _main(body: str = "主楼正文") -> str:
-    """主楼节点（``postTopic`` + ``topic_content``）—— ``_from_html`` 靠它认页面。"""
     return _floor(
         "0", "#1", "2026-10-7 00:19", "楼主", "op", body,
         cls="postTopic light_odd clearit", body_cls="topic_content",
     )
 
 
-# ---------------------------------------------------------------- 元信息
+def _group_header(title: str = "话题标题") -> str:
+    return f"""<div id="pageHeader"><h1>
+      <span><a href="/group/testgrp"><img class="avatar" src="//lain.bgm.tv/g.jpg"/>测试小组</a>
+      » <a href="/group/testgrp/forum">讨论</a></span><br/>{title}</h1></div>"""
 
-def test_the_header_gives_the_title_and_the_group():
-    """**核心**: 标题在 ``<br/>`` 之后；小组名与链接在 ``<br/>`` 之前那一串里"""
+
+def _subject_header(subject: str = "無職転生Ⅲ", title: str = "条目话题标题") -> str:
+    return f"""<div id="headerSubject"><h1 class="nameSingle">
+        <a href="/subject/501963">{subject}</a></h1></div>
+      <div class="comment-header"><h1>{title}</h1></div>"""
+
+
+def _from_html(
+    html: str,
+    topic_id: str = "1",
+    *,
+    floor_id: str = "",
+    main: str | None = None,
+    header: str | None = None,
+) -> BangumiTopic:
+    """``html`` 是 **comment_list 的内容**；主楼按真实结构放在它**外面**。"""
+    page = f"""<html><body><div id="viewEntry">
+      {header if header is not None else _group_header()}
+      {main if main is not None else _main()}
+      <div id="comment_list" class="commentList">{html}</div>
+    </div></body></html>"""
+    return BangumiTopic._from_html(page, topic_id, floor_id=floor_id)
+
+
+# ---------------------------------------------------------------- 只发一层
+
+def test_the_opening_post_is_sent_when_there_is_no_anchor():
+    """**核心**: 不带锚点 → 只发**主楼**，**不铺楼层**"""
+    topic = _topic()
+    assert topic.floor_label == "#1"
+    assert topic.markdown_content.count("最近视奸") == 1
+    # 楼层内容一律不出现（这是本版的核心改动）
+    for floor in topic.floors:
+        if floor.markdown:
+            assert floor.markdown.splitlines()[0] not in topic.markdown_content
+
+
+def test_the_opening_post_has_no_context_quote():
+    """主楼不给自己做引用块"""
+    assert not [ln for ln in _topic().markdown_content.splitlines() if ln.startswith("> ")]
+
+
+def test_an_anchored_floor_is_what_gets_sent():
+    """**核心**: 带 ``#post_<id>`` 锚点 → 发**那一层**"""
+    topic = _topic("4062141")
+    assert topic.floor_label == "#2"
+    assert topic.author_name == "大夜宵"
+    assert "两年四百+少了" in topic.markdown_content
+
+
+def test_an_anchored_floor_brings_the_opening_post_as_a_quote():
+    """**核心**: 分享楼层时把**主楼**做成引用块（与 linux.do 同一形态）"""
+    quoted = [ln for ln in _topic("4062141").markdown_content.splitlines() if ln.startswith("> ")]
+    assert quoted, "缺主楼引用块"
+    assert any("最近视奸" in ln for ln in quoted), "引用块里不是主楼正文"
+    assert any("irohard" in ln for ln in quoted), "引用块里没有主楼作者"
+    assert any("#1" in ln for ln in quoted), "引用块里的主楼没有楼层号"
+
+
+def test_the_quote_head_uses_html_not_markdown_asterisks():
+    """引用块内（尤其嵌套引用）的 markdown 星号会字面显示 —— 作者行必须用 HTML"""
+    line = next(ln for ln in _topic("4062141").markdown_content.splitlines() if ln.startswith("> ") and "irohard" in ln)
+    assert "<i>" in line, line
+    assert "**" not in line, line
+
+
+def test_an_anchored_sub_reply_can_be_selected_too():
+    """锚点指向**楼中楼**（它也有 ``post_<id>``）"""
+    topic = _topic("4062147")
+    assert topic.floor_label == "#2-1"
+    assert topic.author_name == "irohard"
+    assert "经常看到你在新番里评论" in topic.markdown_content
+
+
+def test_a_bad_anchor_falls_back_to_the_opening_post():
+    """锚点在页面上不存在（楼层被删 / 链接被手改）→ 退回主楼，**不是**解析失败"""
+    topic = _topic("99999999")
+    assert topic.floor_label == "#1"
+    assert "最近视奸" in topic.markdown_content
+
+
+def test_the_quote_media_count_covers_the_opening_posts_images():
+    """主楼的图走 ``quoted_media_count`` 通道（bot 侧放进引用块内部）"""
+    main = _main('主楼正文<img class="code" src="//lain.bgm.tv/pic/photo/l/op.jpg"/>')
+    reply = _floor(
+        "6", "#2", "2026-10-7 00:24", "甲", "a",
+        '<img class="code" src="//lain.bgm.tv/pic/photo/l/r.jpg"/>',
+    )
+    topic = _from_html(reply, floor_id="6", main=main)
+    assert [i.url for i in topic.images] == [
+        "https://lain.bgm.tv/pic/photo/l/r.jpg",
+        "https://lain.bgm.tv/pic/photo/l/op.jpg",
+    ]
+    assert topic.quoted_media_count == 1, "只有主楼那张属于引用块"
+
+    # 分享主楼时没有引用块 —— 计数必须是 0（否则图会被切进不存在的卡片）
+    assert _from_html(reply, main=main).quoted_media_count == 0
+
+
+# ---------------------------------------------------------------- 两个页面形态
+
+def test_the_group_header_gives_the_group_and_the_title():
     topic = _topic()
     assert topic.title == "真的有人能看过3000+部番吗"
-    assert topic.group_name == "补旧番"
-    assert topic.group_url == "https://bgm.tv/group/fillgrids"
+    assert topic.context_name == "补旧番"
+    assert topic.context_url == "https://bgm.tv/group/fillgrids"
 
 
-def test_the_main_post_is_floor_one():
-    """主楼 = #1，作者/时间取自它自己的楼层头（不是主题级字段）"""
-    topic = _topic()
-    assert topic.author_name == "irohard"
-    assert topic.author_handle == "1175849"
-    assert topic.published_at == "2026-10-7 00:19"
+def test_the_subject_header_gives_the_subject_and_the_second_h1():
+    """**核心**: 条目讨论版的标题是页面**第二个** ``h1`` —— 第一个是条目名。
+
+    直接取 ``h1`` 会把条目名当话题标题（实测就是这个坑）。
+    """
+    topic = _from_html("", header=_subject_header("無職転生Ⅲ", "我说涩谷亮介身边缺一个平野宏树有没有懂的"))
+    assert topic.title == "我说涩谷亮介身边缺一个平野宏树有没有懂的"
+    assert topic.context_name == "無職転生Ⅲ"
+    assert topic.context_url == "https://bgm.tv/subject/501963"
 
 
-def test_the_body_is_the_main_post_only():
-    """主楼正文与楼层分开 —— 正文里不该混进回复"""
-    topic = _topic()
-    assert "最近视奸了一圈路人的主页" in topic.markdown_content
-    assert topic.markdown_content.index("最近视奸") < topic.markdown_content.index("---")
+def test_the_context_line_carries_the_affiliation_only():
+    """归属行只写「谁家的讨论」（层数不再需要 —— 只发一层）"""
+    first = _topic().markdown_content.splitlines()[0]
+    assert "补旧番" in first and "» 讨论" in first
+    assert "层" not in first
 
 
-# ---------------------------------------------------------------- 楼层与层级
+# ---------------------------------------------------------------- 楼层解析（内部）
 
-def test_floors_are_parsed_in_order():
-    """楼层按页面顺序，且**主楼不在 floors 里**（它已经当了正文）"""
-    topic = _topic()
-    labels = [f.label for f in topic.floors]
-    assert labels[0] == "#2"
-    assert labels == sorted(labels, key=lambda s: [int(x) for x in s.lstrip("#").split("-")])
-    assert "#1" not in labels
-
-
-def test_sub_replies_are_marked():
-    """楼中楼（``sub_reply_bg``）要标出来 —— 它渲染成引用块"""
-    topic = _topic()
-    subs = [f for f in topic.floors if f.is_sub]
-    # fixture 抽的是「主楼 + 前 5 个一级回复」，所以楼中楼来自 #2 与 #6
-    assert [f.label for f in subs] == ["#2-1", "#2-2", "#2-3", "#6-1"]
-    assert all("-" in f.label for f in subs)
+def test_floors_are_parsed_with_dom_ids():
+    """``dom_id`` 就是节点的 ``post_<数字>`` 后那串 —— URL 锚点按它定位"""
+    by_label = {f.label: f for f in _topic().floors}
+    assert by_label["#2"].dom_id == "4062141"
+    assert by_label["#2-1"].dom_id == "4062147"
 
 
 def test_a_sub_reply_body_does_not_contain_the_parent_text():
-    """**核心**: 楼中楼摘出来当独立楼层 —— 父楼的正文里不能混进它的文字。
+    """**核心**: 楼中楼摘出来当独立条目 —— 父楼正文里不能混进它的文字。
 
-    ⚠️ 摘用的是 ``decompose()``，它会**清空被摘节点的内容** —— 所以必须**先收集节点、
-    再逆序解析**（子 → 父）。正序解析时父楼先把子楼清掉，轮到子楼就只剩空壳
-    （实测：45 个节点只解析出 38 条，7 条楼中楼全空）。
+    ⚠️ 摘用的是 ``decompose()``，它会**清空被摘节点的内容** ⇒ 必须**先收集节点、再逆序解析**
+    （正序时父楼先把子楼清掉，轮到子楼就只剩空壳：实测 45 个节点只解析出 38 条）。
     """
-    topic = _topic()
-    parent = next(f for f in topic.floors if f.label == "#2")
-    sub = next(f for f in topic.floors if f.label == "#2-1")
-
-    assert "两年四百+少了" in parent.markdown  # 父楼自己的话
-    assert "经常看到你在新番里评论" not in parent.markdown, "父楼正文里混进了楼中楼的文字"
-    assert "经常看到你在新番里评论" in sub.markdown  # 楼中楼自己的话
+    floors = {f.label: f for f in _topic().floors}
+    parent, sub = floors["#2"], floors["#2-1"]
+    assert "两年四百+少了" in parent.markdown
+    assert "经常看到你在新番里评论" not in parent.markdown
+    assert "经常看到你在新番里评论" in sub.markdown
     assert "两年四百+少了" not in sub.markdown
 
 
-def test_every_floor_keeps_its_own_author():
-    topic = _topic()
-    by_label = {f.label: f for f in topic.floors}
-    assert by_label["#2"].author_name == "大夜宵"
-    assert by_label["#2"].author_handle == "dayexiao520"
-    assert by_label["#3"].author_name == "Hoozy（已失业）"
-
-
-# ---------------------------------------------------------------- 渲染形态
-
-def test_the_group_line_comes_first_and_carries_the_floor_count():
-    """小组归属单独一行（读者一眼知道出处），层数在那里说明"""
-    topic = _topic()
-    first = topic.markdown_content.splitlines()[0]
-    assert "补旧番" in first
-    assert "https://bgm.tv/group/fillgrids" in first
-    assert "层" in first
-
-
-def test_the_main_post_and_the_discussion_are_separated_by_a_rule():
-    """主楼与讨论之间一条分割线 —— 区分「话题」与「大家怎么回」"""
-    topic = _topic()
-    assert "\n---\n" in topic.markdown_content
-
-
-def test_a_floor_head_carries_author_label_and_time():
-    """楼层头 = 作者（**粗体、名字可点**）+ ``@handle`` + 楼层号 + 时间"""
-    topic = _topic()
-    md = topic.markdown_content
-    head = (
-        '**<a href="https://bgm.tv/user/dayexiao520">大夜宵</a>** '
-        "<code>@dayexiao520</code> · #2 · 2026-10-7 00:24"
-    )
-    assert head in md
-
-
-def test_a_sub_reply_is_rendered_as_a_quote_block():
-    """**核心**: 楼中楼用引用块（``> ``）表达层级 —— 与 linux.do 的楼层上下文同形"""
-    topic = _topic()
-    lines = topic.markdown_content.splitlines()
-    sub_at = next(i for i, ln in enumerate(lines) if "#2-1" in ln)
-    assert lines[sub_at].startswith("> "), lines[sub_at]
-    # 紧随其后的正文也在引用块里
-    assert any(ln.startswith("> ") and "经常看到你在新番里评论" in ln for ln in lines[sub_at : sub_at + 6])
-
-
-def test_a_sub_reply_head_uses_html_not_markdown_asterisks():
-    """**核心**: 楼中楼作者行用 HTML ``<i>``，不用 markdown 星号。
-
-    实测（读回服务端块）: 引用**嵌套**时 markdown 星号会字面显示 —— 内容是
-    ``[ "**", {RichTextUrl…} ]``，星号成了正文（bgm 自己的「某人 说:」引用正好是嵌套的）。
-    单层引用块里的 ``**`` 其实是生效的，但**一律用 HTML 更稳**（任何深度都生效）。
-    """
-    topic = _topic()
-    lines = topic.markdown_content.splitlines()
-    sub_line = next(ln for ln in lines if ln.startswith("> ") and "#2-1" in ln)
-    assert "<i>" in sub_line, sub_line
-    assert "**" not in sub_line, f"引用块里的作者行不能带 markdown 星号: {sub_line}"
-
-
-def test_the_whole_quote_block_carries_no_literal_asterisks():
-    """整条楼中楼（含正文）都不该出现字面 ``**`` —— 它们在引用块里不会被解析。
-
-    bgm 自己会在楼中楼里插「某人 说: …」的嵌套引用（原文是 ``<strong>``）——
-    那一条也会变成字面星号，所以粗体得走 HTML（``<b>``）。
-    """
-    topic = _topic()
-    quoted = [ln for ln in topic.markdown_content.splitlines() if ln.startswith(">")]
-    assert quoted, "fixture 里应该有楼中楼"
-    bad = [ln for ln in quoted if "**" in ln]
-    assert not bad, bad
-
-
-def test_a_top_level_reply_head_keeps_markdown_bold():
-    """一级楼层在普通段落里，markdown 生效 —— 保持粗体（与其它平台的作者行一致）"""
-    topic = _topic()
-    lines = topic.markdown_content.splitlines()
-    top_line = next(ln for ln in lines if "· #2 ·" in ln and not ln.startswith(">"))
-    assert top_line.startswith("**<a href="), top_line
-    assert top_line.count("**") == 2, "粗体只该包名字"
-
-
-def test_a_top_level_reply_is_not_a_quote_block():
-    """一级回复不是引用块（只有楼中楼才是）"""
-    topic = _topic()
-    lines = topic.markdown_content.splitlines()
-    at = next(i for i, ln in enumerate(lines) if "· #2 ·" in ln)
-    assert not lines[at].startswith(">")
-
-
-def test_every_floor_appears_in_the_markdown():
-    topic = _topic()
-    md = topic.markdown_content
-    for floor in topic.floors:
-        assert floor.label in md, floor.label
+def test_sub_replies_are_marked():
+    subs = [f for f in _topic().floors if f.is_sub]
+    assert [f.label for f in subs] == ["#2-1", "#2-2", "#2-3", "#6-1"]
 
 
 # ---------------------------------------------------------------- 图片与表情
 
 def test_uploaded_images_are_collected_from_any_floor():
-    """图片从**所有楼层**的正文里抽（楼中楼里也可能有图）"""
+    """图片从所有楼层抽（目标层可能在后面，图得先收全）"""
     nested = _floor(
-        "2",
-        "#2-1",
-        "2026-10-7 00:28",
-        "某人",
-        "someone",
+        "7", "#2-1", "2026-10-7 00:28", "甲", "a",
         '<img class="code" src="//lain.bgm.tv/pic/photo/l/deep.jpg"/>',
-        cls="sub_reply_bg clearit",
-        body_cls="cmt_sub_content",
+        cls="sub_reply_bg clearit", body_cls="cmt_sub_content",
     )
     topic = _from_html(
-        _floor(
-            "1", "#2", "2026-10-7 00:24", "甲", "a",
-            '<img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/>', nested=nested,
-        )
+        _floor("6", "#2", "2026-10-7 00:24", "甲", "a",
+               '<img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/>', nested=nested)
     )
     urls = [i.url for i in topic.images]
     assert "https://lain.bgm.tv/pic/photo/l/a.jpg" in urls
-    assert "https://lain.bgm.tv/pic/photo/l/deep.jpg" in urls, "楼中楼里的图也要收（它在树上要先抽）"
+    assert "https://lain.bgm.tv/pic/photo/l/deep.jpg" in urls, "楼中楼里的图也要收（树上要先抽）"
 
 
 def test_smiles_stay_text_and_do_not_become_media():
-    """表情是文字不是图（与日志同一判据：看 src 路径）"""
     topic = _from_html(
-        _floor("1", "#2", "2026-10-7 00:24", "甲", "a",
-               '好笑<img class="smile" alt="(bgm38)" src="/img/smiles/tv/15.gif"/>')
+        _floor("6", "#2", "2026-10-7 00:24", "甲", "a",
+               '好笑<img class="smile" alt="(bgm38)" src="/img/smiles/tv/15.gif"/>'),
+        floor_id="6",
     )
     assert topic.images == []
     assert "(bgm38)" in topic.markdown_content
 
 
 def test_the_body_keeps_no_image_tag():
-    """图抽走之后正文里不能再留 img（否则 Telegram 会去抓外链，抓不到就整张丢）"""
     topic = _from_html(
-        _floor("1", "#2", "2026-10-7 00:24", "甲", "a", '<img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/>')
+        _floor("6", "#2", "2026-10-7 00:24", "甲", "a", '<img class="code" src="//lain.bgm.tv/pic/photo/l/a.jpg"/>'),
+        floor_id="6",
     )
     assert "lain.bgm.tv/pic/photo" not in topic.markdown_content
 
 
 # ---------------------------------------------------------------- 边界
 
-def test_too_many_floors_are_truncated_with_a_note():
-    """几百层的长帖不该整篇塞进一条消息 —— 截断并注明还剩多少层"""
-    floors = "".join(
-        _floor(str(i), f"#{i}", "2026-10-7 00:24", f"人{i}", f"u{i}", f"第 {i} 层的正文")
-        for i in range(2, MAX_FLOORS + 12)
-    )
-    topic = _from_html(floors)
-    assert len(topic.floors) > MAX_FLOORS  # 解析层面全都要（数据完整）
-    assert "未显示" in topic.markdown_content
-    # 显示的是前 MAX_FLOORS 层（#2..#MAX_FLOORS+1），再往后就不渲染了
-    assert f"#{MAX_FLOORS + 1}" in topic.markdown_content
-    assert f"#{MAX_FLOORS + 2}" not in topic.markdown_content
-    assert "未显示" in topic.markdown_content
-
-
 def test_a_missing_topic_raises_with_the_sites_wording():
-    """话题不存在时仍是 HTTP 200，页面写「呜咕，出错了 数据库中没有…」"""
     with pytest.raises(BangumiError) as exc:
-        BangumiGroupTopic._from_html("<html><body>呜咕，出错了 数据库中没有查询到该小组话题的信息</body></html>", "9")
+        BangumiTopic._from_html("<html><body>呜咕，出错了 数据库中没有查询到该小组话题的信息</body></html>", "9")
     assert "不存在" in str(exc.value)
 
 
 def test_an_unknown_shape_raises_a_different_message():
     with pytest.raises(BangumiError) as exc:
-        BangumiGroupTopic._from_html("<html><body>什么都没有</body></html>", "1")
+        BangumiTopic._from_html("<html><body>什么都没有</body></html>", "1")
     assert "改版" in str(exc.value) or "结构" in str(exc.value)
 
 
-def test_the_topic_id_comes_out_of_the_url():
-    assert BangumiGroupTopic.get_id_by_url("https://bgm.tv/group/topic/472394") == "472394"
-    assert BangumiGroupTopic.get_id_by_url("https://bgm.tv/blog/381120") == ""
+def test_the_ids_come_out_of_the_url():
+    assert BangumiTopic.get_id_by_url("https://bgm.tv/group/topic/472394") == "472394"
+    assert BangumiTopic.get_id_by_url("https://bgm.tv/subject/topic/41209") == "41209"
+    assert BangumiTopic.get_id_by_url("https://bgm.tv/blog/381120") == ""
+    assert BangumiTopic.get_floor_id_by_url("https://bgm.tv/group/topic/472394#post_4062141") == "4062141"
+    assert BangumiTopic.get_floor_id_by_url("https://bgm.tv/group/topic/472394") == ""
 
 
 # ---------------------------------------------------------------- parser
 
-def test_the_parser_matches_group_topics():
+def test_the_parser_matches_both_topic_paths():
     assert BangumiParser.match("https://bgm.tv/group/topic/472394")
+    assert BangumiParser.match("https://bgm.tv/subject/topic/41209")
     assert BangumiParser.match("https://bangumi.tv/group/topic/472394")
 
 
 def test_the_parser_still_matches_blogs_and_refuses_other_paths():
-    """**回归**: 加小组话题不能把日志弄丢；条目页与小组首页也不该被接走"""
+    """**回归**: 加话题不能把日志弄丢；条目页本身与小组首页不该被接走"""
     assert BangumiParser.match("https://bgm.tv/blog/381120")
     assert not BangumiParser.match("https://bgm.tv/subject/400602")
     assert not BangumiParser.match("https://bgm.tv/group/fillgrids")
     assert not BangumiParser.match("https://bgm.tv/group/fillgrids/forum")
 
 
-def test_the_group_result_carries_floor_one_as_its_position():
-    """主楼是第 1 层 —— 交给渲染层的 ``position_label``（各平台同一机制）"""
+def test_the_result_carries_the_floor_label_and_the_quote_count():
+    """``position_label`` = 本层楼层号；引用块里的作者行不带 markdown 星号"""
 
     class _Resp:
         status_code = 200
@@ -361,15 +332,16 @@ def test_the_group_result_carries_floor_one_as_its_position():
     original = mod.http.AsyncClient
     mod.http.AsyncClient = _Client()
     try:
-        result = asyncio.run(BangumiParser()._do_parse("https://bgm.tv/group/topic/472394"))
+        result = asyncio.run(BangumiParser()._do_parse("https://bgm.tv/group/topic/472394#post_4062141"))
     finally:
         mod.http.AsyncClient = original
 
-    assert result.title == "真的有人能看过3000+部番吗"
-    assert result.position_label == "#1"
-    assert result.author_handle == "1175849"
-    assert result.author_url == "https://bgm.tv/user/1175849"
+    assert result.position_label == "#2"
+    assert result.author_handle == "dayexiao520"
+    assert result.author_url == "https://bgm.tv/user/dayexiao520"
     assert BangumiParseResult.requires_media_download is True
+    quoted = [ln for ln in result.markdown_content.splitlines() if ln.startswith("> ")]
+    assert quoted and all("**" not in ln for ln in quoted)
 
 
 if __name__ == "__main__":
