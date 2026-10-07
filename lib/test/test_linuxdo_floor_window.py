@@ -1,40 +1,27 @@
-"""linux.do 楼层窗口：窗口外的上下文层怎么取回来。
+"""linux.do 楼层：主请求取主题端点，缺的层按 post id 精确取。
 
-用户报障原话：「https://linux.do/t/topic/2989140/24?u=libc.so.6 怎么没有主楼了？」
-（另一条 ``/4`` 正常 —— 追问「为什么4楼可以？」）
-随后质疑「去查discourse文档，我就不信没有querystring能筛选」—— **他是对的**；
-见我把主路径改成 ``print=true`` 后又质疑「你这样还不如第二次请求1.json？」—— **又对了**。
+用户报障与逐轮纠正（每一条都成立）::
 
-**窗口规律**（真机实测 11 个楼层）::
+    1. 「/t/2989140/24 怎么没有主楼了？」      -> 楼层窗口不含主楼（且是静默跳过）
+    2. 「为什么4楼可以？」                      -> 窗口起点 = max(1, n-5)，1~6 楼恰含主楼
+    3. 「我就不信没有querystring能筛选」        -> 有: print=true / page / post_ids[]
+    4. 「你这样还不如第二次请求1.json？」        -> print 是限流端点，单层 4.5KB 就够
+    5. 「改成只请求post」                       -> 统一走 posts.json?post_ids[], 不再用楼层窗口
 
-    1 楼  → 1..20   含主楼
-    4 楼  → 1..20   含主楼
-    6 楼  → 1..20   含主楼
-    7 楼  → 2..21   不含        ← 分界
-    24 楼 → 19..38  不含
-    30 楼 → 25..44  不含
+**现在的取法**::
 
-⇒ 窗口是**固定 20 层**，起点 = ``max(1, target - 5)``（源码 ``lib/topic_view.rb`` 的
-``filter_posts_near``：``posts_before = (@limit / 4).floor``，limit 默认 20 → 5）。
-target ≤ 6 时起点被夹到 1，主楼恰好还在窗口里。
+    主请求 : /t/<topic_id>.json            -> 主题元数据 + stream + 前 20 层（1..20, 主楼在内）
+    缺的层 : posts.json?post_ids[]=<id>     -> 只回那一层（实测 4.5KB）
+    不用   : /t/<id>/<n>.json               -> 以该层为中心的 20 层窗口（50KB+，且不含主楼）
+             /t/<id>/<n>.json?print=true    -> 打印端点，会被限流
 
-**取回方式（实测对比）**::
+**为什么主楼不再是问题**：主题端点总给**前 20 层**，主楼一定在里面 —— 不管分享的是第几楼。
+需要另取的只剩**目标层本身**（可能是第 24、50 楼）和**被回复的层**（也可能在 20 楼之后）。
 
-    a) /<id>/1.json                       20 层  53.6KB  0.18s   ✓
-    b) posts.json?post_ids[]=<主楼 id>      1 层   4.5KB  0.21s   ✓  ← 现行主路径
-    c) /<id>/1.json?print=true             49 层  117KB          ✗ 限流
+fixture（都是话题 2989140 的真实响应）::
 
-- ``stream`` 数组是话题里**所有可见层的 id 列表**，所以 ``stream[floor - 1]`` 就能定位那一层，
-  按 id 精确取只要 4.5KB（比窗口小 12 倍）。位置在话题删过层时会漂 ⇒ **必须校验楼层号**。
-- ``?print=true`` 确实能把 chunk_size 从 20 提到 1000（``TopicView.print_chunk_size``），
-  但它是**打印视图端点、服务端挂了限流**：连打几次后返回
-  ``422 {"errors":["You've performed this action too many times..."]}`` —— 不能当常规路径。
-
-**根因**：`_context_quotes` 在窗口里 ``next((p for p in posts if post_number == 1), None)``
-—— 找不到就**静默跳过**，于是"分享楼层时带上主楼"这条规则在靠后的楼层上悄悄失效。
-
-fixture: ``linuxdo_floor_24.json`` = 24 楼的窗口（19..38，**不含主楼**）；
-``linuxdo_floor_4.json`` = 含主楼的窗口（1..20），拿来当补取的响应。
+    linuxdo_floor_4.json   1..20 层 + stream   -> 当"主题端点的响应"
+    linuxdo_floor_24.json  19..38 层 + stream  -> 提供更长的 stream，以及 24/26/34 楼的数据
 """
 
 import asyncio
@@ -42,7 +29,7 @@ import json
 from pathlib import Path
 
 from parsehub.provider_api import linuxdo as linuxdo_mod
-from parsehub.provider_api.linuxdo import LinuxDoTopic
+from parsehub.provider_api.linuxdo import LinuxDoError, LinuxDoTopic
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TOPIC_ID = "2989140"
@@ -52,69 +39,81 @@ def _fixture(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text())
 
 
-def _window_24() -> dict:
-    """第 24 楼的窗口（19..38）—— **不含主楼**"""
-    return _fixture("linuxdo_floor_24.json")
-
-
-def _window_with_opening() -> dict:
-    """含主楼的窗口（1..20）—— 模拟补取回来的响应"""
-    return _fixture("linuxdo_floor_4.json")
-
-
-def _floors(payload: dict) -> list[int]:
-    return [p.get("post_number") for p in (payload.get("post_stream") or {}).get("posts", [])]
-
-
 def _posts(payload: dict) -> list[dict]:
     return (payload.get("post_stream") or {}).get("posts") or []
 
 
-def _layer(payload: dict, floor: int) -> dict:
-    """从 payload 里挑出某一层，包成"按 id 取单层"那种响应"""
-    for post in _posts(payload):
+def _floors(payload: dict) -> list[int]:
+    return [p.get("post_number") for p in _posts(payload)]
+
+
+def _topic() -> dict:
+    """主题端点的响应：**前 20 层**（1..20，主楼在内）+ 完整 stream。
+
+    stream 用 24 楼那份（更长），好让 24 / 26 / 34 楼都能查到 id。
+    """
+    topic = _fixture("linuxdo_floor_4.json")
+    topic["post_stream"]["stream"] = (_fixture("linuxdo_floor_24.json").get("post_stream") or {}).get("stream") or []
+    return topic
+
+
+def _layer(floor: int) -> dict:
+    """话题里某一层，包成"按 id 取单层"那种响应。"""
+    for post in _posts(_fixture("linuxdo_floor_24.json")):
         if post.get("post_number") == floor:
             return {"post_stream": {"posts": [post]}}
     return {"post_stream": {"posts": []}}
 
 
-# ---------------------------------------------------------------- 窗口规律（纯函数）
+def _with_reply(payload: dict, floor: int, reply_to: int) -> dict:
+    """手工设某层的 reply_to（fixture 里是抓取当时的真实值，需要别的组合时用这个）"""
+    for post in _posts(payload):
+        if post.get("post_number") == floor:
+            post["reply_to_post_number"] = reply_to
+    return payload
 
 
-def test_a_late_floor_window_is_missing_the_opening_post():
-    """**核心**: 24 楼的窗口里没有主楼 —— 这就是"没有主楼了"的来源"""
-    payload = _window_24()
-    assert 1 not in _floors(payload), "fixture 变了: 它应该是不含主楼的窗口"
-    assert LinuxDoTopic._missing_context_floors(_posts(payload), wanted=24, reply_to=None) == [1]
+# ---------------------------------------------------------------- 取哪些层（纯函数）
 
 
-def test_an_early_floor_window_already_has_the_opening_post():
-    """**核心**: 4 楼的窗口里本来就有主楼 —— 不需要任何请求（这就是"4楼可以"）"""
-    posts = _posts(_window_with_opening())
-    assert 1 in [p.get("post_number") for p in posts]
+def test_the_opening_post_is_always_in_the_topic_response():
+    """**核心**: 主题端点给前 20 层 ⇒ 主楼**总在手**，不用为它再发请求。
+
+    这才是"分享第 24 楼时主楼丢了"的根治点：不是补取主楼，而是**换掉主请求端点**。
+    """
+    assert 1 in _floors(_topic())
+
+
+def test_an_early_floor_needs_nothing():
+    """分享前 20 层里的楼层 → 目标层与主楼都在手"""
+    posts = _posts(_topic())
     assert LinuxDoTopic._missing_context_floors(posts, wanted=4, reply_to=None) == []
+    assert LinuxDoTopic._missing_context_floors(posts, wanted=15, reply_to=None) == []
 
 
-def test_the_opening_post_is_not_requested_when_reading_it():
-    """解析主楼本身时不该取主楼（它就在窗口里，而且不自我引用）"""
-    assert LinuxDoTopic._missing_context_floors(_posts(_window_24()), wanted=1, reply_to=None) == []
+def test_the_opening_post_is_never_requested_for_itself():
+    """解析主楼本身时不取主楼（不自我引用）"""
+    assert LinuxDoTopic._missing_context_floors(_posts(_topic()), wanted=1, reply_to=None) == []
 
 
-def test_a_replied_floor_outside_the_window_is_also_missed():
-    """被回复的层同样可能在窗口外 —— 两个都要，顺序是「主楼 → 被回复的层」"""
-    assert LinuxDoTopic._missing_context_floors(_posts(_window_24()), wanted=24, reply_to=3) == [1, 3]
+def test_a_replied_floor_after_twenty_is_missing():
+    """被回复的层在 20 楼之后 → 不在手，要按 id 取"""
+    assert LinuxDoTopic._missing_context_floors(_posts(_topic()), wanted=34, reply_to=26) == [26]
 
 
-def test_a_replied_floor_inside_the_window_is_not_requested():
-    """被回复的层已在窗口里就不取"""
-    posts = _posts(_window_24())
-    inside = [p.get("post_number") for p in posts][2]
-    assert LinuxDoTopic._missing_context_floors(posts, wanted=24, reply_to=inside) == [1]
+def test_a_replied_floor_within_twenty_is_not_requested():
+    """被回复的层在前 20 层里 → 已在手"""
+    assert LinuxDoTopic._missing_context_floors(_posts(_topic()), wanted=10, reply_to=7) == []
 
 
 def test_replying_to_the_opening_post_does_not_duplicate_it():
-    """回复主楼时（reply_to=1）只算一次"""
-    assert LinuxDoTopic._missing_context_floors(_posts(_window_24()), wanted=24, reply_to=1) == [1]
+    """回复主楼时（reply_to=1）主楼已在手，不重复算"""
+    assert LinuxDoTopic._missing_context_floors(_posts(_topic()), wanted=34, reply_to=1) == []
+
+
+def test_the_wanted_floor_comes_from_the_url():
+    assert LinuxDoTopic._wanted_floor("24") == 24
+    assert LinuxDoTopic._wanted_floor("") == 1
 
 
 # ---------------------------------------------------------------- 楼层 → id
@@ -122,20 +121,20 @@ def test_replying_to_the_opening_post_does_not_duplicate_it():
 
 def test_the_stream_gives_the_id_for_a_floor():
     """``stream`` 是话题所有可见层的 id 列表 —— 位置就是楼层号减一"""
-    payload = _window_24()
+    payload = _topic()
     stream = (payload.get("post_stream") or {}).get("stream") or []
     assert LinuxDoTopic._post_id_for_floor(payload, 1) == stream[0]
     assert LinuxDoTopic._post_id_for_floor(payload, 24) == stream[23]
 
 
 def test_a_floor_past_the_stream_has_no_id():
-    """stream 比楼层号短（话题删过层/被过滤）→ 拿不到 id，只能走窗口"""
-    payload = _window_24()
+    """stream 比楼层号短（话题删过层 / 被过滤）→ 拿不到 id"""
+    payload = _topic()
     payload["post_stream"]["stream"] = [1, 2, 3]
     assert LinuxDoTopic._post_id_for_floor(payload, 24) is None
 
 
-# ---------------------------------------------------------------- 取回（网络请求）
+# ---------------------------------------------------------------- 网络（只有 posts.json）
 
 
 class _FakeResponse:
@@ -152,33 +151,13 @@ class _FakeResponse:
 
 
 class _FakeClient:
-    """假的 ``http.AsyncClient``：按 URL 分辨"按 id 精确取"与"取楼层窗口"。
+    """假的 ``http.AsyncClient``：只认 ``posts.json?post_ids[]=<id>``，按 id 反查楼层。"""
 
-    - URL 含 ``posts.json`` → 按 ``post_ids[]`` 里的 id 反查楼层，返回**单层**
-    - 其它 → 按 URL 末段的楼层号返回 ``windows`` 里配的响应（默认：含主楼的窗口）
-    """
-
-    def __init__(
-        self,
-        *,
-        topic: dict | None = None,
-        windows: dict[int, dict] | None = None,
-        id_layers: dict[int, dict] | None = None,
-        id_status: int = 200,
-        id_raises: bool = False,
-        id_returns_wrong_floor: bool = False,
-        window_raises: bool = False,
-        fail_windows: set[int] | None = None,
-    ):
-        self.topic = topic or _window_with_opening()
+    def __init__(self, *, topic: dict | None = None, wrong_floor: bool = False, status: int = 200):
+        self.topic = topic or _topic()
         self.stream = (self.topic.get("post_stream") or {}).get("stream") or []
-        self.windows = windows or {}
-        self.id_layers = id_layers or {}
-        self.id_status = id_status
-        self.id_raises = id_raises
-        self.id_returns_wrong_floor = id_returns_wrong_floor
-        self.window_raises = window_raises
-        self.fail_windows = fail_windows or set()
+        self.wrong_floor = wrong_floor
+        self.status = status
         self.requested: list[str] = []
 
     def __call__(self, **_kwargs):  # AsyncClient(proxy=..., cookies=..., timeout=...)
@@ -192,173 +171,124 @@ class _FakeClient:
 
     async def get(self, url: str, **_kwargs) -> _FakeResponse:
         self.requested.append(url)
-        if "posts.json" in url:
-            if self.id_raises:
-                raise RuntimeError("按 id 取炸了")
-            post_id = int(url.rsplit("=", 1)[-1])
-            floor = self.stream.index(post_id) + 1 if post_id in self.stream else None
-            if floor is None:
-                return _FakeResponse({"post_stream": {"posts": []}})
-            if self.id_returns_wrong_floor:
-                return _FakeResponse(_layer(self.topic, floor + 1), self.id_status)
-            return _FakeResponse(self.id_layers.get(floor) or _layer(self.topic, floor), self.id_status)
+        post_id = int(url.rsplit("=", 1)[-1])
+        floor = self.stream.index(post_id) + 1 if post_id in self.stream else None
+        if floor is None:
+            return _FakeResponse({"post_stream": {"posts": []}})
+        return _FakeResponse(_layer(floor + 1 if self.wrong_floor else floor), self.status)
 
-        floor = int(url.rstrip(".json").rsplit("/", 1)[-1])
-        if self.window_raises or floor in self.fail_windows:
-            raise RuntimeError("窗口取炸了")
-        return _FakeResponse(self.windows.get(floor, _window_with_opening()))
-
-    def id_requests(self) -> list[str]:
-        return [u for u in self.requested if "posts.json" in u]
-
-    def window_requests(self) -> list[str]:
-        return [u for u in self.requested if "posts.json" not in u]
+    def ids(self) -> list[int]:
+        return [int(u.rsplit("=", 1)[-1]) for u in self.requested]
 
 
 def _patch_client(monkeypatch, fake: _FakeClient) -> None:
     monkeypatch.setattr(linuxdo_mod.http, "AsyncClient", fake)
 
 
-def _fill(payload: dict, post_number: str) -> dict:
-    return asyncio.run(LinuxDoTopic._with_context_floors(payload, TOPIC_ID, post_number))
+def _fill(monkeypatch, payload: dict, post_number: str, *, fake: _FakeClient | None = None) -> dict:
+    client = fake or _FakeClient()
+    _patch_client(monkeypatch, client)
+    return asyncio.run(LinuxDoTopic._with_required_floors(payload, TOPIC_ID, post_number))
 
 
-# ---------------------------------------------------------------- 便宜那条路（按 id）
+def test_a_late_floor_is_fetched_by_id(monkeypatch):
+    """**核心**: 第 24 楼不在主题端点给的 20 层里 → 按 id 取它，只一次请求"""
+    client = _FakeClient()
+    payload = _fill(monkeypatch, _topic(), "24", fake=client)
 
-
-def test_the_missing_opening_post_is_fetched_by_id(monkeypatch):
-    """**核心**: 缺主楼时按 **id 精确取**那一层（4.5KB），而不是取它的 20 层窗口（53.6KB）"""
-    fake = _FakeClient()
-    _patch_client(monkeypatch, fake)
-
-    merged = _fill(_window_24(), "24")
-
-    assert len(fake.id_requests()) == 1, f"应该按 id 取一次: {fake.requested}"
-    assert fake.window_requests() == [], f"便宜那条路成了就不该再取窗口: {fake.requested}"
-    floors = _floors(merged)
-    assert 1 in floors, "主楼没合并进来"
-    assert 24 in floors, "当前楼层丢了"
+    assert len(client.requested) == 1, f"只该取目标层: {client.requested}"
+    assert "posts.json" in client.requested[0], client.requested[0]
+    assert client.ids() == [client.stream[23]], client.ids()
+    floors = _floors(payload)
+    assert 24 in floors, "目标层没取回来"
+    assert 1 in floors, "主楼本该一直在（主题端点给的）"
     assert floors == sorted(floors)
 
 
-def test_the_id_request_asks_for_the_opening_post(monkeypatch):
-    """请求的 id 就是主楼那一层（stream 的第一项）"""
-    fake = _FakeClient()
-    _patch_client(monkeypatch, fake)
+def test_a_late_reply_fetches_the_replied_floor_too(monkeypatch):
+    """**核心**: 第 34 楼回复第 26 楼 → 两层都要，各一次请求"""
+    topic = _with_reply(_topic(), 34, 26)  # 26 也不在前 20 层里
+    client = _FakeClient(topic=topic)
+    payload = _fill(monkeypatch, topic, "34", fake=client)
 
-    _fill(_window_24(), "24")
-    opener_id = ((_window_24().get("post_stream") or {}).get("stream") or [])[0]
-    assert f"post_ids[]={opener_id}" in fake.id_requests()[0], fake.id_requests()[0]
-
-
-def test_two_missing_floors_cost_two_requests(monkeypatch):
-    """主楼与被回复的层都缺 → 两层各一次精确取（都便宜）"""
-    payload = _window_24()
-    # 24 楼本身回复主楼（reply_to=None）。手工改成回复第 3 楼 —— 它也不在窗口里。
-    for post in _posts(payload):
-        if post.get("post_number") == 24:
-            post["reply_to_post_number"] = 3
-    fake = _FakeClient()
-    _patch_client(monkeypatch, fake)
-
-    merged = _fill(payload, "24")
-
-    assert len(fake.id_requests()) == 2, f"两个缺层各一次: {fake.requested}"
-    assert fake.window_requests() == [], fake.requested
-    assert 1 in _floors(merged) and 3 in _floors(merged)
+    assert len(client.requested) == 2, f"目标层 + 被回复层: {client.requested}"
+    assert client.ids() == [client.stream[33], client.stream[25]], client.ids()
+    floors = _floors(payload)
+    assert 34 in floors and 26 in floors and 1 in floors
 
 
-def test_nothing_is_requested_when_the_window_is_complete(monkeypatch):
-    """**核心**: 窗口里已有主楼时零额外请求 —— 4 楼那种情况行为完全不变"""
-    fake = _FakeClient()
-    _patch_client(monkeypatch, fake)
+def test_a_reply_inside_the_first_twenty_costs_one_request(monkeypatch):
+    """第 24 楼回复第 7 楼 → 只取目标层（被回复的层已在手）"""
+    topic = _with_reply(_topic(), 24, 7)
+    client = _FakeClient(topic=topic)
+    _fill(monkeypatch, topic, "24", fake=client)
 
-    merged = _fill(_window_with_opening(), "4")
-
-    assert fake.requested == [], f"不该发任何请求: {fake.requested}"
-    assert _floors(merged) == _floors(_window_with_opening())
+    assert len(client.requested) == 1, f"被回复层已在手就不取: {client.requested}"
 
 
-def test_overlapping_floors_are_deduplicated(monkeypatch):
-    """补回来的层与原窗口会重叠（19、20 两层）—— 按楼层去重，不出现重复的层"""
-    fake = _FakeClient()
-    _patch_client(monkeypatch, fake)
+def test_nothing_is_requested_for_an_early_floor(monkeypatch):
+    """**核心回归**: 分享前 20 层里的楼层 → 零请求"""
+    client = _FakeClient()
+    payload = _fill(monkeypatch, _topic(), "4", fake=client)
 
-    floors = _floors(_fill(_window_24(), "24"))  # 19..38 与 1..20 重叠 19、20
+    assert client.requested == [], f"不该发任何请求: {client.requested}"
+    assert _floors(payload) == _floors(_topic())
+
+
+def test_merged_floors_are_deduplicated(monkeypatch):
+    """取回的层与原 payload 可能重叠 —— 按楼层去重，不出现重复的层"""
+    payload = _fill(monkeypatch, _topic(), "20")  # 20 楼本就在 payload 里
+    floors = _floors(payload)
     assert len(floors) == len(set(floors)), f"有重复楼层: {floors}"
-    assert floors[0] == 1 and floors[-1] == 38
 
 
-# ---------------------------------------------------------------- 退回窗口那条路
+def test_the_target_floor_is_fetched_before_the_context_floors(monkeypatch):
+    """**顺序**: 先目标层 —— 该取哪些上下文层，要靠它的 ``reply_to_post_number`` 才知道"""
+    topic = _with_reply(_topic(), 34, 26)
+    client = _FakeClient(topic=topic)
+    _fill(monkeypatch, topic, "34", fake=client)
+
+    assert client.ids()[0] == client.stream[33], f"应该先取目标层: {client.ids()}"
 
 
-def test_a_wrong_floor_from_the_id_request_falls_back_to_the_window(monkeypatch):
-    """**核心**: 按 id 取回来的不是那一层（话题删过层导致位置漂移）→ 改取该层窗口"""
-    fake = _FakeClient(id_returns_wrong_floor=True, windows={1: _window_with_opening()})
-    _patch_client(monkeypatch, fake)
+def test_a_wrong_floor_from_the_id_request_is_dropped(monkeypatch):
+    """**核心**: stream 位置漂了（话题删过层）→ 取回的是别的层，宁可不要这段上下文。
 
-    merged = _fill(_window_24(), "24")
+    把别人的话当成"被回复的内容"渲染进引用块，比少一段上下文糟糕得多。
+    """
+    client = _FakeClient(wrong_floor=True)
+    payload = _fill(monkeypatch, _topic(), "34", fake=client)
 
-    assert len(fake.id_requests()) == 1, "应该先试过 id"
-    assert any("/1.json" in u for u in fake.window_requests()), fake.requested
-    assert 1 in _floors(merged), "退回窗口后仍要拿到主楼"
-
-
-def test_a_rejected_id_request_falls_back_to_the_window(monkeypatch):
-    """按 id 取返回非 200 → 改取窗口"""
-    fake = _FakeClient(id_status=404, windows={1: _window_with_opening()})
-    _patch_client(monkeypatch, fake)
-
-    merged = _fill(_window_24(), "24")
-
-    assert len(fake.id_requests()) == 1
-    assert any("/1.json" in u for u in fake.window_requests()), fake.requested
-    assert 1 in _floors(merged)
+    assert 34 not in _floors(payload), "取错的层不能混进来"
+    assert _floors(payload) == _floors(_topic()), "原 payload 应原样保留"
 
 
-def test_an_exploding_id_request_falls_back_to_the_window(monkeypatch):
-    """按 id 请求本身炸了（网络/超时）→ 改取窗口，不能让这一层直接丢"""
-    fake = _FakeClient(id_raises=True, windows={1: _window_with_opening()})
-    _patch_client(monkeypatch, fake)
+def test_a_rejected_request_does_not_break_the_parse(monkeypatch):
+    """请求被拒（429 / 422 等）→ 只记 warning，不抛错"""
+    client = _FakeClient(status=429)
+    payload = _fill(monkeypatch, _topic(), "34", fake=client)
 
-    merged = _fill(_window_24(), "24")
-
-    assert any("/1.json" in u for u in fake.window_requests()), fake.requested
-    assert 1 in _floors(merged)
+    assert _floors(payload) == _floors(_topic()), "原 payload 应原样保留"
 
 
-def test_a_floor_without_an_id_goes_straight_to_the_window(monkeypatch):
-    """响应里没有 stream（拿不到 id）→ 直接取该层窗口，不发无用的 id 请求"""
-    payload = _window_24()
+def test_an_absent_id_does_not_send_a_request(monkeypatch):
+    """拿不到 id（stream 太短）→ 不发无用的请求，那一层就当缺"""
+    payload = _topic()
     payload["post_stream"]["stream"] = []
-    fake = _FakeClient(windows={1: _window_with_opening()})
-    _patch_client(monkeypatch, fake)
+    client = _FakeClient(topic=payload)
+    _patch_client(monkeypatch, client)
 
-    merged = _fill(payload, "24")
-
-    assert fake.id_requests() == [], f"没有 id 就别发: {fake.requested}"
-    assert any("/1.json" in u for u in fake.window_requests()), fake.requested
-    assert 1 in _floors(merged)
-
-
-def test_a_failed_fetch_does_not_break_the_parse(monkeypatch):
-    """两条路都取不到 → 只记 warning，不抛错（少一个上下文块好过整条打不开）"""
-    fake = _FakeClient(id_raises=True, window_raises=True)
-    _patch_client(monkeypatch, fake)
-
-    merged = _fill(_window_24(), "24")
-    assert 24 in _floors(merged), "原窗口的楼层应该原样保留"
+    result = asyncio.run(LinuxDoTopic._with_required_floors(payload, TOPIC_ID, "24"))
+    assert client.requested == [], f"没有 id 就别发: {client.requested}"
+    assert 24 not in _floors(result)
 
 
 # ---------------------------------------------------------------- 端到端（真实 fixture）
 
 
-def test_the_floor_renders_with_the_opening_post_after_filling(monkeypatch):
+def test_the_floor_renders_with_the_opening_post(monkeypatch):
     """**核心**: 补齐后第 24 楼渲染出**主楼引用块** + 自己的楼层号"""
-    fake = _FakeClient()
-    _patch_client(monkeypatch, fake)
-
-    payload = _fill(_window_24(), "24")
+    payload = _fill(monkeypatch, _topic(), "24")
     topic = LinuxDoTopic._from_payload(payload, TOPIC_ID, post_number="24")
 
     assert topic.post_number == 24
@@ -367,6 +297,29 @@ def test_the_floor_renders_with_the_opening_post_after_filling(monkeypatch):
     assert "> " in markdown, f"没有主楼引用块:\n{markdown[:400]}"
     assert "· #1" in markdown, "引用块里没有主楼的楼层号"
     assert "KoaIa" in markdown, "引用块里不是主楼作者"
+
+
+def test_a_reply_renders_both_context_blocks(monkeypatch):
+    """第 34 楼回复第 26 楼 → 主楼 + 被回复的层，两个引用块按「远到近」排"""
+    topic = _with_reply(_topic(), 34, 26)
+    payload = _fill(monkeypatch, topic, "34")
+    result = LinuxDoTopic._from_payload(payload, TOPIC_ID, post_number="34")
+
+    markdown = result.markdown_content
+    assert "· #1" in markdown, "缺主楼引用块"
+    assert "· #26" in markdown, "缺被回复楼层的引用块"
+    assert markdown.index("· #1") < markdown.index("· #26"), "顺序应该是「主楼 -> 被回复的层」"
+
+
+def test_a_floor_that_cannot_be_fetched_is_an_error(monkeypatch):
+    """目标层始终取不到 → ``_from_payload`` 报错（不能静默换一层给用户）"""
+    payload = _fill(monkeypatch, _topic(), "99")
+    try:
+        LinuxDoTopic._from_payload(payload, TOPIC_ID, post_number="99")
+    except LinuxDoError as exc:
+        assert "99" in str(exc)
+    else:
+        raise AssertionError("应该报错")
 
 
 if __name__ == "__main__":
