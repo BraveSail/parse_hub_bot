@@ -357,6 +357,96 @@ def test_the_ids_come_out_of_the_url():
     assert BangumiTopic.get_floor_id_by_url("https://bgm.tv/group/topic/472394") == ""
 
 
+# ---------------------------------------------------------------- 「超展开」入口
+
+def test_the_rakuen_entry_is_read_too():
+    """``/rakuen/topic/<归属>/<id>``（超展开列表里的入口）—— 与规范路径**同一个话题**
+
+    实测：``/rakuen/topic/subject/41119`` 与 ``/subject/topic/41119`` 的正文逐块相同、
+    楼层号一致；楼层结构（``.postTopic`` / ``.row_reply`` / ``.sub_reply_bg``）也同构。
+    """
+    assert BangumiTopic.get_id_by_url("https://bgm.tv/rakuen/topic/subject/41119") == "41119"
+    assert BangumiTopic.get_id_by_url("https://bgm.tv/rakuen/topic/group/472394") == "472394"
+    assert (
+        BangumiTopic.get_floor_id_by_url("https://bgm.tv/rakuen/topic/subject/41119#post_410747")
+        == "410747"
+    )
+
+
+def test_the_affiliation_comes_out_of_every_entry():
+    """归属决定用哪条规范路径 —— ``group`` 与 ``subject`` 的 header 分支不同"""
+    cases = {
+        "https://bgm.tv/group/topic/472394": ("group", "472394"),
+        "https://bgm.tv/subject/topic/41209": ("subject", "41209"),
+        "https://bgm.tv/rakuen/topic/group/472394": ("group", "472394"),
+        "https://bgm.tv/rakuen/topic/subject/41119": ("subject", "41119"),
+        "https://bgm.tv/rakuen/topic/subject/41119#post_410747": ("subject", "41119"),
+    }
+    for url, expected in cases.items():
+        assert BangumiTopic._topic_ref(url) == expected, url
+    # 不是话题的路径一律取不到（否则会被 __match__ 之外的东西误接）
+    assert BangumiTopic._topic_ref("https://bgm.tv/blog/381120") == ("", "")
+    assert BangumiTopic._topic_ref("https://bgm.tv/subject/400602") == ("", "")
+
+
+def test_a_rakuen_link_is_fetched_from_the_canonical_path():
+    """**核心**: rakuen 的入口归一化到规范路径再抓 —— 复用已验证的解析路径。
+
+    rakuen 页面更精简（实测 16KB vs 26KB），归属链指向**条目**而不是小组，
+    header 分支与规范页面也不同。归一化后零新增解析逻辑。
+    """
+    import asyncio
+
+    from parsehub.provider_api import bangumi as mod
+
+    requested: list[str] = []
+
+    class _Resp:
+        status_code = 200
+
+        def __init__(self, text: str):
+            self.content = text.encode("utf-8")
+
+        def raise_for_status(self) -> None:
+            pass
+
+    class _Client:
+        def __call__(self, **_kwargs):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def get(self, url: str, **_kwargs):
+            requested.append(url)
+            return _Resp(FIXTURE.read_text(encoding="utf-8"))
+
+    original = mod.http.AsyncClient
+    mod.http.AsyncClient = _Client()
+    try:
+        for url, wanted in (
+            ("https://bgm.tv/rakuen/topic/subject/472394", "https://bgm.tv/subject/topic/472394"),
+            ("https://bgm.tv/rakuen/topic/group/472394", "https://bgm.tv/group/topic/472394"),
+            ("https://bgm.tv/group/topic/472394", "https://bgm.tv/group/topic/472394"),
+        ):
+            asyncio.run(BangumiTopic.parse(url))
+            assert requested[-1] == wanted, (url, requested[-1])
+    finally:
+        mod.http.AsyncClient = original
+
+
+def test_the_rakuen_path_is_matched_and_other_rakuen_pages_are_not():
+    """接住三个入口；``/rakuen/topic/privatetopic/…`` 这类不接（实测返回 0 字节）"""
+    assert BangumiParser.match("https://bgm.tv/rakuen/topic/subject/41119")
+    assert BangumiParser.match("https://bgm.tv/rakuen/topic/group/472394")
+    assert BangumiParser.match("https://bgm.tv/rakuen/topic/subject/41119#post_410747")
+    assert not BangumiParser.match("https://bgm.tv/rakuen/topic/privatetopic/41119")
+    assert not BangumiParser.match("https://bgm.tv/rakuen/")
+
+
 # ---------------------------------------------------------------- parser
 
 def test_the_parser_matches_both_topic_paths():

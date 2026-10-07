@@ -30,7 +30,12 @@ class BangumiParser(BaseParser):
     # 锚定 ``blog/<数字>``、``group/topic/<数字>``、``subject/topic/<数字>``：
     # bgm.tv 与 bangumi.tv 两个域名都有人用。
     # **不接** ``/subject/<id>``（条目页本身，官方 API 覆盖）与 ``/group/<slug>``（小组首页）。
-    __match__ = r"^(http(s)?://)?(bgm|bangumi)\.tv/(blog/\d+|(group|subject)/topic/\d+)"
+    __match__ = (
+        r"^(http(s)?://)?(bgm|bangumi)\.tv/"
+        r"(blog/\d+"
+        r"|(group|subject)/topic/\d+"
+        r"|rakuen/topic/(group|subject)/\d+)"  # 「超展开」入口，与上面同话题
+    )
 
     async def _do_parse(self, raw_url: str) -> "BangumiParseResult":
         try:

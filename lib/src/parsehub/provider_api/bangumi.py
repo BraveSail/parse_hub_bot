@@ -49,6 +49,15 @@ GROUP_TOPIC_API = "https://bgm.tv/group/topic/{topic_id}"
 #: 只有头部不同（归属是条目而不是小组，标题是页面上**第二个** ``h1``）
 SUBJECT_TOPIC_API = "https://bgm.tv/subject/topic/{topic_id}"
 
+#: 归属 → 规范页面模板。``/rakuen/topic/<归属>/<id>``（「超展开」里的入口）也走这两个
+#: —— 它与规范路径是**同一个话题**（实测正文逐块相同），归一化后零新增解析逻辑。
+_TOPIC_APIS = {"group": GROUP_TOPIC_API, "subject": SUBJECT_TOPIC_API}
+
+#: 话题 URL 的三种入口。⚠️ 顺序有意义：``/rakuen/topic/subject/1`` 里也含
+#: ``topic/subject``，所以带 ``rakuen`` 的那条要**先**匹配，或者用互斥的形态描述。
+_TOPIC_URL_RE = re.compile(r"/(group|subject)/topic/(\d+)")
+_RAKUEN_URL_RE = re.compile(r"/rakuen/topic/(group|subject)/(\d+)")
+
 #: bgm 的**服务器时区**。页面上的时间是站点本地时间（``2026-10-7 00:24``，不带偏移），
 #: 按 UTC 解释会让整条消息差 8 小时（用户报「时间好像有问题？多 8 小时」）。
 #:
@@ -409,9 +418,24 @@ class BangumiTopic:
     """解析出来的楼层（仅供核对/测试，**不再渲染**）"""
 
     @staticmethod
+    def _topic_ref(url: str) -> tuple[str, str]:
+        """从 URL 取 ``(归属, 话题 id)`` —— 归属是 ``group`` 或 ``subject``。
+
+        **三种入口指向同一个话题**（实测 ``/rakuen/topic/subject/41119`` 与
+        ``/subject/topic/41119`` 的正文逐块相同、楼层号一致）：
+
+        - ``/group/topic/<id>``         小组话题
+        - ``/subject/topic/<id>``       条目讨论版
+        - ``/rakuen/topic/<归属>/<id>`` 「超展开」列表里的入口（页面更精简，但同构）
+        """
+        for pattern in (_RAKUEN_URL_RE, _TOPIC_URL_RE):
+            if match := pattern.search(url or ""):
+                return match.group(1), match.group(2)
+        return "", ""
+
+    @staticmethod
     def get_id_by_url(url: str) -> str:
-        match = re.search(r"/(?:group|subject)/topic/(\d+)", url)
-        return match.group(1) if match else ""
+        return BangumiTopic._topic_ref(url)[1]
 
     @staticmethod
     def get_floor_id_by_url(url: str) -> str:
@@ -429,11 +453,13 @@ class BangumiTopic:
         proxy: str | None = None,
         cookie: dict[str, str] | None = None,
     ) -> BangumiTopic:
-        topic_id = cls.get_id_by_url(url)
+        kind, topic_id = cls._topic_ref(url)
         if not topic_id:
             raise BangumiError(f"链接里没有话题 id: {url}")
-        template = SUBJECT_TOPIC_API if "/subject/topic/" in url else GROUP_TOPIC_API
-        api = template.format(topic_id=topic_id)
+        # rakuen 的入口归一化到**规范路径**再抓：它的页面更精简（16KB vs 26KB），
+        # 归属链指向条目而不是小组，header 分支与规范页面也不同 —— 归一化后
+        # 复用已验证的那两条路径，零新增解析逻辑。
+        api = _TOPIC_APIS[kind].format(topic_id=topic_id)
         try:
             async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
                 response = await client.get(api)
