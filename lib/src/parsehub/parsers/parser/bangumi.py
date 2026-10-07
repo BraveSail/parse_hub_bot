@@ -92,6 +92,10 @@ class BangumiParser(BaseParser):
             quote_roles=topic.quote_roles,
             # 归属行 → 元信息区（标题与作者之间），不进正文
             origin_line=topic.origin_line,
+            # 页脚统计: 状态数走 like_count 位（bgm 的表情状态就是它的"点赞"形态,
+            # 文案由渲染层按平台给「状态」）；回复数是整帖的
+            like_count=topic.state_count,
+            reply_count=topic.reply_count,
             # 本层的楼层号（主楼是 ``#1``）—— 通用位置标记机制
             position_label=topic.floor_label,
         )

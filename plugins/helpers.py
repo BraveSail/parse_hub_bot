@@ -85,7 +85,11 @@ def build_caption(
             like_count=getattr(parse_result, "like_count", None),
             lang=lang,
             view_label=view_label,
-            like_label=t_[lang]("点赞") if (view_label and lang) else "",
+            # 平台自己的叫法优先（bgm 是「状态」）—— caption 与富文本两条路一致
+            like_label=metadata_like_label(parse_result, t_[lang] if lang else t_)
+            if (view_label and lang)
+            else "",
+            reply_label=t_[lang]("回复") if (view_label and lang) else "",
         ),
         max_length=max_length,
         fold_summary=t_[lang]("展开全文") if lang else "",
@@ -147,21 +151,40 @@ def _append_gap_before_card(parts: list[str]) -> None:
 _METADATA_TIMEZONE = "Asia/Shanghai"
 
 
+#: 页脚里"点赞"那一段在**各平台叫什么**。bgm 没有"点赞"这个概念 —— 它的表情回应
+#: （页面上的 ``data_likes_list``）才是同一种正反馈，站点自己叫**「状态」**。
+_LIKE_LABEL_KEYS = {Platform.BANGUMI: "状态"}
+
+
+def metadata_like_label(parse_result: AnyParseResult, translate: Callable[[str], str]) -> str:
+    """页脚里"点赞"那一段的文案 —— 平台有自己的叫法时用它，否则空串（走默认「点赞」）。
+
+    ``translate`` 传当前语言的 ``t_``（``t_[lang]``），这样文案跟随用户语言。
+    """
+    key = _LIKE_LABEL_KEYS.get(getattr(parse_result, "platform", None))
+    return translate(key) if key else ""
+
+
 def build_metadata_line(
     *,
     published_at: datetime | None = None,
     view_count: int | None = None,
     like_count: int | None = None,
+    reply_count: int | None = None,
     lang: str = "",
     view_label: str = "",
     like_label: str = "",
+    reply_label: str = "",
 ) -> str:
-    """把发布时间/浏览量/点赞渲染成一行, 例如「2026年10月3日 19:00 · 1,455 查看 · 158 点赞」。
+    """把发布时间/浏览量/点赞/回复渲染成一行,
+
+    例如「2026年10月3日 19:00 · 1,455 查看 · 158 点赞 · 32 回复」。
 
     时间那段是个时间戳实体 (客户端会按本地时区重新渲染并本地化)。
 
-    平台不提供的项直接跳过, 不会留下空占位符。
-    view_label / like_label 由调用方用 ``t_[lang]("查看")`` / ``t_[lang]("点赞")`` 提供;
+    平台不提供的项直接跳过, 不会留下空占位符 —— 页面位置也**不预留**
+    (拿不到就不显示, 与各平台同一条原则)。
+    view_label / like_label / reply_label 由调用方用 ``t_[lang]("查看")`` 这类提供;
     不传时按 ``lang`` 兜底 (以前兜底走模块级 ``t_`` = 默认语言, 与用户语言不一致)。
     """
     parts: list[str] = []
@@ -173,6 +196,9 @@ def build_metadata_line(
     if like_count is not None:
         like_fallback = t_[lang]("点赞") if lang else t_("点赞")
         parts.append(f"{like_count:,} {like_label or like_fallback}".strip())
+    if reply_count is not None:
+        reply_fallback = t_[lang]("回复") if lang else t_("回复")
+        parts.append(f"{reply_count:,} {reply_label or reply_fallback}".strip())
     return _METADATA_SEPARATOR.join(part for part in parts if part)
 
 
@@ -463,13 +489,18 @@ def build_rich_markdown(
     # 处理过程的进度放页尾第一段: 与最终结果的"时间 · 统计"同一个位置, 主体不动
     if progress:
         footer_parts.append(progress)
+    # 当前语言的 t_: 有 lang 就用它, 否则退回默认语言（与既有兜底一致）
+    meta_t = t_[lang] if lang else t_
     metadata = build_metadata_line(
         published_at=getattr(parse_result, "published_at", None),
         view_count=getattr(parse_result, "view_count", None),
         like_count=getattr(parse_result, "like_count", None),
+        reply_count=getattr(parse_result, "reply_count", None),
         lang=lang,
         view_label=view_label,
-        like_label=t_[lang]("点赞") if (view_label and lang) else "",
+        # 平台自己的叫法优先（bgm 是「状态」）, 否则默认「点赞」
+        like_label=metadata_like_label(parse_result, meta_t) if (view_label and lang) else "",
+        reply_label=meta_t("回复") if (view_label and lang) else "",
     )
     if metadata:
         footer_parts.append(metadata)
@@ -568,6 +599,7 @@ def build_rich_markdown_by_str(
     hashtags: Sequence[str] | None = None,
     quote_roles: Sequence[str] = (),
     origin_line: str = "",
+    reply_count: int | None = None,
 ) -> str:
     """同 build_rich_markdown, 但直接吃字段 (缓存路径没有 ParseResult 对象)。
 
@@ -598,6 +630,7 @@ def build_rich_markdown_by_str(
             hashtags,
             quote_roles,
             origin_line,
+            reply_count,
         ),
         config=config,
         lang=lang,
@@ -631,6 +664,7 @@ class _RichFields:
         hashtags=None,
         quote_roles=(),
         origin_line="",
+        reply_count=None,
     ):
         self.title = title or ""
         self.content = content or ""
@@ -658,6 +692,8 @@ class _RichFields:
         self.quote_roles = list(quote_roles or [])
         # 归属行 —— 同属"渲染要用的解析字段"
         self.origin_line = origin_line or ""
+        # 回复数（页脚那一段）
+        self.reply_count = reply_count
 
 
 def rich_content(parse_result: AnyParseResult) -> str:

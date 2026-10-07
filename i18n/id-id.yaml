@@ -11,6 +11,7 @@
 1a603ac4b55c: Silakan kirim `/cfg` atau gunakan `/cfg <nama pengguna/link/id saluran>`
   dalam obrolan pribadi, grup, atau topik untuk konfigurasi
 1d30c358e2a1: Mode parsing default
+1edff073d48e: Balasan
 1f3c920d087b: Sedang diproses...
 224e2ccda861: Konfigurasi
 23d39ae9e4f8: 🖼 Tampilkan {count} gambar lainnya
@@ -29,6 +30,7 @@
 39d2213b4a9a: Daftar putih kosong
 3a6fc1464f5f: Tidak ada di daftar putih
 3d3eeb2bc9cd: Item konfigurasi tidak dikenal
+3fea7ca76cde: Reaksi
 405ba1795958: Konfigurasi topik
 421687e6f757: '{target} ada di konfigurasi (ADMIN_USERS); ubah .env untuk menghapusnya'
 460ce129a523: Sedang mengunduh...

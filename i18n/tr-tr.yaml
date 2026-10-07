@@ -10,6 +10,7 @@
 1a603ac4b55c: Lütfen özel mesajda, grupta veya konularda `/cfg` komutunu gönderin
   veya `/cfg <kanal kullanıcı adı/link/id>` ile yapılandırın
 1d30c358e2a1: Varsayılan çözümleme modu
+1edff073d48e: Yanıtlar
 1f3c920d087b: İşleniyor...
 224e2ccda861: Yapılandırma
 23d39ae9e4f8: 🖼 {count} görsel daha göster
@@ -28,6 +29,7 @@
 39d2213b4a9a: İzin listesi boş
 3a6fc1464f5f: İzin listesinde değil
 3d3eeb2bc9cd: Bilinmeyen yapılandırma öğesi
+3fea7ca76cde: Tepkiler
 405ba1795958: Konu yapılandırması
 421687e6f757: '{target} yapılandırmada (ADMIN_USERS); kaldırmak için .env dosyasını düzenleyin'
 460ce129a523: İndiriliyor...

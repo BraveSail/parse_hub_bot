@@ -12,6 +12,7 @@
 1a603ac4b55c: Veuillez envoyer `/cfg` en message privé, groupe ou sujet, ou utiliser
   `/cfg <nom d'utilisateur/lien/id du canal>` pour configurer
 1d30c358e2a1: Mode d'analyse par défaut
+1edff073d48e: Réponses
 1f3c920d087b: En cours de traitement...
 224e2ccda861: Configuration
 23d39ae9e4f8: 🖼 Afficher {count} autres images
@@ -30,6 +31,7 @@
 39d2213b4a9a: La liste blanche est vide
 3a6fc1464f5f: Pas dans la liste blanche
 3d3eeb2bc9cd: Élément de configuration inconnu
+3fea7ca76cde: Réactions
 405ba1795958: Configuration du sujet
 421687e6f757: '{target} figure dans la configuration (ADMIN_USERS) ; modifiez .env pour le retirer'
 460ce129a523: Téléchargement en cours...

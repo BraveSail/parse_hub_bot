@@ -104,7 +104,8 @@ def _constructor_param(cls: type) -> str | None:
 _BUILDABLE_PARAMS = frozenset({
     "title", "author_name", "is_sensitive", "published_at", "view_count", "like_count",
     "author_handle", "author_url", "tags", "hashtags", "quoted_media_count", "reply_media_count",
-    "position_label", "quote_roles", "origin_line", "content", "video", "photo", "media", "markdown_content",
+    "position_label", "quote_roles", "origin_line", "reply_count", "content", "video", "photo", "media",
+    "markdown_content",
 })
 
 
@@ -216,6 +217,8 @@ def result_to_cache_dict(result: AnyParseResult) -> dict[str, Any]:
         "quote_roles": list(result.quote_roles),
         # 归属行（标题与作者之间的那一行）—— 漏了它缓存命中时归属行消失
         "origin_line": result.origin_line,
+        # 回复数同理（页脚那一段）
+        "reply_count": result.reply_count,
         "impl": type(result).__name__,
     }
 
@@ -253,6 +256,7 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
         "position_label": data.get("position_label", ""),
         "quote_roles": data.get("quote_roles") or [],
         "origin_line": data.get("origin_line", ""),
+        "reply_count": data.get("reply_count"),
     }
 
     # content 只在**非 RichText** 时回填 —— 那个类的 content 是派生属性

@@ -11,6 +11,7 @@
 1a603ac4b55c: Proszę wysłać `/cfg` lub użyć `/cfg <nazwa_użytkownika_kanalu/link/id>`
   w prywatnej rozmowie, grupie lub temacie, aby skonfigurować
 1d30c358e2a1: Domyślny tryb analizy
+1edff073d48e: Odpowiedzi
 1f3c920d087b: Przetwarzanie...
 224e2ccda861: Konfiguracja
 23d39ae9e4f8: 🖼 Pokaż {count} więcej zdjęć
@@ -29,6 +30,7 @@
 39d2213b4a9a: Lista dozwolonych jest pusta
 3a6fc1464f5f: Nie ma go na liście dozwolonych
 3d3eeb2bc9cd: Nieznana opcja konfiguracji
+3fea7ca76cde: Reakcje
 405ba1795958: Konfiguracja tematu
 421687e6f757: '{target} jest w konfiguracji (ADMIN_USERS); aby usunąć, zmień .env'
 460ce129a523: Pobieranie...

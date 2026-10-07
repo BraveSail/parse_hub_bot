@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -41,7 +42,7 @@ from markdownify import MarkdownConverter
 
 from ..types.platform import Platform
 from ..utils import http
-from ..utils.helpers import format_author_link, format_quote_block, profile_url, to_datetime
+from ..utils.helpers import format_author_link, format_quote_block, profile_url, to_datetime, to_int
 
 BLOG_API = "https://bgm.tv/blog/{blog_id}"
 GROUP_TOPIC_API = "https://bgm.tv/group/topic/{topic_id}"
@@ -52,6 +53,16 @@ SUBJECT_TOPIC_API = "https://bgm.tv/subject/topic/{topic_id}"
 #: 归属 → 规范页面模板。``/rakuen/topic/<归属>/<id>``（「超展开」里的入口）也走这两个
 #: —— 它与规范路径是**同一个话题**（实测正文逐块相同），归一化后零新增解析逻辑。
 _TOPIC_APIS = {"group": GROUP_TOPIC_API, "subject": SUBJECT_TOPIC_API}
+
+#: 页面上内联的 emoji 状态数据（按楼层 id 组织，**不用额外请求**）::
+#:
+#:     var data_likes_list = {"<post_id>": {"<value>": {"total": 6, "emoji": "101",
+#:                                                      "users": [...]}}};
+#:
+#: 每个 emoji 的 ``total`` 是**贴这个表情的人数**（实测 ``total`` 与 ``users``
+#: 数组长度逐一对齐）。``likes_grid_<post_id>`` 只是**空容器**（JS 填充），
+#: 所以数据只能从这段脚本取。
+_LIKES_LIST_RE = re.compile(r"var data_likes_list\s*=\s*(\{.*?\});", re.S)
 
 #: 话题 URL 的三种入口。两条正则**互斥**（前者要 ``group|subject/topic/``，
 #: 后者要 ``rakuen/topic/``），所以匹配顺序不影响结果 —— 实测两个方向都试过。
@@ -416,6 +427,10 @@ class BangumiTopic:
     reply_media_count: int = 0
     #: 引用块的角色（按出现顺序）—— 渲染层据此归位媒体, **不再看位置**
     quote_roles: list[str] = field(default_factory=list)
+    #: **整帖的 emoji 状态数**（所有楼层的表情回应人数之和）—— 页脚用
+    state_count: int = 0
+    #: **整帖的回复数**（楼层总数 − 1，主楼不算回复）—— 页脚用
+    reply_count: int = 0
     #: **归属行**（「小组/条目名 » 讨论」）—— 渲染层放在**标题与作者行之间**的元信息区。
     #: 放进正文会挤到引用块前面，把引用块的归位搅乱（踩过两次）。
     origin_line: str = ""
@@ -506,13 +521,18 @@ class BangumiTopic:
                     images.append(img)
 
         all_floors = cls._collect_floors(soup, main_post)
+        # 整帖统计（页脚用）: 状态数是**所有楼层**的表情回应人数之和;
+        # 回复数是楼层总数 − 1（主楼不算回复）
+        state_count = cls._parse_state_count(html)
         opening = next((f for f in all_floors if f.label == "#1"), None)
         if opening is None and all_floors:
             opening = all_floors[0]
 
         # **只发一层**：锚点指定的那层，没有锚点就是主楼
         current = cls._pick_floor(all_floors, opening, floor_id)
-        return cls._build(topic_id, title, context_name, context_url, opening, current, all_floors, images)
+        return cls._build(
+            topic_id, title, context_name, context_url, opening, current, all_floors, images, state_count
+        )
 
     @staticmethod
     def _pick_floor(floors: list[BangumiFloor], opening: BangumiFloor | None, floor_id: str) -> BangumiFloor | None:
@@ -543,6 +563,7 @@ class BangumiTopic:
         current: BangumiFloor | None,
         all_floors: list[BangumiFloor],
         images: list[BangumiImage],
+        state_count: int = 0,
     ) -> BangumiTopic:
         """组装结果：本层正文（+ 不是主楼时把主楼做成引用块，与 linux.do 同一形态）。"""
         is_opening = current is opening
@@ -604,10 +625,38 @@ class BangumiTopic:
             context_name=context_name,
             context_url=context_url,
             origin_line=origin_line,
+            state_count=state_count,
+            reply_count=max(1, len(all_floors)) - 1,
             floors=[f for f in all_floors if f is not opening],
         )
 
     # ------------------------------------------------------------------ 解析
+
+    @staticmethod
+    def _parse_state_count(html: str) -> int:
+        """页面内联的 ``data_likes_list`` 里**所有楼层**的 emoji 状态人数之和。
+
+        取不到（没有这段脚本 / 格式变了 / 没人贴状态）时返回 **0** —— 页脚据此
+        决定不显示（"拿不到就不显示"，与各平台同一条原则）。
+        """
+        match = _LIKES_LIST_RE.search(html or "")
+        if not match:
+            return 0
+        try:
+            data = json.loads(match.group(1))
+        except ValueError:
+            logger.warning("data_likes_list 不是合法 JSON, 跳过状态数")
+            return 0
+        if not isinstance(data, dict):
+            return 0
+        total = 0
+        for likes in data.values():
+            if not isinstance(likes, dict):
+                continue
+            for info in likes.values():
+                if isinstance(info, dict):
+                    total += to_int(info.get("total")) or 0
+        return total
 
     @staticmethod
     def _parse_header(soup: BeautifulSoup) -> tuple[str, str, str]:

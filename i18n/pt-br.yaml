@@ -11,6 +11,7 @@
 1a603ac4b55c: Por favor, envie `/cfg` em chat privado, grupo ou tópico, ou use `/cfg
   <nome de usuário/link/id do canal>` para configurar
 1d30c358e2a1: Modo de análise padrão
+1edff073d48e: Respostas
 1f3c920d087b: Processando...
 224e2ccda861: Configuração
 23d39ae9e4f8: 🖼 Mostrar mais {count} imagens
@@ -29,6 +30,7 @@
 39d2213b4a9a: A lista de permissões está vazia
 3a6fc1464f5f: Não está na lista de permissões
 3d3eeb2bc9cd: Opção de configuração desconhecida
+3fea7ca76cde: Reações
 405ba1795958: Configuração do tópico
 421687e6f757: '{target} está na configuração (ADMIN_USERS); edite o .env para removê-lo'
 460ce129a523: Baixando...
