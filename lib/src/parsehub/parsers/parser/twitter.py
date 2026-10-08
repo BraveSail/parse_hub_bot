@@ -168,18 +168,25 @@ class TwitterParser(BaseParser):
 
     @staticmethod
     async def _youtube_card(text: str | None) -> tuple[str, list[AnyMediaRef]]:
-        """把正文里的 YouTube 链接渲染成引用卡片 (标题可点) + 封面图。
+        """把正文里的 YouTube 链接渲染成可点的**卡片行**（标题链到视频）。
 
         **作用域: 只给被引用 / 被回复的推文用** —— 它们本来就渲染成引用卡片,
-        卡片正文里的链接应当有封面 (与 bilibili 引用的形态一致, 用户要求)。
+        卡片正文里的链接应当是可点的、有标题的。
+
+        ⚠️ **只出文字, 不产出媒体**（2026-10-08 用户纠正）:
+        这里曾返回 ``[ImageRef(card.cover_url)]`` —— 于是那张 YouTube 缩略图被当成
+        **一条独立的图片**发出去。用户原话:「我之前让弄的是**给视频加封面**, 不是把封面
+        再发一遍」。给视频配封面是**另一个机制**: 视频的封面走 ``VideoRef.thumb_url``
+        （由 ``plugins/parse/covers.prepare_video_thumbs`` 下载成缩略图,
+        见 ``inline_rich`` 的 ``VideoFile`` 分支）。两者别混:
+        链接卡片 = 文字行; 视频封面 = ``thumb_url``。**不要把链接的封面塞成独立媒体。**
 
         ⚠️ **主帖自己的正文不处理**: 它既不是引用也不是回复, 链接原样留着
         (用户原话:「有引用就引用吗, 没引用就不弄, 链接你放那里不管就行了」)。
 
-        只取**第一个**能抓到卡片的链接: 一条推文塞多张封面会喧宾夺主, 而且卡片之间
-        没有各自的位置信息 (引用块媒体是按数量切分的, 见 ``quoted_media_count``)。
+        只取**第一个**能抓到卡片的链接（一条推文塞多张会喧宾夺主）。
 
-        抓不到 (网络失败/链接不是频道也不是视频) 就返回空 —— 封面是锦上添花,
+        抓不到 (网络失败/链接不是频道也不是视频) 就返回空 —— 卡片是锦上添花,
         不该让整条解析失败。
         """
         from ...provider_api.youtube import fetch_card, find_youtube_links
@@ -189,7 +196,7 @@ class TwitterParser(BaseParser):
             if card:
                 href = html.escape(card.url, quote=True)
                 label = html.escape(card.title)
-                return f'> <i><a href="{href}">{label}</a></i>', [ImageRef(url=card.cover_url)]
+                return f'> <i><a href="{href}">{label}</a></i>', []
         return "", []
 
     @staticmethod

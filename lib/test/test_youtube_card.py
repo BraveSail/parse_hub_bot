@@ -10,7 +10,6 @@ from unittest.mock import patch
 import pytest
 
 from parsehub.provider_api.youtube import YoutubeCard, find_youtube_links
-from parsehub.types import ImageRef
 
 LINK = "http://www.youtube.com/@SuikodenTheAnime-EN"
 
@@ -45,15 +44,22 @@ def _card(title="频道名", cover="https://yt3.example/x", url=LINK) -> Youtube
 
 
 @pytest.mark.parametrize(
-    ("text", "card", "want_quote", "want_media"),
+    ("text", "card", "want_quote"),
     [
-        (f"正文 {LINK}", _card(), True, 1),
+        (f"正文 {LINK}", _card(), True),
         # 抓不到 -> 什么都不加, 正文照旧
-        (f"正文 {LINK}", None, False, 0),
-        ("正文没有链接", _card(), False, 0),
+        (f"正文 {LINK}", None, False),
+        ("正文没有链接", _card(), False),
     ],
 )
-def test_twitter_adds_card_only_when_the_cover_is_available(text, card, want_quote, want_media):
+def test_twitter_adds_a_text_card_and_never_a_cover_media(text, card, want_quote):
+    """**核心契约（2026-10-08 用户纠正）**：链接卡片只出**文字行**（标题可点），
+    **不能**把 YouTube 封面当独立媒体发出去。
+
+    用户原话：「我之前让弄的是**给视频加封面**，不是把封面再发一遍」。
+    给视频配封面走的是另一个机制（``VideoRef.thumb_url`` → ``prepare_video_thumbs``
+    → ``InputMediaVideo(thumb=…)``），与链接卡片无关。
+    """
     from parsehub.parsers.parser.twitter import TwitterParser
 
     async def fake_card(_url):
@@ -63,13 +69,11 @@ def test_twitter_adds_card_only_when_the_cover_is_available(text, card, want_quo
         quote, media = asyncio.run(TwitterParser._youtube_card(text))
 
     assert bool(quote) is want_quote
-    assert len(media) == want_media
+    assert media == [], "链接卡片不得产出任何媒体（封面不是独立图片）"
     if want_quote:
         assert quote.startswith("> <i><a href=")
         assert LINK in quote
         assert "频道名" in quote
-        assert isinstance(media[0], ImageRef)
-        assert media[0].url == "https://yt3.example/x"
 
 
 def test_title_and_url_are_escaped():
@@ -103,4 +107,4 @@ def test_only_the_first_resolvable_link_is_used():
         )
 
     assert calls == ["https://youtu.be/aaaaaaaaaaA", "https://youtu.be/bbbbbbbbbbB"]
-    assert bool(quote) and len(media) == 1
+    assert bool(quote) and media == []

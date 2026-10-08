@@ -1,19 +1,22 @@
-"""YouTube 链接封面：作用域是**被引用 / 被回复的推文**，不是主帖正文。
+"""YouTube 链接卡片：作用域是**被引用 / 被回复的推文**，且**只出文字行、不出图片**。
 
-用户原话:
+用户原话（两轮，后者纠正前者）:
   「之前让你修的是 引用里面的链接没有封面，我让你统一，作用域是引用或者回复」
   「有引用就引用吗，没引用就不弄，链接你放那里不管就行了」
+  「我之前让弄的是**给视频加封面**，不是把封面再发一遍」
+
+⇒ 卡片是**可点的标题行**（插在对应引用块内部）；封面**不是**独立媒体。
+   给视频配封面是另一个机制（``VideoRef.thumb_url`` → ``prepare_video_thumbs``）。
 
 所以:
 
-- **被引用推文**（``quoted_status``）正文里的 YouTube 链接 → 引用卡片 + 封面，封面归
-  ``quoted_media_count`` 那一档（它会渲染进被引用卡片里）；
-- **被回复推文**（``reply_to``）正文里的链接 → 同上，归 ``reply_media_count`` 那一档；
-- **主帖自己的正文**里的链接 → **一概不处理**，原样留着（不抓封面、不套引用块）。
+- **被引用推文**（``quoted_status``）正文里的链接 → 引用块里加可点标题行，**不产出媒体**；
+- **被回复推文**（``reply_to``）正文里的链接 → 同上；
+- **主帖自己的正文**里的链接 → **一概不处理**，原样留着（不抓卡片、不套引用块）。
 
-媒体顺序（渲染层从末尾往前切两个引用块）::
+媒体顺序（渲染层从末尾往前切两个引用块）**只含各档自己的媒体**，卡片不占位::
 
-    [正文..., 被回复(含其卡片封面)..., 被引用(含其卡片封面)...]
+    [正文..., 被回复自己的媒体..., 被引用自己的媒体...]
 """
 
 import asyncio
@@ -21,7 +24,6 @@ from unittest.mock import patch
 
 from parsehub.parsers.parser.twitter import TwitterParser
 from parsehub.provider_api.twitter import TwitterPhoto, TwitterTweet
-from parsehub.types import ImageRef
 
 YT = "https://youtube.com/shorts/hnSeq_P3jAo"
 COVER = "https://i.ytimg.com/vi/x/hq2.jpg"
@@ -68,15 +70,13 @@ def test_a_link_in_the_main_body_is_left_alone():
 # ---------------------------------------------------------------- 被引用推文
 
 
-def test_a_link_inside_the_quoted_post_gets_a_card_and_cover():
-    """**核心**: 被引用推文正文里的链接 → 卡片进引用块 + 封面归引用档。"""
+def test_a_link_inside_the_quoted_post_gets_a_card_but_no_media():
+    """**核心**: 被引用推文正文里的链接 → 引用块里加可点标题行，**不产出图片**。"""
     quoted = _tweet(tweet_id="2", full_text=f"看这个 {YT}")
     result = _parse(_tweet(quoted_status=quoted))
 
-    assert result.quoted_media_count == 1, "封面要归引用档（渲染进被引用卡片里）"
-    assert len(result.media or []) == 1
-    assert isinstance(result.media[0], ImageRef)
-    assert result.media[0].url == COVER
+    assert result.quoted_media_count == 0, "卡片是文字行, 不占媒体档位"
+    assert len(result.media or []) == 0, "封面不得作为独立媒体发出"
     assert "> <i><a" in result.content, result.content
     assert result.reply_media_count == 0
 
@@ -95,43 +95,48 @@ def test_the_quoted_card_sits_inside_the_quoted_block():
     assert lines[card_at - 1].startswith("> "), lines[card_at - 1]
 
 
-def test_the_quoted_post_own_media_and_the_cover_both_count():
-    """被引用帖自己的媒体 + 它的卡片封面都归引用档（顺序: 媒体在前、封面在后）"""
+def test_only_the_quoted_post_own_media_counts():
+    """引用档只数**它自己的媒体** —— 卡片（文字行）不占档位。
+
+    这正是用户报的「引用里怎么多一张图」：被引用帖自己的视频/图之外，
+    那张 YouTube 封面不该再占一个媒体位。
+    """
     quoted = _tweet(
         tweet_id="2",
         full_text=f"看这个 {YT}",
         media=[TwitterPhoto(url="https://pbs/x.jpg", height=1, width=1)],
     )
     result = _parse(_tweet(quoted_status=quoted))
-    assert result.quoted_media_count == 2
-    assert [type(m).__name__ for m in result.media] == ["ImageRef", "ImageRef"]
+    assert result.quoted_media_count == 1
+    assert [type(m).__name__ for m in result.media] == ["ImageRef"]
     assert result.media[0].url == "https://pbs/x.jpg"
-    assert result.media[1].url == COVER
+    assert COVER not in [m.url for m in result.media]
 
 
 # ---------------------------------------------------------------- 被回复推文
 
 
-def test_a_link_inside_the_replied_post_gets_a_card_and_cover():
-    """被回复推文正文里的链接 → 卡片进回复块 + 封面归回复档"""
+def test_a_link_inside_the_replied_post_gets_a_card_but_no_media():
+    """被回复推文正文里的链接 → 回复块里加可点标题行，**不产出图片**"""
     reply = _tweet(tweet_id="3", full_text=f"看这个 {YT}")
     result = _parse(_tweet(reply_to=reply))
 
-    assert result.reply_media_count == 1
+    assert result.reply_media_count == 0
     assert result.quoted_media_count == 0
-    assert result.media[0].url == COVER
+    assert len(result.media or []) == 0
     assert "> <i><a" in result.content
 
 
-def test_reply_and_quoted_links_land_in_their_own_tiers():
-    """两种都有时各归各的档 —— 顺序是 [正文..., 回复(含封面)..., 引用(含封面)...]"""
+def test_reply_and_quoted_cards_both_render_without_media():
+    """两处链接各有自己的卡片行, 但都不产出媒体（不占任何档位）"""
     reply = _tweet(tweet_id="3", full_text=f"回复里的 {YT}")
     quoted = _tweet(tweet_id="4", full_text=f"引用里的 {YT}")
     result = _parse(_tweet(reply_to=reply, quoted_status=quoted))
 
-    assert result.reply_media_count == 1
-    assert result.quoted_media_count == 1
-    assert len(result.media) == 2
+    assert result.reply_media_count == 0
+    assert result.quoted_media_count == 0
+    assert len(result.media or []) == 0
+    assert result.content.count("> <i><a href=") >= 2, "两处卡片行都要在"
 
 
 def test_the_reply_card_comes_before_the_body_and_the_quoted_block_after():
@@ -147,8 +152,8 @@ def test_the_reply_card_comes_before_the_body_and_the_quoted_block_after():
 # ---------------------------------------------------------------- 抓不到封面
 
 
-def test_a_quoted_link_with_no_cover_stays_plain():
-    """抓不到封面时不加卡片、不加媒体（封面是锦上添花，不该让解析失败）"""
+def test_a_quoted_link_with_no_card_stays_plain():
+    """抓不到卡片信息时不加卡片行（卡片是锦上添花，不该让解析失败）"""
     quoted = _tweet(tweet_id="2", full_text=f"看这个 {YT}")
     result = _parse(_tweet(quoted_status=quoted), cover=False)
     assert result.quoted_media_count == 0
