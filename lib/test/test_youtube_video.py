@@ -31,6 +31,7 @@ from parsehub.provider_api.youtube_video import (
     YoutubeVideoError,
     _reset_visitor_cache,
     fetch_video,
+    parse_microformat,
     parse_player_response,
     select_streams,
     video_id_from_url,
@@ -332,19 +333,96 @@ def test_player_request_carries_the_visitor_header_and_context():
     assert captured["body"]["context"]["client"]["visitorData"] == "V-123"
 
 
-def test_visitor_data_is_fetched_once_and_reused_across_videos():
-    """visitorData 是**访客身份**、可跨视频复用（实测同一 visitor 连用 3 条视频全 OK）
-    ⇒ 第二次解析不该再请求 guide。"""
+def test_visitor_comes_from_the_web_response_without_a_guide_request():
+    """visitorData 由 **WEB player 的响应**顺手带回 ⇒ 正常路径下**不再需要 guide 请求**。
+    （visitor 是必需项：缺它 VISIONOS 会 LOGIN_REQUIRED。）"""
     guide_calls: list = []
-    player_calls: list = []
-    fake = _fake_client(guide_calls=guide_calls, player_calls=player_calls)
+    visitor_headers: list = []
 
-    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", fake):
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, url, **kwargs):
+            if "guide" in url:
+                guide_calls.append(url)
+                return FakeResponse(200, json_data={"responseContext": {"visitorData": "V-GUIDE"}})
+            visitor_headers.append(kwargs["headers"].get("X-Goog-Visitor-Id"))
+            if kwargs["headers"]["X-Youtube-Client-Name"] == "1":
+                return FakeResponse(200, json_data={**MICROFORMAT,
+                                                    "responseContext": {"visitorData": "V-WEB"}})
+            return FakeResponse(200, json_data=_player())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
         asyncio.run(fetch_video("dQw4w9WgXcQ"))
-        asyncio.run(fetch_video("jNQXAC9IVRw"))
 
-    assert len(guide_calls) == 1, "第二次解析不该再取 visitor"
-    assert len(player_calls) == 2
+    assert guide_calls == [], "正常路径不该再发 guide"
+    assert "V-WEB" in visitor_headers, "VISIONOS 请求要带上 WEB 给回的那个 visitor"
+
+
+def test_guide_is_the_fallback_when_the_web_response_has_no_visitor():
+    """WEB 没给 visitor 时**必须**兜底到 guide —— 否则 VISIONOS 会 LOGIN_REQUIRED
+    （那次失败的代价是整条视频解析不了）。"""
+    guide_calls: list = []
+    visitor_headers: list = []
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, url, **kwargs):
+            if "guide" in url:
+                guide_calls.append(url)
+                return FakeResponse(200, json_data={"responseContext": {"visitorData": "V-GUIDE"}})
+            visitor_headers.append(kwargs["headers"].get("X-Goog-Visitor-Id"))
+            if kwargs["headers"]["X-Youtube-Client-Name"] == "1":
+                # WEB 响应没有 responseContext.visitorData
+                return FakeResponse(200, json_data=MICROFORMAT)
+            return FakeResponse(200, json_data=_player())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        asyncio.run(fetch_video("dQw4w9WgXcQ"))
+
+    assert len(guide_calls) == 1, "应兜底发一次 guide"
+    assert "V-GUIDE" in visitor_headers
+
+
+def test_all_requests_go_over_the_same_proxy():
+    """两发请求（WEB 取元数据 / VISIONOS 取流）必须走**同一个出口**。"""
+    seen: list = []
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            seen.append(kwargs.get("proxy"))
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, url, **kwargs):
+            if kwargs["headers"]["X-Youtube-Client-Name"] == "1":
+                return FakeResponse(200, json_data={**MICROFORMAT,
+                                                    "responseContext": {"visitorData": "V"}})
+            return FakeResponse(200, json_data=_player())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        asyncio.run(fetch_video("dQw4w9WgXcQ", proxy="socks5h://127.0.0.1:1085"))
+
+    assert seen == ["socks5h://127.0.0.1:1085", "socks5h://127.0.0.1:1085"]
 
 
 def test_missing_visitor_degrades_instead_of_failing():
@@ -360,13 +438,64 @@ def test_missing_visitor_degrades_instead_of_failing():
     assert "visitorData" not in captured["body"]["context"]["client"]
 
 
-def test_guide_is_requested_over_the_same_proxy_as_the_player():
-    """guide 与 player 必须走**同一个出口** —— 换出口时 visitor 与会话对不上就白搭。"""
-    seen: list = []
+# ── 发布时间/点赞/上传者：WEB client 的 microformat ───────────────────────
+#
+# 实测（25 个 client × player/next × JSON/protobuf，见 MICROFORMAT_CLIENT 的注释）：
+# **没有一个 client 能同时给「明文流」和 ``microformat``**。取流的 VISIONOS 连
+# ``microformat`` 键都没有；有 ``microformat`` 的 WEB/MWEB 不出流。
+# ⇒ 两个 client 分工，但**请求数不变**（WEB player 顶掉原来的 guide 那一发）。
+
+MICROFORMAT = {
+    "microformat": {
+        "playerMicroformatRenderer": {
+            "publishDate": "2026-10-08T02:00:03-07:00",
+            "uploadDate": "2026-10-08T02:00:03-07:00",
+            "likeCount": "368",
+            "ownerProfileUrl": "http://www.youtube.com/@KADOKAWAanime",
+            "ownerChannelName": "KADOKAWAanime",
+        }
+    }
+}
+
+
+def test_parse_microformat_maps_all_three_fields():
+    meta = parse_microformat(MICROFORMAT)
+
+    assert meta.published_at is not None
+    assert meta.published_at.isoformat().startswith("2026-10-08T02:00:03")
+    assert meta.like_count == 368, "likeCount 是字符串, 必须转成 int"
+    assert meta.author_handle == "KADOKAWAanime", "从 ownerProfileUrl 取 @handle"
+    assert meta.author_url == "https://www.youtube.com/@KADOKAWAanime", "http 要换成 https"
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        {"microformat": {}},
+        {"microformat": None},
+        {"microformat": {"playerMicroformatRenderer": {}}},   # 字段全缺
+        {"microformat": {"playerMicroformatRenderer": {"publishDate": None, "likeCount": None}}},
+        None,
+        "not-a-dict",
+    ],
+)
+def test_parse_microformat_tolerates_missing_fields(data):
+    """元数据缺失/形态不对都不能抛错（老响应、取流不受影响）。"""
+    meta = parse_microformat(data)
+    assert meta.published_at is None
+    assert meta.like_count is None
+    assert meta.author_handle == ""
+
+
+def test_fetch_video_fills_metadata_from_the_web_client_and_keeps_two_requests():
+    """**核心契约**：元数据来自 WEB、流来自 VISIONOS，且**总共只发 2 次请求**
+    （WEB player 一发 + VISIONOS player 一发；不能变成 3 发）。"""
+    calls: list[tuple[str, str]] = []
 
     class FakeClient:
-        def __init__(self, **kwargs):
-            seen.append(kwargs.get("proxy"))
+        def __init__(self, **_kwargs):
+            pass
 
         async def __aenter__(self):
             return self
@@ -375,14 +504,46 @@ def test_guide_is_requested_over_the_same_proxy_as_the_player():
             return False
 
         async def post(self, url, **kwargs):
-            if "guide" in url:
-                return FakeResponse(200, json_data={"responseContext": {"visitorData": "V"}})
+            client_name = kwargs["headers"]["X-Youtube-Client-Name"]
+            calls.append((url, client_name))
+            if client_name == "1":      # WEB → 元数据 + visitor
+                return FakeResponse(200, json_data={**MICROFORMAT,
+                                                    "responseContext": {"visitorData": "V-WEB"}})
             return FakeResponse(200, json_data=_player())
 
     with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
-        asyncio.run(fetch_video("dQw4w9WgXcQ", proxy="socks5h://127.0.0.1:1085"))
+        video = asyncio.run(fetch_video("jTbsEsYSnpM"))
 
-    assert seen == ["socks5h://127.0.0.1:1085", "socks5h://127.0.0.1:1085"]
+    assert [c[1] for c in calls] == ["1", "101"], "WEB 取元数据 → VISIONOS 取流"
+    assert len(calls) == 2, "请求数必须保持 2（与原来的 guide+player 相同）"
+    assert video.metadata.like_count == 368
+    assert video.metadata.published_at is not None
+    assert video.streams, "取流不受影响"
+
+
+def test_missing_microformat_still_parses_the_streams():
+    """WEB 那发失败/没元数据时：时间与点赞留空, 但**流必须照常拿到**。"""
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, url, **kwargs):
+            if kwargs["headers"]["X-Youtube-Client-Name"] == "1":
+                raise RuntimeError("web client down")
+            return FakeResponse(200, json_data=_player())
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+        video = asyncio.run(fetch_video("jTbsEsYSnpM"))
+
+    assert video.streams
+    assert video.metadata.published_at is None
+    assert video.metadata.like_count is None
 
 
 # ── 分离流的 mux 下载接线（离线, 打桩下载与 mux） ─────────────────────────

@@ -191,10 +191,12 @@ class YtbVideoParseResult(VideoParseResult):
             title=info.title,
             content=info.description,
             author_name=info.author_name,
-            author_url=info.author_url,
-            # player 响应里没有发布时间, 也没有上传者 handle —— 留空, 不编造
-            # （渲染层不显示空项）。要补得另抓 watch 页, 见 provider 模块说明。
-            published_at=None,
+            # 作者主页与 handle 来自 WEB client 的 microformat（取流的 VISIONOS 不返回）；
+            # 拿不到就退回 player 的 /channel/<id> 与空 handle（渲染层不显示空项）。
+            author_handle=info.metadata.author_handle,
+            author_url=info.metadata.author_url or info.author_url,
+            published_at=info.metadata.published_at,
+            like_count=info.metadata.like_count,
             view_count=info.view_count,
             video=VideoRef(
                 url=selected.video_url,

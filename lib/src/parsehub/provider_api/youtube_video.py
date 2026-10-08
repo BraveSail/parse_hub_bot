@@ -32,10 +32,11 @@ import json
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from ..utils import http
-from ..utils.helpers import to_int
+from ..utils.helpers import to_datetime, to_int
 
 # ── innertube client 常量 ──────────────────────────────────────────────────
 #
@@ -137,6 +138,49 @@ class Stream:
 
 
 @dataclass(slots=True)
+class VideoMetadata:
+    """与流无关的视频元数据（来自 ``microformat.playerMicroformatRenderer``）。"""
+
+    published_at: datetime | None = None
+    like_count: int | None = None
+    author_handle: str = ""
+    author_url: str = ""
+
+
+def parse_microformat(data: Any) -> VideoMetadata:
+    """``microformat.playerMicroformatRenderer`` → ``VideoMetadata``（纯函数）。
+
+    - ``publishDate`` 是 ISO 带偏移（``2026-10-08T02:00:03-07:00``），交给 ``to_datetime``；
+    - ``likeCount`` 是**字符串**（``"368"``），走 ``to_int``；
+    - ``ownerProfileUrl`` 是 ``http://www.youtube.com/@handle``（**注意是 http**，要换 https）。
+    取不到一律留空，**不抛错**（老响应形态 / 元数据缺失都不能影响取流）。
+    """
+    if not isinstance(data, dict):
+        return VideoMetadata()
+    renderer = data.get("microformat")
+    if not isinstance(renderer, dict):
+        return VideoMetadata()
+    info = renderer.get("playerMicroformatRenderer")
+    if not isinstance(info, dict):
+        return VideoMetadata()
+
+    handle = ""
+    owner_url = str(info.get("ownerProfileUrl") or "")
+    if owner_url:
+        # http://www.youtube.com/@handle → https + 只留 @handle
+        tail = owner_url.split("youtube.com/", 1)[-1].strip("/")
+        if tail.startswith("@"):
+            handle = tail[1:]
+
+    return VideoMetadata(
+        published_at=to_datetime(info.get("publishDate") or info.get("uploadDate")),
+        like_count=to_int(info.get("likeCount")),
+        author_handle=handle,
+        author_url=owner_url.replace("http://", "https://", 1) if owner_url else "",
+    )
+
+
+@dataclass(slots=True)
 class YoutubeVideo:
     """一条视频的解析结果 (元数据 + 全部可用流)。"""
 
@@ -150,6 +194,9 @@ class YoutubeVideo:
     view_count: int | None = None
     user_agent: str = ""
     """请求 player 所用 client 的 User-Agent —— 下载直链时一并带上。"""
+    metadata: VideoMetadata = field(default_factory=VideoMetadata)
+    """视频元数据（发布时间/点赞/上传者）。由 ``fetch_video`` 从 WEB client 的
+    ``microformat`` 填入 —— 取流的 client 从不返回它，见 ``MICROFORMAT_CLIENT``。"""
     streams: list[Stream] = field(default_factory=list)
 
     @property
@@ -407,7 +454,11 @@ def visitor_data_from_response(data: Any) -> str:
 
 
 async def _fetch_visitor_data(*, proxy: str | http.Proxy | None, cookie: dict[str, str] | None) -> str:
-    """请求 guide 接口取 ``visitorData``; 任何失败都返回空串 (由调用方降级)。"""
+    """请求 guide 接口取 ``visitorData``; 任何失败都返回空串 (由调用方降级)。
+
+    只在 ``_fetch_web_metadata`` 拿不到 visitor 时兜底用 —— 正常路径下 visitor 由
+    ``_fetch_web_metadata`` 的 WEB player 响应顺手带回（**不额外发请求**）。
+    """
     body = {
         "context": {
             "client": {
@@ -462,6 +513,47 @@ def _client_context(spec: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in spec.items() if not key.startswith("_")}
 
 
+# ── 视频元数据（发布时间 / 点赞 / 上传者）─────────────────────────────────
+#
+# ⚠️ **实测结论（别再试别的路）**：**没有一个 client 能一次同时给「明文流」和
+# ``microformat``** —— 25 个 client + player/next 两个接口 + JSON/protobuf 两种格式
+# + 8 个内置 key + 两个域名都试过：
+#
+# | 能出明流的 client | ``microformat``（发布时间） |
+# | --- | --- |
+# | ``VISIONOS`` / ``ANDROID`` / ``ANDROID_VR`` / ``IOS`` | **无**（连键都不存在；3.8MB 的
+# |   next protobuf 逐字节搜发布日期戳, 0 命中）|
+# | ``WEB`` / ``MWEB``（带不带 PO token 都一样）| **有**（``publishDate`` / ``dateText``）|
+#
+# app 的发布时间来自服务端下发的 protobuf 字段
+# （``OfflineVideoCursorReader`` → ``bjjy.f115999h`` → ``new Date(SECONDS.toMillis(...))``
+#  → ``VideoMetadata.publishedDateText``），**匿名请求拿不到**（疑似要登录态）。
+#
+# ⇒ 所以是**两个 client 分工**：``VISIONOS`` 取流（唯一满足「给明流 + 不要 PO token」的），
+# ``WEB`` 取元数据。但这是**同一个请求位置**上的分工 —— ``fetch_video`` 只发两次请求，
+# 与之前「guide 取 visitor + VISIONOS 取流」**请求数完全相同**，只是把信息更少的 guide
+# 换成了 WEB player（它还顺手带回 visitorData）。别再加第三次请求。
+
+MICROFORMAT_CLIENT: dict[str, Any] = {
+    "clientName": "WEB",
+    "clientVersion": "2.20260708.00.00",
+    "hl": "en",
+    "gl": "US",
+    "timeZone": "UTC",
+    "utcOffsetMinutes": 0,
+    "_user_agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/605.1.15"
+    ),
+    "_x_client_name": "1",
+}
+"""取 ``microformat``（发布时间/点赞/上传者）用的 client。
+
+网页版即使播放被拦（``playabilityStatus`` 非 OK）**仍照常返回 ``microformat``** ——
+我们要的只是元数据，所以这个"播放不可用"不影响用途。
+"""
+
+
 async def _request_player(
     video_id: str,
     spec: dict[str, Any],
@@ -504,6 +596,41 @@ async def _request_player(
         raise YoutubeVideoError("player API 返回的不是 JSON") from exc
 
 
+async def _fetch_web_metadata(
+    video_id: str, *, proxy: str | http.Proxy | None, cookie: dict[str, str] | None
+) -> tuple[VideoMetadata, str]:
+    """一次 WEB player 请求, 同时取回 **视频元数据** 与 **visitorData**。
+
+    返回 ``(metadata, visitor)``；任何失败都返回空值（由调用方走兜底/降级）。
+
+    ⚠️ **这次请求就是原来 ``guide`` 的位置** —— 请求数不变（仍是 2: 本函数 + VISIONOS 取流），
+    只是把「只带回 visitor 的 guide」换成「顺带带回发布时间/点赞/上传者 的 WEB player」。
+    """
+    body = {
+        "context": {"client": _client_context(MICROFORMAT_CLIENT)},
+        "videoId": video_id,
+        "contentCheckOk": True,
+        "racyCheckOk": True,
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": MICROFORMAT_CLIENT["_user_agent"],
+        "X-Youtube-Client-Name": MICROFORMAT_CLIENT["_x_client_name"],
+        "X-Youtube-Client-Version": MICROFORMAT_CLIENT["clientVersion"],
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    try:
+        async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
+            response = await client.post(PLAYER_URL, data=json.dumps(body).encode(), headers=headers)
+        if response.status_code != 200:
+            return VideoMetadata(), ""
+        data = response.json()
+    except Exception:  # noqa: BLE001 - 网络/JSON 异常都走降级
+        return VideoMetadata(), ""
+
+    return parse_microformat(data), visitor_data_from_response(data)
+
+
 async def fetch_video(
     video_id: str,
     *,
@@ -512,15 +639,20 @@ async def fetch_video(
 ) -> YoutubeVideo:
     """请求 player API 并解析。
 
-    ``CLIENTS`` 当前只有 ``VISIONOS``；全部失败抛 ``YoutubeVideoError``。
+    ``CLIENTS`` 只有 ``VISIONOS``（取流）；元数据另走一次 WEB player —— 见
+    ``MICROFORMAT_CLIENT`` 的说明：**没有一个 client 能同时给流和发布时间**，
+    所以是两个 client 分工，但请求总数仍是 2（WEB + VISIONOS），没有额外开销。
 
-    先取一次 ``visitorData``（带缓存, 见 ``_get_visitor_data``）—— 取不到时降级为不带它,
-    也就是回到"可能被 bot 检查拦住"的旧行为, 不会比之前更差。
+    取不到 visitor 时降级为不带它（回到"可能被 bot 检查拦住"的旧行为，不会更差）；
+    取不到元数据时时间/点赞留空（渲染层不显示空项）。
     """
     if not video_id:
         raise YoutubeVideoError("缺少视频 ID")
 
-    visitor = await _get_visitor_data(proxy=proxy, cookie=cookie)
+    metadata, visitor = await _fetch_web_metadata(video_id, proxy=proxy, cookie=cookie)
+    if not visitor:
+        # WEB 请求失败/没带 visitor ⇒ 回退到 guide（visitor 是必需项：缺它会 LOGIN_REQUIRED）
+        visitor = await _get_visitor_data(proxy=proxy, cookie=cookie)
 
     errors: list[str] = []
     for spec in CLIENTS:
@@ -533,6 +665,7 @@ async def fetch_video(
             errors.append(f"{spec['clientName']}: {exc}")
         else:
             video.user_agent = str(spec["_user_agent"])
+            video.metadata = metadata
             return video
 
     raise YoutubeVideoError("player API 解析失败: " + "; ".join(errors))
@@ -542,13 +675,16 @@ __all__ = [
     "CLIENTS",
     "DEFAULT_MAX_HEIGHT",
     "GUIDE_URL",
+    "MICROFORMAT_CLIENT",
     "PLAYER_URL",
     "VISIONOS",
     "SelectedStreams",
     "Stream",
+    "VideoMetadata",
     "YoutubeVideo",
     "YoutubeVideoError",
     "fetch_video",
+    "parse_microformat",
     "parse_player_response",
     "select_streams",
     "video_id_from_url",
