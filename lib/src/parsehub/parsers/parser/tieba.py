@@ -3,6 +3,7 @@ from typing import Union
 from ...provider_api.tieba import TieBa, TieBaError, TieBaPostType, TieBaVideo
 from ...types import AniRef, ImageParseResult, ImageRef, ParseError, Platform, VideoParseResult, VideoRef
 from ...utils import http
+from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
 
 
@@ -51,6 +52,7 @@ class TieBaParser(BaseParser):
                                         thumb_url=i.thumb_url,
                                         width=i.width,
                                         height=i.height,
+                                        ext=image_ext_from_url(i.url),
                                     )
                                 )
                             else:
@@ -62,6 +64,7 @@ class TieBaParser(BaseParser):
                                             thumb_url=i.thumb_url,
                                             width=i.width,
                                             height=i.height,
+                                            ext=image_ext_from_url(i.url, default="gif"),
                                         )
                                     )
                                 else:
@@ -71,6 +74,7 @@ class TieBaParser(BaseParser):
                                             thumb_url=i.thumb_url,
                                             width=i.width,
                                             height=i.height,
+                                            ext=image_ext_from_url(i.url),
                                         )
                                     )
 

@@ -2,7 +2,7 @@ from loguru import logger
 
 from ...provider_api.kuaishou import KuaiShouAPI, KuaishouParser
 from ...types import ImageParseResult, ImageRef, ParseError, Platform, VideoParseResult, VideoRef
-from ...utils.helpers import SecretCookie
+from ...utils.helpers import SecretCookie, image_ext_from_url
 from ..base.base import BaseParser
 
 COOKIE = SecretCookie(
@@ -87,7 +87,11 @@ class KuaiShouParser(BaseParser):
                     author_name=ksp.get_author_name(),
                 )
             if cover:
-                return ImageParseResult(title=content, photo=[ImageRef(url=cover)], author_name=ksp.get_author_name())
+                return ImageParseResult(
+                    title=content,
+                    photo=[ImageRef(url=cover, ext=image_ext_from_url(cover))],
+                    author_name=ksp.get_author_name(),
+                )
 
             raise ParseError("快手解析失败 -3")
 

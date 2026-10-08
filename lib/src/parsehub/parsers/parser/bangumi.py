@@ -12,7 +12,7 @@
 
 from ...provider_api.bangumi import BangumiBlog, BangumiError, BangumiTopic
 from ...types import ImageRef, ParseError, Platform, RichTextParseResult
-from ...utils.helpers import profile_url
+from ...utils.helpers import image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
 
@@ -105,7 +105,10 @@ class BangumiParser(BaseParser):
 
 
 def _refs(images: list) -> list[ImageRef]:
-    return [ImageRef(url=i.url, thumb_url=i.url, width=i.width, height=i.height) for i in images]
+    return [
+        ImageRef(url=i.url, thumb_url=i.url, width=i.width, height=i.height, ext=image_ext_from_url(i.url))
+        for i in images
+    ]
 
 
 __all__ = ["BangumiParseResult", "BangumiParser"]

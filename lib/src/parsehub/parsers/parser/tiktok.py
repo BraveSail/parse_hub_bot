@@ -14,7 +14,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import get_author_name
+from ...utils.helpers import get_author_name, image_ext_from_url
 from ..base.base import BaseParser
 
 
@@ -244,6 +244,7 @@ class TikTokApiResult:
                         url=url,
                         height=as_int(display_image.get("height") or display_image.get("Height")),
                         width=as_int(display_image.get("width") or display_image.get("Width")),
+                        ext=image_ext_from_url(url),
                     )
                 )
 

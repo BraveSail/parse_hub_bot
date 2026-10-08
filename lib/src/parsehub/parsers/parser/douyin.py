@@ -18,7 +18,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import get_author_name, profile_url, to_datetime, to_int
+from ...utils.helpers import get_author_name, image_ext_from_url, profile_url, to_datetime, to_int
 from ..base.base import BaseParser
 
 
@@ -268,6 +268,7 @@ class DouyinApiResult:
                                 url=url_list[-1],
                                 height=image.get("height", 0),
                                 width=image.get("width", 0),
+                                ext=image_ext_from_url(url_list[-1]),
                             )
                         )
         else:
@@ -276,6 +277,7 @@ class DouyinApiResult:
                     url=img["url_list"][-1],
                     height=img.get("height", 0),
                     width=img.get("width", 0),
+                    ext=image_ext_from_url(img["url_list"][-1]),
                 )
                 for img in images
                 if img.get("url_list")
@@ -302,6 +304,7 @@ class DouyinApiResult:
                         url=url_list[-1],
                         height=display_image.get("height", 0),
                         width=display_image.get("width", 0),
+                        ext=image_ext_from_url(url_list[-1]),
                     )
                 )
 

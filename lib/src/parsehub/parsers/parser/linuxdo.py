@@ -10,7 +10,7 @@ from ...types import (
     Platform,
     RichTextParseResult,
 )
-from ...utils.helpers import profile_url
+from ...utils.helpers import image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
 
@@ -42,7 +42,10 @@ class LinuxDoParser(BaseParser):
         except Exception as e:
             raise ParseError(f"无法获取话题内容: {e}") from e
 
-        media = [ImageRef(url=i.url, thumb_url=i.url, width=i.width, height=i.height) for i in topic.images]
+        media = [
+            ImageRef(url=i.url, thumb_url=i.url, width=i.width, height=i.height, ext=image_ext_from_url(i.url))
+            for i in topic.images
+        ]
         # 媒体**不进 common**: 两个结果类的参数名不同 (RichText 是 ``media``,
         # Image 是 ``photo``) —— 放进公共字典会让纯图话题那条分支直接 TypeError
         # (既存 bug, pylint E1123 抓到)。

@@ -8,6 +8,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
 
 
@@ -29,7 +30,7 @@ class ZhihuParser(BaseParser):
                 return RichTextParseResult(
                     title=result.question,
                     author_name=result.author_name,
-                    media=[ImageRef(url=i) for i in result.imgs],
+                    media=[ImageRef(url=i, ext=image_ext_from_url(i)) for i in result.imgs],
                     markdown_content=result.markdown_answer,
                 )
             case ZhihuZhuanLan():
@@ -37,7 +38,7 @@ class ZhihuParser(BaseParser):
                     title=result.title,
                     author_name=result.author_name,
                     markdown_content=result.markdown_content,
-                    media=[ImageRef(url=i) for i in result.imgs],
+                    media=[ImageRef(url=i, ext=image_ext_from_url(i)) for i in result.imgs],
                 )
             case ZhihuPin():
                 match result.type:
@@ -51,7 +52,13 @@ class ZhihuParser(BaseParser):
                             author_name=result.author_name,
                             content=result.plaintext_content,
                             photo=[
-                                ImageRef(url=i.url, thumb_url=i.thumb_url, width=i.width, height=i.height)
+                                ImageRef(
+                                    url=i.url,
+                                    thumb_url=i.thumb_url,
+                                    width=i.width,
+                                    height=i.height,
+                                    ext=image_ext_from_url(i.url),
+                                )
                                 for i in result.media
                             ],
                         )

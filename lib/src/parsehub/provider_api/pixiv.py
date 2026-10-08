@@ -6,6 +6,7 @@ from typing import Any, cast
 from bs4 import BeautifulSoup
 
 from ..utils import http
+from ..utils.helpers import image_ext_from_url
 
 ILLUST_API = "https://www.pixiv.net/ajax/illust/{}"
 PAGES_API = "https://www.pixiv.net/ajax/illust/{}/pages"
@@ -96,16 +97,6 @@ class PixivIllust:
         )
 
 
-IMAGE_EXTS = ("jpg", "jpeg", "png", "gif", "webp")
-
-
-def _guess_ext(url: str) -> str:
-    """后缀跟着 URL 走 (master1200 恒为 jpg, 未转换的原图可能是 png/gif)"""
-    name = url.split("?", 1)[0].rsplit("/", 1)[-1]
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    return ext if ext in IMAGE_EXTS else "jpg"
-
-
 def _to_master_url(url: str) -> str:
     """原图链接 -> master1200 (长边 1200 的 jpg)
 
@@ -151,7 +142,7 @@ def _parse_image(page: dict[str, Any]) -> PixivImage | None:
         thumb_url=str(thumb) if thumb and thumb != url else None,
         width=width,
         height=height,
-        ext=_guess_ext(url),
+        ext=image_ext_from_url(url),
     )
 
 

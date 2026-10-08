@@ -15,6 +15,7 @@ from ...types import (
     ProgressCallback,
     RichTextParseResult,
 )
+from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
 
 
@@ -31,7 +32,12 @@ class CoolapkParser(BaseParser):
             coolapk = await Coolapk.parse(raw_url, proxy=self.proxy)
         except Exception as e:
             raise ParseError(str(e)) from e
-        media = [AniRef(url=i) if ".gif" in i else ImageRef(url=i) for i in coolapk.imgs or []]
+        # 动图走 AniRef、静态图走 ImageRef；ext 一律按 URL 上的真实后缀取（平台图片是
+        # PNG/WebP 时不取就会被命名成 .jpg，下游按后缀处理媒体会出错）
+        media = []
+        for i in coolapk.imgs or []:
+            ext = image_ext_from_url(i)
+            media.append(AniRef(url=i, ext="gif") if ext == "gif" else ImageRef(url=i, ext=ext))
         if coolapk.markdown_content:
             return CoolapkRichTextParseResult(
                 title=coolapk.title,

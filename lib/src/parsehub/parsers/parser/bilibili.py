@@ -21,7 +21,14 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
-from ...utils.helpers import UA, format_author_link, format_quote_block, get_author_name, profile_url
+from ...utils.helpers import (
+    UA,
+    format_author_link,
+    format_quote_block,
+    get_author_name,
+    image_ext_from_url,
+    profile_url,
+)
 from ..base.base import BaseParser
 
 
@@ -38,9 +45,17 @@ class BiliParse(BaseParser):
         refs: list[LivePhotoRef | ImageRef] = []
         for i in images or []:
             if i.live_url:
-                refs.append(LivePhotoRef(url=i.url, video_url=i.live_url, width=i.width, height=i.height))
+                refs.append(
+                    LivePhotoRef(
+                        url=i.url,
+                        video_url=i.live_url,
+                        width=i.width,
+                        height=i.height,
+                        ext=image_ext_from_url(i.url),
+                    )
+                )
             else:
-                refs.append(ImageRef(url=i.url, width=i.width, height=i.height))
+                refs.append(ImageRef(url=i.url, width=i.width, height=i.height, ext=image_ext_from_url(i.url)))
         return refs
 
     @staticmethod

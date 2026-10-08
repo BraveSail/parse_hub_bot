@@ -14,6 +14,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
 
 
@@ -91,10 +92,24 @@ class WeiboParser(BaseParser):
                         )
                 case MediaType.GIF:
                     if i.media_url:
-                        media.append(AniRef(url=i.media_url, thumb_url=i.thumb_url))
+                        media.append(
+                            AniRef(
+                                url=i.media_url,
+                                thumb_url=i.thumb_url,
+                                ext=image_ext_from_url(i.media_url, default="gif"),
+                            )
+                        )
                 case _:
                     if i.media_url:
-                        media.append(ImageRef(url=i.media_url, thumb_url=i.thumb_url, width=i.width, height=i.height))
+                        media.append(
+                            ImageRef(
+                                url=i.media_url,
+                                thumb_url=i.thumb_url,
+                                width=i.width,
+                                height=i.height,
+                                ext=image_ext_from_url(i.media_url),
+                            )
+                        )
         if all((isinstance(m, ImageRef) or isinstance(m, LivePhotoRef)) for m in media):
             photos = [m for m in media if isinstance(m, ImageRef | LivePhotoRef)]
             return ImageParseResult(content=text, photo=photos, author_name=data.author_name)

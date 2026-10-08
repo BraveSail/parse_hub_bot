@@ -1,6 +1,6 @@
 from ...provider_api.threads import ThreadsAPI, ThreadsAPIError, ThreadsMedia, ThreadsMediaType, ThreadsPost
 from ...types import AnyMediaRef, ImageRef, MultimediaParseResult, ParseError, Platform, VideoRef
-from ...utils.helpers import format_author_link, format_quote_block, profile_url
+from ...utils.helpers import format_author_link, format_quote_block, image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
 
@@ -47,7 +47,15 @@ class ThreadsParser(BaseParser):
             if m.type == ThreadsMediaType.VIDEO:
                 out.append(VideoRef(url=m.url, thumb_url=m.thumb_url, width=m.width, height=m.height))
             elif m.type == ThreadsMediaType.IMAGE:
-                out.append(ImageRef(url=m.url, thumb_url=m.url, width=m.width, height=m.height))
+                out.append(
+                    ImageRef(
+                        url=m.url,
+                        thumb_url=m.url,
+                        width=m.width,
+                        height=m.height,
+                        ext=image_ext_from_url(m.url),
+                    )
+                )
         return out
 
     @staticmethod

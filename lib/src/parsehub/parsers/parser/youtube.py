@@ -51,7 +51,7 @@ from ...types import (
     VideoRef,
 )
 from ...utils.downloader import download
-from ...utils.helpers import profile_url
+from ...utils.helpers import image_ext_from_url, profile_url
 from ..base.base import BaseParser
 
 
@@ -112,12 +112,19 @@ class YtbParse(BaseParser):
                 thumb_url=image.thumb_url,
                 width=image.width,
                 height=image.height,
+                ext=image_ext_from_url(image.url),
             )
             for image in post.images
         ]
         # 帖子里分享的视频只渲染封面 + 链接, **不下载**（那不是帖子本体）
         if post.video and post.video.cover_url:
-            media.append(ImageRef(url=post.video.cover_url, thumb_url=post.video.cover_url))
+            media.append(
+                ImageRef(
+                    url=post.video.cover_url,
+                    thumb_url=post.video.cover_url,
+                    ext=image_ext_from_url(post.video.cover_url),
+                )
+            )
 
         blocks = [post.text.strip()]
         if post.poll:

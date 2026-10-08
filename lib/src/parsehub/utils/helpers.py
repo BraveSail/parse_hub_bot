@@ -5,7 +5,7 @@ import re
 from collections.abc import Coroutine, Mapping, Sequence
 from datetime import UTC, datetime, tzinfo
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from pydantic import SecretStr
 from urlextract import URLExtract
@@ -13,6 +13,39 @@ from urlextract import URLExtract
 from ..types.platform import Platform
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+
+#: 图片 URL 上**可信的**扩展名。**下载命名靠它** —— ``ImageRef.ext`` 默认 ``jpg``，
+#: 所以平台图片实际是 PNG/WebP 时文件名会撒谎（``xxx.jpg`` 里装 PNG），
+#: 下游按后缀处理媒体就会出错（见 ``utils/media_processing_unit.py``）。
+IMAGE_EXTS = frozenset({"jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "bmp", "tif", "tiff", "ico"})
+
+#: 动图（``AniRef``）的 URL 除图片格式外还可能是视频容器 —— twitter 的动图就是 mp4。
+ANIMATED_EXTS = IMAGE_EXTS | {"mp4", "webm", "mov", "m4v"}
+
+
+def image_ext_from_url(url: str, default: str = "jpg", exts: frozenset[str] = IMAGE_EXTS) -> str:
+    """按 URL 取媒体真实扩展名，取不到用 ``default``。
+
+    先看 path 上的扩展名（``.../HUBBoF9bkAA1jCq.png?name=orig``、``.../x_n.webp?_nc_cat=10``），
+    path 没有时看 query 的 ``format=``（X 的卡片图 ``.../card_img/123/AbC?format=jpg`` 无扩展名），
+    两者都没有才退回 ``default``。
+
+    ``exts`` 决定"哪些扩展名算可信"：图片用默认的 ``IMAGE_EXTS``；动图（``AniRef``，可能是
+    mp4 视频容器）传 ``ANIMATED_EXTS``。
+
+    **各平台图片 URL 实测几乎都在 path 上带扩展名**（扫过全部 fixture：266/266），
+    所以这个推断对每个平台都成立，而不是只对 twitter。
+
+    ⚠️ 它是**纯增量**的：URL 没给出可信扩展名时原样返回 ``default``，行为与"不传 ext"完全一致。
+    """
+    parsed = urlparse(url)
+    tail = unquote(parsed.path).rpartition("/")[2]
+    stem, dot, ext = tail.rpartition(".")
+    ext = ext.lower()
+    if stem and dot and ext in exts:
+        return ext
+    query_format = (parse_qs(parsed.query).get("format") or [""])[0].lower()
+    return query_format if query_format in exts else default
 
 
 def get_author_name(author: object, *fields: str) -> str:

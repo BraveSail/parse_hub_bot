@@ -3,7 +3,7 @@ from typing import Any
 
 from ...provider_api.instagram import InstagramAPI, InstagramAPIError, InstagramMediaType, InstagramPost
 from ...types import ImageParseResult, ImageRef, MultimediaParseResult, ParseError, Platform, VideoParseResult, VideoRef
-from ...utils.helpers import SecretCookie
+from ...utils.helpers import SecretCookie, image_ext_from_url
 from ..base.base import BaseParser
 
 
@@ -34,7 +34,12 @@ class InstagramParser(BaseParser):
                 media = [
                     VideoRef(url=i.video_url, thumb_url=i.display_url, width=i.width, height=i.height)
                     if i.is_video and i.video_url
-                    else ImageRef(url=i.display_url, width=i.width, height=i.height)
+                    else ImageRef(
+                        url=i.display_url,
+                        width=i.width,
+                        height=i.height,
+                        ext=image_ext_from_url(i.display_url),
+                    )
                     for i in post.get_sidecar_nodes()
                 ]
                 return MultimediaParseResult(
@@ -46,7 +51,7 @@ class InstagramParser(BaseParser):
                 )
             case InstagramMediaType.IMAGE:
                 return ImageParseResult(
-                    photo=[ImageRef(url=post.url, width=width, height=height)],
+                    photo=[ImageRef(url=post.url, width=width, height=height, ext=image_ext_from_url(post.url))],
                     title=post.title,
                     content=post.caption,
                     author_name=post.author_name,

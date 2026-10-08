@@ -12,6 +12,7 @@ from ...types import (
     VideoParseResult,
     VideoRef,
 )
+from ...utils.helpers import image_ext_from_url
 
 
 class XiaoHeiHeParser(BaseParser):
@@ -60,7 +61,21 @@ class XiaoHeiHeParser(BaseParser):
         images: list[ImageRef | AniRef] = []
         for media in xhh.media or []:
             if media.type == XiaoHeiHeMediaType.IMAGE:
-                images.append(ImageRef(url=media.url, width=media.width or 0, height=media.height or 0))
+                images.append(
+                    ImageRef(
+                        url=media.url,
+                        width=media.width or 0,
+                        height=media.height or 0,
+                        ext=image_ext_from_url(media.url),
+                    )
+                )
             else:
-                images.append(AniRef(url=media.url, width=media.width or 0, height=media.height or 0))
+                images.append(
+                    AniRef(
+                        url=media.url,
+                        width=media.width or 0,
+                        height=media.height or 0,
+                        ext=image_ext_from_url(media.url, default="gif"),
+                    )
+                )
         return images
