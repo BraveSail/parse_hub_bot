@@ -447,10 +447,6 @@ def build_rich_markdown(
     if custom_content:
         parts.append(custom_content)
 
-    # 标签是正文的收尾: 放在正文之后 (与正文之间自然空一行)
-    if tag_line := format_tags(parse_result):
-        parts.append(tag_line)
-
     # 图集超过阈值时把多出来的折进按钮; 手动打码时整组内容本来就要进 details,
     # 再套一层折叠客户端没有保证 ⇒ 那时不给摘要 (wrap_collage 就不折)。
     if media_placeholders:
@@ -475,6 +471,15 @@ def build_rich_markdown(
         parts.extend(render_quote_card(quote, quote_media_placeholders, summary=fold_summary))
     # 声明角色时"正文之后"那一侧（quoted）的卡片 —— 与上面原位：在正文与正文媒体之后
     parts.extend(declared_tail)
+
+    # 标签是**整条内容**的收尾: 排在正文、媒体、引用卡片之后 (与上一块之间自然空一行)。
+    #
+    # 以前只挂在**正文**之后, 于是"正文末尾的引用块被抽成卡片"的内容会渲染成
+    # 「正文 → 标签 → 引用卡片」—— 标签把引用卡片挤到了它下面 (用户报「引用为啥跑 tags
+    # 下面」)。那个位置的假设是"正文之后 == 内容末尾", 一旦末尾还有卡片/媒体就不成立。
+    # 按原版排列, 标签在所有内容之后。
+    if tag_line := format_tags(parse_result):
+        parts.append(tag_line)
 
     if hide_content and (visible := [part for part in parts if part]):
         # 手动遮住: 内容整组进 details —— **正文、引用块、标签、媒体(含图集)全在里面**,

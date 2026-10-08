@@ -158,6 +158,32 @@ def test_tags_sit_after_the_body():
     assert pos_title < pos_author < pos_body < pos_tags
 
 
+def test_tags_sit_after_a_trailing_quote_card():
+    """正文末尾的引用块被抽成卡片时, 标签仍排在**卡片之后**。
+
+    按原版排列: 引用块是正文的一部分 (在标签之前), 标签是整条内容的收尾。
+    旧实现把标签行挂在"正文之后" ⇒ 渲染成「正文 → 标签 → 引用卡片」, 标签把引用卡片
+    挤到了下面 (用户报「引用为啥跑 tags 下面」)。
+    """
+    from plugins.helpers import build_rich_markdown
+
+    quote = "> 这里叠个甲，在不考虑封号的情况下对比"
+    result = ImageParseResult(content=f"正文第一段\n\n{quote}", photo=[])
+    result.title = "话题标题"
+    result.author_name = "某人"
+    result.author_handle = "someone"
+    result.platform = Platform.LINUXDO
+    result.raw_url = "https://linux.do/t/topic/1"
+    result.tags = ["纯水"]
+
+    md = build_rich_markdown(result, config=_cfg(), lang="zh-hans", view_label="查看")
+
+    pos_body = md.index("正文第一段")
+    pos_quote = md.index("这里叠个甲")
+    pos_tags = md.index("linux.do/tag/")
+    assert pos_body < pos_quote < pos_tags, md
+
+
 def test_setext_underlines_are_escaped():
     """**紧跟文字行**的 - 或 = 会让上面整行变成大标题 (setext), 必须转义"""
     from plugins.helpers import escape_setext_underlines
