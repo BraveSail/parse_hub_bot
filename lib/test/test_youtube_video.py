@@ -29,10 +29,12 @@ from parsehub.provider_api.youtube import parse_post_page
 from parsehub.provider_api.youtube_video import (
     DEFAULT_MAX_HEIGHT,
     YoutubeVideoError,
+    _reset_visitor_cache,
     fetch_video,
     parse_player_response,
     select_streams,
     video_id_from_url,
+    visitor_data_from_response,
 )
 from parsehub.types import MultimediaParseResult, ParseError, VideoParseResult, VideoRef
 
@@ -47,6 +49,58 @@ def _player(name: str = "youtube_player_visionos.json") -> dict:
 
 def _by_itag(video) -> dict:
     return {stream.itag: stream for stream in video.streams}
+
+
+@pytest.fixture(autouse=True)
+def _isolate_visitor_cache():
+    """每个用例前后都清 visitorData 缓存 —— 它是模块级状态, 不隔离会串用例。"""
+    _reset_visitor_cache()
+    yield
+    _reset_visitor_cache()
+
+
+def _fake_client(  # noqa: PLR0913 - 假客户端需要几个开关, 但都是可选的
+    captured: dict | None = None,
+    *,
+    guide_visitor: str | None = "V-TEST",
+    guide_error: Exception | None = None,
+    player_data: dict | None = None,
+    player_error: Exception | None = None,
+    guide_calls: list | None = None,
+    player_calls: list | None = None,
+):
+    """按 URL 分派的假 ``http.AsyncClient``: ``guide`` 回 ``responseContext.visitorData``。
+
+    ``guide_visitor=None`` 模拟"取不到 visitor"; ``guide_error`` 模拟 guide 被限流/挂掉。
+    """
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, url, **kwargs):
+            if "guide" in url:
+                if guide_calls is not None:
+                    guide_calls.append(url)
+                if guide_error is not None:
+                    raise guide_error
+                return FakeResponse(200, json_data={"responseContext": {"visitorData": guide_visitor}})
+            if player_calls is not None:
+                player_calls.append(url)
+            if player_error is not None:
+                raise player_error
+            if captured is not None:
+                captured["headers"] = kwargs["headers"]
+                captured["body"] = json.loads(kwargs["data"].decode())
+            return FakeResponse(200, json_data=player_data if player_data is not None else _player())
+
+    return FakeClient
 
 
 # ── ① 明文直链提取 + 选流策略 ──────────────────────────────────────────────
@@ -221,34 +275,98 @@ def test_fetch_video_uses_the_visionos_client():
     ``ANDROID_VR``（#28）虽然也给全部明文 url, 但直链实测 403（要 PO token）,
     所以**不能**再拿它当兜底：player 请求"成功"会掩盖真正的下载失败。
     """
-    seen_clients: list[str] = []
+    captured: dict = {}
 
-    class FakeClient:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return False
-
-        async def post(self, url, **kwargs):
-            seen_clients.append(kwargs["headers"]["X-Youtube-Client-Name"])
-            return FakeResponse(200, json_data=_player())
-
-    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", _fake_client(captured)):
         video = asyncio.run(fetch_video("dQw4w9WgXcQ", proxy="http://127.0.0.1:1085"))
 
-    assert seen_clients == ["101"]
+    assert captured["headers"]["X-Youtube-Client-Name"] == "101"
     assert video.video_id == "dQw4w9WgXcQ"
     assert video.user_agent  # 带下载时用的 UA
 
 
 def test_fetch_video_raises_when_every_client_fails():
+    fake = _fake_client(player_error=RuntimeError("network down"))
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", fake):
+        with pytest.raises(YoutubeVideoError):
+            asyncio.run(fetch_video("dQw4w9WgXcQ"))
+
+
+# ── visitorData：缺它就被 bot 检查拦住（2026-10-08 定案）─────────────────
+#
+# 报障 ``jTbsEsYSnpM``: 同一视频、同一出口、同一 client, 只加 ``X-Goog-Visitor-Id``
+# 就从 ``LOGIN_REQUIRED`` 变成 ``OK`` + 23 条明文流 / 1080p。所以这个头是**必需**的,
+# 而 代理 与 它 **缺一不可**（161 直连时带上它也仍被拦）。
+
+
+def test_visitor_data_from_response_reads_the_response_context():
+    assert visitor_data_from_response({"responseContext": {"visitorData": "abc"}}) == "abc"
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {},
+        {"responseContext": {}},
+        {"responseContext": None},
+        {"responseContext": {"visitorData": None}},
+        {"responseContext": {"visitorData": 123}},  # 类型不对也不能当字符串用
+        None,
+        "not-a-dict",
+    ],
+)
+def test_visitor_data_from_response_tolerates_odd_shapes(data):
+    """拿不到就是空串 —— 调用方据此降级, 不抛错。"""
+    assert visitor_data_from_response(data) == ""
+
+
+def test_player_request_carries_the_visitor_header_and_context():
+    """**核心回归**：player 请求必须带 ``X-Goog-Visitor-Id``（缺它就 LOGIN_REQUIRED）。"""
+    captured: dict = {}
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", _fake_client(captured, guide_visitor="V-123")):
+        asyncio.run(fetch_video("jTbsEsYSnpM"))
+
+    assert captured["headers"]["X-Goog-Visitor-Id"] == "V-123"
+    assert captured["body"]["context"]["client"]["visitorData"] == "V-123"
+
+
+def test_visitor_data_is_fetched_once_and_reused_across_videos():
+    """visitorData 是**访客身份**、可跨视频复用（实测同一 visitor 连用 3 条视频全 OK）
+    ⇒ 第二次解析不该再请求 guide。"""
+    guide_calls: list = []
+    player_calls: list = []
+    fake = _fake_client(guide_calls=guide_calls, player_calls=player_calls)
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", fake):
+        asyncio.run(fetch_video("dQw4w9WgXcQ"))
+        asyncio.run(fetch_video("jNQXAC9IVRw"))
+
+    assert len(guide_calls) == 1, "第二次解析不该再取 visitor"
+    assert len(player_calls) == 2
+
+
+def test_missing_visitor_degrades_instead_of_failing():
+    """guide 挂掉/被 429 时不能连解析一起挂：退回不带该头的旧行为（不抛错）。"""
+    captured: dict = {}
+    fake = _fake_client(captured, guide_error=RuntimeError("HTTP 429"))
+
+    with patch("parsehub.provider_api.youtube_video.http.AsyncClient", fake):
+        video = asyncio.run(fetch_video("dQw4w9WgXcQ"))
+
+    assert video.video_id == "dQw4w9WgXcQ"
+    assert "X-Goog-Visitor-Id" not in captured["headers"]
+    assert "visitorData" not in captured["body"]["context"]["client"]
+
+
+def test_guide_is_requested_over_the_same_proxy_as_the_player():
+    """guide 与 player 必须走**同一个出口** —— 换出口时 visitor 与会话对不上就白搭。"""
+    seen: list = []
+
     class FakeClient:
         def __init__(self, **kwargs):
-            pass
+            seen.append(kwargs.get("proxy"))
 
         async def __aenter__(self):
             return self
@@ -257,11 +375,14 @@ def test_fetch_video_raises_when_every_client_fails():
             return False
 
         async def post(self, url, **kwargs):
-            raise RuntimeError("network down")
+            if "guide" in url:
+                return FakeResponse(200, json_data={"responseContext": {"visitorData": "V"}})
+            return FakeResponse(200, json_data=_player())
 
     with patch("parsehub.provider_api.youtube_video.http.AsyncClient", FakeClient):
-        with pytest.raises(YoutubeVideoError):
-            asyncio.run(fetch_video("dQw4w9WgXcQ"))
+        asyncio.run(fetch_video("dQw4w9WgXcQ", proxy="socks5h://127.0.0.1:1085"))
+
+    assert seen == ["socks5h://127.0.0.1:1085", "socks5h://127.0.0.1:1085"]
 
 
 # ── 分离流的 mux 下载接线（离线, 打桩下载与 mux） ─────────────────────────

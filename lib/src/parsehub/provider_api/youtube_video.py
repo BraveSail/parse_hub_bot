@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -63,6 +64,12 @@ VISIONOS: dict[str, Any] = {
     ),
     "_x_client_name": "101",
 }
+
+_WEB_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+)
+"""网页版 UA (取 ``visitorData`` 的 guide 请求用; 与 yt-dlp 的 ``web`` client 一致)。"""
 
 #: 按尝试顺序排列 (首选在前)。``fetch_video`` 依次尝试, 全失败才抛错。
 #:
@@ -364,6 +371,92 @@ def select_streams(
 
 # ── 唯一网络入口 ──────────────────────────────────────────────────────────
 
+GUIDE_URL = "https://www.youtube.com/youtubei/v1/guide?prettyPrint=false"
+"""取 ``visitorData`` 的轻量 innertube 接口 (导航数据)。
+
+⚠️ **不要改成抓 ``/watch`` 页 HTML** —— 实测该页面会返回 **HTTP 429**(连打几次就限流),
+一失败就退化成 ``LOGIN_REQUIRED``; guide 稳定得多, 且不需要身份、不会被 bot 检查拦。
+"""
+
+_WEB_VERSION = "2.20260708.00.00"
+"""guide 请求用的网页版 clientVersion (与 yt-dlp 的 ``web`` 一致)。"""
+
+_VISITOR_TTL = 3600.0
+"""``visitorData`` 的缓存时长 (秒)。"""
+
+_visitor_cache: dict[str, Any] = {"value": "", "expires_at": 0.0}
+"""进程内缓存的 ``visitorData``。
+
+它是**访客身份** (不是视频级凭证) ⇒ 可跨视频复用: 实测同一个 visitor 连用 3 条视频
+全部 ``OK``。缓存能省掉每个视频一次额外请求 (也少一次被限流的机会)。
+"""
+
+
+def visitor_data_from_response(data: Any) -> str:
+    """从 innertube 响应的 ``responseContext.visitorData`` 取访客标识 (纯函数)。
+
+    取不到返回空串 —— 调用方据此走"不带 visitor"的降级路径, 不抛错。
+    """
+    if not isinstance(data, dict):
+        return ""
+    context = data.get("responseContext")
+    if not isinstance(context, dict):
+        return ""
+    value = context.get("visitorData")
+    return value if isinstance(value, str) else ""
+
+
+async def _fetch_visitor_data(*, proxy: str | http.Proxy | None, cookie: dict[str, str] | None) -> str:
+    """请求 guide 接口取 ``visitorData``; 任何失败都返回空串 (由调用方降级)。"""
+    body = {
+        "context": {
+            "client": {
+                "clientName": "WEB",
+                "clientVersion": _WEB_VERSION,
+                "hl": "en",
+                "gl": "US",
+            }
+        }
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": _WEB_USER_AGENT,
+        "Origin": "https://www.youtube.com",
+        "X-Youtube-Client-Name": "1",
+        "X-Youtube-Client-Version": _WEB_VERSION,
+    }
+    try:
+        async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
+            response = await client.post(GUIDE_URL, data=json.dumps(body).encode(), headers=headers)
+        if response.status_code != 200:
+            return ""
+        return visitor_data_from_response(response.json())
+    except Exception:  # noqa: BLE001 - 网络/JSON 异常都并入降级路径
+        return ""
+
+
+async def _get_visitor_data(*, proxy: str | http.Proxy | None, cookie: dict[str, str] | None) -> str:
+    """带缓存的 ``visitorData`` 取用: 命中缓存直接返回, 否则请求一次并按 TTL 存起来。"""
+    now = time.monotonic()
+    cached = str(_visitor_cache["value"])
+    if cached and now < float(_visitor_cache["expires_at"]):
+        return cached
+
+    value = await _fetch_visitor_data(proxy=proxy, cookie=cookie)
+    if value:
+        _visitor_cache["value"] = value
+        _visitor_cache["expires_at"] = now + _VISITOR_TTL
+        return value
+    # 本次没取到: 若手上有过期值, 宁可用旧的也比空着强
+    return cached
+
+
+def _reset_visitor_cache() -> None:
+    """清空 visitorData 缓存 (测试用)。"""
+    _visitor_cache["value"] = ""
+    _visitor_cache["expires_at"] = 0.0
+
+
 def _client_context(spec: dict[str, Any]) -> dict[str, Any]:
     """去掉私有键 (``_`` 开头), 只留 innertube ``context.client`` 认得的字段。"""
     return {key: value for key, value in spec.items() if not key.startswith("_")}
@@ -375,9 +468,19 @@ async def _request_player(
     *,
     proxy: str | None,
     cookie: dict[str, str] | None,
+    visitor: str = "",
 ) -> dict[str, Any]:
+    """请求 player API 并返回原始 JSON。
+
+    ``visitor`` 必须带上 —— **实测缺它就会 ``LOGIN_REQUIRED``**（同一视频、同一出口、
+    同一 client, 只加 ``X-Goog-Visitor-Id`` 就从"要登录"变成 23 条明文流 / 1080p）。
+    同时写进 ``context.client.visitorData``（与 yt-dlp 的做法对齐, 有些 client 会读它）。
+    """
+    client = _client_context(spec)
+    if visitor:
+        client["visitorData"] = visitor
     body = {
-        "context": {"client": _client_context(spec)},
+        "context": {"client": client},
         "videoId": video_id,
         "contentCheckOk": True,
         "racyCheckOk": True,
@@ -389,8 +492,10 @@ async def _request_player(
         "X-Youtube-Client-Version": spec["clientVersion"],
         "Accept-Language": "en-US,en;q=0.9",
     }
-    async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client:
-        response = await client.post(PLAYER_URL, data=json.dumps(body).encode(), headers=headers)
+    if visitor:
+        headers["X-Goog-Visitor-Id"] = visitor
+    async with http.AsyncClient(proxy=proxy, cookies=cookie, timeout=30) as client_obj:
+        response = await client_obj.post(PLAYER_URL, data=json.dumps(body).encode(), headers=headers)
     if response.status_code != 200:
         raise YoutubeVideoError(f"player API 返回 HTTP {response.status_code}")
     try:
@@ -407,15 +512,20 @@ async def fetch_video(
 ) -> YoutubeVideo:
     """请求 player API 并解析。
 
-    请求 player API 并解析（``CLIENTS`` 当前只有 ``VISIONOS``；全部失败抛 ``YoutubeVideoError``）。
+    ``CLIENTS`` 当前只有 ``VISIONOS``；全部失败抛 ``YoutubeVideoError``。
+
+    先取一次 ``visitorData``（带缓存, 见 ``_get_visitor_data``）—— 取不到时降级为不带它,
+    也就是回到"可能被 bot 检查拦住"的旧行为, 不会比之前更差。
     """
     if not video_id:
         raise YoutubeVideoError("缺少视频 ID")
 
+    visitor = await _get_visitor_data(proxy=proxy, cookie=cookie)
+
     errors: list[str] = []
     for spec in CLIENTS:
         try:
-            data = await _request_player(video_id, spec, proxy=proxy, cookie=cookie)
+            data = await _request_player(video_id, spec, proxy=proxy, cookie=cookie, visitor=visitor)
             video = parse_player_response(data, video_id=video_id)
         except YoutubeVideoError as exc:
             errors.append(f"{spec['clientName']}: {exc}")
@@ -431,6 +541,7 @@ async def fetch_video(
 __all__ = [
     "CLIENTS",
     "DEFAULT_MAX_HEIGHT",
+    "GUIDE_URL",
     "PLAYER_URL",
     "VISIONOS",
     "SelectedStreams",
@@ -441,4 +552,5 @@ __all__ = [
     "parse_player_response",
     "select_streams",
     "video_id_from_url",
+    "visitor_data_from_response",
 ]
