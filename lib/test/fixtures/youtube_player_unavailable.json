@@ -1,0 +1,14 @@
+{
+ "_provenance": "构造的最小响应：形状取自 YouTube player 对不可播放视频的 UNPLAYABLE 响应（无 videoDetails）。",
+ "playabilityStatus": {
+  "status": "UNPLAYABLE",
+  "reason": "Video unavailable",
+  "errorScreen": {
+   "playerErrorMessageRenderer": {
+    "reason": {
+     "simpleText": "Video unavailable"
+    }
+   }
+  }
+ }
+}

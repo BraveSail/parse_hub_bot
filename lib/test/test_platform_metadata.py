@@ -60,7 +60,7 @@ def test_twitter_parser_forwards_metadata():
     assert result.view_count == 24574
 
 
-# ── yt-dlp (facebook / youtube / snapchat / bilibili 兜底) ────
+# ── yt-dlp (bilibili 兜底) ────
 
 
 def yt_info(**extra):

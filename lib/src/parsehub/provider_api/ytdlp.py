@@ -2,7 +2,7 @@
 
 ``parsers/base/ytdlp.py`` 原先把「调用 yt-dlp」与「解析器骨架」混在一个文件里。这里装的是
 **通用基础设施** —— 命令构造、进度行解析、cookie / info JSON 物化、尾部日志与错误提取 ——
-与"谁是解析器"无关，平台侧（bilibili/facebook/snapchat）与 YouTube 都通过它取数：
+与"谁是解析器"无关，平台侧（bilibili/facebook）与 YouTube 都通过它取数：
 
 - ``extract_info(url, cli_args, ...)``：``--dump-single-json`` 拿视频信息（解析阶段）
 - ``download_video(info_json, cli_args, ...)``：``--load-info-json`` 下载（下载阶段，

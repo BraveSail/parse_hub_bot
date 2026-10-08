@@ -14,12 +14,10 @@ from parsehub.parsers.parser.bilibili import BiliParse, BiliYtParse
 from parsehub.parsers.parser.coolapk import CoolapkParser
 from parsehub.parsers.parser.douban import DoubanParser
 from parsehub.parsers.parser.douyin import DouyinApiResult, DouyinParser
-from parsehub.parsers.parser.facebook import FacebookParse
 from parsehub.parsers.parser.instagram import InstagramParser
 from parsehub.parsers.parser.kuaishou import KuaiShouParser
 from parsehub.parsers.parser.pipix import PipixParser
 from parsehub.parsers.parser.pixiv import PixivParser
-from parsehub.parsers.parser.snapchat import Snapchatarse
 from parsehub.parsers.parser.threads import ThreadsParser
 from parsehub.parsers.parser.tieba import TieBaParser
 from parsehub.parsers.parser.tiktok import TikTokApiResult, TikTokParser
@@ -28,7 +26,6 @@ from parsehub.parsers.parser.weibo import WeiboParser
 from parsehub.parsers.parser.weixin import WXParser
 from parsehub.parsers.parser.xhs import XHSParser
 from parsehub.parsers.parser.xiaoheihe import XiaoHeiHeParser
-from parsehub.parsers.parser.youtube import YtbParse
 from parsehub.parsers.parser.zhihu import ZhihuParser
 from parsehub.parsers.parser.zuiyou import ZuiYouParser
 from parsehub.provider_api.bangumi import BangumiBlog
@@ -141,9 +138,15 @@ def test_tiktok_image_and_video_authors(image, author):
     assert result.author_name == AUTHOR
 
 
-@pytest.mark.parametrize("parser_type", [YtbParse, FacebookParse, Snapchatarse, BiliYtParse])
+@pytest.mark.parametrize("parser_type", [BiliYtParse])
 @pytest.mark.parametrize("field", ["uploader", "channel", "creator", "uploader_id"])
 def test_ytdlp_platforms_preserve_author(parser_type, field):
+    """仍走 yt-dlp 的平台（bilibili 的兜底分支）。
+
+    **Facebook 视频**与 **YouTube 视频**已改自研, 不再经过 ``YtParser._extract_info`` ——
+    Facebook 的作者映射由 ``test_facebook.py`` 覆盖 (post 页取外层 story 的 actors、
+    reel 页取 ``video_owner``), YouTube 由 ``test_youtube_video.py`` 覆盖。
+    """
     payload = {"title": "T", "description": "Body", "thumbnail": "", field: AUTHOR}
     with patch.object(YtParser, "_extract_info", new=AsyncMock(return_value=payload)):
         result = asyncio.run(parser_type()._do_parse(VIDEO))
