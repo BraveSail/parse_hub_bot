@@ -125,7 +125,9 @@ curl_cffi 拿到 200。
   **需要 cookie**（`cf_clearance` + `_forum_session`），配置在 `platforms.linuxdo.cookies`。
 - **平台解析修复**：pixiv 整平台支持（尺寸、真实后缀、下载带 `Referer`、`master1200`）、
   facebook `watch/?v=` 与 `v` 参数保留、bilibili `view/detail` 需 cookie、
-  yt-dlp 条目缺 `thumbnail`/`description` 时不再 KeyError、保留原语言音轨。
+  yt-dlp 条目缺 `thumbnail`/`description` 时不再 KeyError、保留原语言音轨、
+  **youtube 社区帖子**（一个 parser 管视频 + 帖子，帖子读页面 `ytInitialData`）、
+  **yt-dlp 客户端抽到 `provider_api/ytdlp.py`**（`parsers/base/ytdlp.py` 只留骨架）。
 
 ## 8. 平台配置的容错（本地修改）
 
