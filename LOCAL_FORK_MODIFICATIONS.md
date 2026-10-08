@@ -160,6 +160,12 @@ curl_cffi 拿到 200。
   - ⚠️ B 站 `view/detail` **对匿名请求直接风控**，端到端验证必须走 `ParseService`（会带 cookie）；
     裸用 `ParseHub().parse(url)` 会稳定 412，别误判成解析器坏了。密度过高也会 412（冷却后恢复）。
 
+- **图片扩展名要跟 URL 走**（2026-10-08）：twitter 解析器构造 `ImageRef` 时没传 `ext`
+  ⇒ 用默认 `jpg`，而图片 URL 写着 `.png` ⇒ 下载出"后缀撒谎"的 `xxx.jpg`（内容其实是 PNG），
+  下游媒体处理按后缀存图时会炸（见 §11）。`_image_ext_from_url()` 先取 URL **path** 的扩展名，
+  path 没有时取 query 的 `format=`（X 的卡片图 `…/card_img/123/AbC?format=jpg` path 无扩展名），
+  都没有才退回 `jpg`。⚠️ 其他平台的 parser 多数也没传 ext（清单见 `doc/2026-10-08-media-p-mode-jpeg.md`）。
+
 ## 8. 平台配置的容错（本地修改）
 
 `core/platform_config.py`，两处与原版不同：
@@ -184,6 +190,17 @@ curl_cffi 拿到 200。
 
 新增文案（「查看」、「上 传 中...」等）补齐 16 种语言：de / en / es /
 fr / id / it / ja / ko / nl / pl / pt-br / ru / th / tr / vi / zh-hant。
+
+## 11. 媒体处理：保存格式跟**真实格式**走，不跟后缀走
+
+`utils/media_processing_unit.py`。Telegram 兼容性处理（填充 / 切割 / 降采样）里，
+**只有降采样曾按文件后缀猜编码器**：`resized.save(out_path)` 不传 `format=` ⇒ Pillow 用后缀选
+编码器 ⇒ 后缀撒谎的调色板图（PNG 内容 + `.jpg` 名，mode `P`）编不了 JPEG，抛
+`cannot write mode P as JPEG`，**整条媒体处理失败、用户什么都收不到**（2026-10-08 报障）。
+
+现在保存格式与输出后缀都跟 Pillow 检测到的真实格式走（`_PIL_FORMAT_SUFFIX` 做格式名 → 后缀映射），
+真 JPEG 走原路径零变化。填充 / 切割 / 取色三条路径实测对 `P` 模式本来就安全。
+⚠️ `process_image` 的 `needs_rgb = image_mode == "RGBA"` **只管 RGBA**，别以为它兜住了所有模式。
 
 ## 上游同步
 
