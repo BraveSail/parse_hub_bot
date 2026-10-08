@@ -140,6 +140,14 @@ curl_cffi 拿到 200。
     **别把 `ANDROID_VR` 加回 CLIENTS 当兜底**：player 请求"成功"会让它永远挡住兜底，
     症状是"解析全对、下载全 403"。
 
+- **youtube 帖子的正文链接要还原**（2026-10-08）：
+  YouTube 会把帖子正文里 run 的**显示文本**截断成 `https://…list...`（页面源码里就是字面的省略号），
+  但完整地址在同一条 run 的 `navigationEndpoint` 上，三种载体：`urlEndpoint.url`（外链，常包一层
+  `youtube.com/redirect?…&q=`）、`commandMetadata.webCommandMetadata.url`、
+  `browseEndpoint.canonicalBaseUrl`（站内路径）。`_text_of()` 现在遇到 URL 形态的 run 就用真实地址替换
+  （解 redirect、相对路径补域名），`#hashtag` 不受影响。
+  ⚠️ **三个载体都可能是相对路径**，只在其中一级取会得到 `/playlist?list=…` 这种半截链接。
+
 - **yt-dlp 已彻底移除**（2026-10-08，`feat!: drop yt-dlp entirely`）：
   - bilibili 不再有 yt-dlp 兜底（原来 `BiliYtParse` 在 API 失败时用它），只走自身 API；
     失败时**带上真实原因**（原实现吞成一句「Bilibili 解析失败」，看不出是风控 / cookie / 接口变更）。
