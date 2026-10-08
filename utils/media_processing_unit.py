@@ -17,6 +17,23 @@ from PIL.Image import Resampling
 
 from utils.helpers import run_cmd
 
+#: Pillow 的**格式名** → 文件后缀。降采样时输出后缀要跟真实格式一致
+#: （``.jfif``/``.jpeg`` 这类别名统一成常规写法；Pillow 的 ``format`` 是这些大写名）。
+_PIL_FORMAT_SUFFIX = {
+    "JPEG": "jpg",
+    "PNG": "png",
+    "WEBP": "webp",
+    "GIF": "gif",
+    "BMP": "bmp",
+    "TIFF": "tiff",
+    "ICO": "ico",
+    "AVIF": "avif",
+    "HEIF": "heif",
+    "JPEG2000": "jp2",
+    "MPO": "mpo",
+    "PPM": "ppm",
+}
+
 
 @dataclass
 class MediaProcessResult:
@@ -194,7 +211,14 @@ class MediaProcessingUnit:
         return output
 
     def _downscale_image(self, file_path: Path, max_side: int = 2560) -> Path | None:
-        """若图片任一边超过 max_side，等比缩放至长边为 max_side，返回新文件路径；无需缩放返回 None"""
+        """若图片任一边超过 max_side，等比缩放至长边为 max_side，返回新文件路径；无需缩放返回 None
+
+        **保存格式跟真实格式走，不跟文件后缀走**：下载下来的图偶尔"后缀撒谎"
+        （twitter 的 PNG 被命名成 .jpg），而 ``save()`` 不指定 format 时 Pillow 会用**后缀**
+        推断编码器 —— 调色板图（mode ``P``）无法写成 JPEG，于是抛
+        ``cannot write mode P as JPEG``，整条媒体处理就失败了。
+        所以这里显式给 ``format`` 并让输出后缀与真实格式一致。
+        """
         with Image.open(file_path) as img:
             w, h = img.size
             if max(w, h) <= max_side:
@@ -203,9 +227,15 @@ class MediaProcessingUnit:
             new_w, new_h = int(w * scale), int(h * scale)
             self.logger(f"图片长边超限({max(w, h)}px > {max_side}px)，缩放: {w}x{h} -> {new_w}x{new_h}")
             resized = img.resize((new_w, new_h), Resampling.LANCZOS)
-            ext = file_path.suffix
-            out_path = self.output_dir / f"{file_path.stem}_downscaled{ext}"
-            resized.save(out_path)
+            actual_format = (img.format or "").upper()
+            if actual_format:
+                suffix = f".{_PIL_FORMAT_SUFFIX.get(actual_format, actual_format.lower())}"
+                out_path = self.output_dir / f"{file_path.stem}_downscaled{suffix}"
+                resized.save(out_path, format=actual_format)
+            else:
+                # 拿不到真实格式（极少见）时保持旧行为: 用原后缀、由 Pillow 自行推断
+                out_path = self.output_dir / f"{file_path.stem}_downscaled{file_path.suffix}"
+                resized.save(out_path)
         return out_path
 
     # -- 图片辅助 --------------------------------------------------------- #

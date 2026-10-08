@@ -1,7 +1,7 @@
 import html
 from collections.abc import Sequence
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qs, unquote, urlparse, urlunparse
 
 from ...provider_api.twitter import (
     Twitter,
@@ -22,6 +22,30 @@ from ...types import (
 )
 from ...utils.helpers import format_author_link, format_quote_block, profile_url
 from ..base.base import BaseParser
+
+#: 图片 URL 的 path 上**可信的**扩展名。twitter 的图片地址形如
+#: ``.../HUBBoF9bkAA1jCq.png?name=orig`` —— 扩展名在 path 上、且就是真实格式。
+_IMAGE_EXTS = frozenset({"jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "bmp", "tif", "tiff"})
+
+
+def _image_ext_from_url(url: str, default: str = "jpg") -> str:
+    """按 URL 取图片真实扩展名，取不到用 ``default``。
+
+    先看 path 上的扩展名（``.../HUBBoF9bkAA1jCq.png?name=orig``），path 没有时看 query 上的
+    ``format=``（X 的卡片图长这样：``.../card_img/123/AbC?format=jpg&name=orig``，path 无扩展名）。
+
+    **不这么做 PNG 会被命名成 ``.jpg``**（``ImageRef.ext`` 默认 ``jpg``），下载下来就是
+    "后缀撒谎"的文件 —— 下游媒体处理按后缀存图时会炸（``cannot write mode P as JPEG``），
+    用户侧看到的是整条解析失败。
+    """
+    parsed = urlparse(url)
+    tail = unquote(parsed.path).rpartition("/")[2]
+    stem, dot, ext = tail.rpartition(".")
+    ext = ext.lower()
+    if stem and dot and ext in _IMAGE_EXTS:
+        return ext
+    query_format = (parse_qs(parsed.query).get("format") or [""])[0].lower()
+    return query_format if query_format in _IMAGE_EXTS else default
 
 
 class TwitterParser(BaseParser):
@@ -215,7 +239,15 @@ class TwitterParser(BaseParser):
         for m in media_items or []:
             match m:
                 case TwitterPhoto():
-                    refs.append(ImageRef(url=m.url, height=m.height, width=m.width, thumb_url=m.thumb_url))
+                    refs.append(
+                        ImageRef(
+                            url=m.url,
+                            ext=_image_ext_from_url(m.url),
+                            height=m.height,
+                            width=m.width,
+                            thumb_url=m.thumb_url,
+                        )
+                    )
                 case TwitterVideo():
                     refs.append(
                         VideoRef(
