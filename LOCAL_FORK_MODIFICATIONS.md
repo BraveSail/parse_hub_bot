@@ -144,8 +144,9 @@ curl_cffi 拿到 200。
   YouTube 会把帖子正文里 run 的**显示文本**截断成 `https://…list...`（页面源码里就是字面的省略号），
   但完整地址在同一条 run 的 `navigationEndpoint` 上，三种载体：`urlEndpoint.url`（外链，常包一层
   `youtube.com/redirect?…&q=`）、`commandMetadata.webCommandMetadata.url`、
-  `browseEndpoint.canonicalBaseUrl`（站内路径）。`_text_of()` 现在遇到 URL 形态的 run 就用真实地址替换
-  （解 redirect、相对路径补域名），`#hashtag` 不受影响。
+  `browseEndpoint.canonicalBaseUrl`（站内路径）。`_text_of()` 现在遇到**被截断**的 URL 形态 run
+  就产出 `<a href="完整地址">原显示文本</a>` —— **保留省略号原文**，只让链接指向真实目标
+  （解 redirect、相对路径补域名）；`#hashtag` 不受影响。未截断的链接一个字节都不动。
   ⚠️ **三个载体都可能是相对路径**，只在其中一级取会得到 `/playlist?list=…` 这种半截链接。
 
 - **yt-dlp 已彻底移除**（2026-10-08，`feat!: drop yt-dlp entirely`）：

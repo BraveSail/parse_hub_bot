@@ -28,8 +28,22 @@
 - 新增 `_run_link_url(run)`：按 `urlEndpoint.url` → `commandMetadata.webCommandMetadata.url` →
   `browseEndpoint.canonicalBaseUrl` 取真实地址；相对路径补 `https://www.youtube.com`；
   `/redirect?…&q=` 形态解出 `q=` 并丢掉追踪 token（新增 `_unwrap_redirect`）。
-- `_text_of()`：run 的文本是 URL 形态（`^https?://` / `^www.`）且能取到真实地址时用它替换显示文本。
-  **`#hashtag` 不受影响**（不以 http 开头，且它有独立的渲染通道）—— 单测钉住。
+- `_text_of()`：run 文本是 URL 形态（`^https?://` / `^www.`）**且与真实地址不同**（即被截断）时，
+  产出 `<a href="完整地址">原显示文本</a>` —— **保留平台原本的省略号外观**，只让链接指向真实目标
+  （用户要求：「保留原格式，省略号但是链接是完整的」）。
+  - 用 HTML `<a>` 而非 markdown 链接：正文可能落在引用块里（块内行内 markdown 不解析），
+    与 bilibili 的标签处理同一形态；渲染层本来就跳过 `<a>` 段内的标签链接化、并保护 href 里的
+    markdown 定界符。
+  - 文本与真实地址**相同**（未截断）时**不做任何包装**，原有行为不变。
+  - **`#hashtag` 不受影响**（不以 http 开头，且它有独立的渲染通道）—— 单测钉住。
+
+> 第一版是把显示文本**替换**成完整 URL（正文变样了）。用户要求的形态是保留原文、链接完整，
+> 因此改成锚点方案 —— 渲染产物（真实帖子）：
+>
+> ```
+>  ► <a href="https://www.youtube.com/playlist?list=PLcsS6p8iu5r4">https://www.youtube.com/playlist?list...</a>
+> ℹ️ 來源 | X @ <a href="https://x.com/fxkurumi_info/status/2105266424730255588">https://x.com/fxkurumi_info/status/21...</a>
+> ```
 
 ## 验证
 
