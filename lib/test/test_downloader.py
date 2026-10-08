@@ -65,10 +65,17 @@ class RangeTestHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _parse_range(header: str) -> tuple[int, int]:
+        """解析 Range 头。**支持开放式范围** `bytes=<start>-`（到结尾）。
+
+        需要它才能覆盖"整段 Range"这条路径：有些 CDN 拒绝不带 Range 的整段请求
+        （googlevideo 的 `rqh=1` URL），所以下载器对整段也发 `bytes=0-`。
+        """
         prefix = "bytes="
         if not header.startswith(prefix):
             return 0, 0
         start_text, end_text = header.removeprefix(prefix).split("-", 1)
+        if not end_text.strip():
+            return int(start_text), 2**63 - 1  # 开放式: 到结尾（调用方会按内容长度收窄）
         return int(start_text), int(end_text)
 
 
@@ -130,7 +137,8 @@ class DownloaderTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(target.read_bytes(), content)
             self.assertIn(("GET", "bytes=0-0"), handler.requests)
-            self.assertIn(("GET", None), handler.requests)
+            # 单连接回退也**带** `bytes=0-`（见下载器的注释：有些 CDN 拒绝无 Range 的整段请求）
+            self.assertIn(("GET", "bytes=0-"), handler.requests)
             self.assertFalse(list(Path(tmp).glob(".*.parsehub-tmp")))
 
     async def test_download_keeps_existing_file_when_request_fails(self):
@@ -154,7 +162,9 @@ class DownloaderTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(target.read_bytes(), content)
             range_gets = [range_header for method, range_header in handler.requests if method == "GET" and range_header]
-            self.assertEqual(range_gets, [])
+            # **只发一个请求**, 但它是带 `bytes=0-` 的整段 Range —— 不带 Range 的整段请求
+            # 会被某些 CDN 直接断连（googlevideo 的 `rqh=1` URL 实测稳定复现）。
+            self.assertEqual(range_gets, ["bytes=0-"])
 
 
 if __name__ == "__main__":

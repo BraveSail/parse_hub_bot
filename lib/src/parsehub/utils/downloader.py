@@ -284,10 +284,15 @@ class SegmentDownloader:
 
     async def _download_single(self, client: http.AsyncClient, total_size: int | None) -> None:
         complete_path = self._require_complete_path()
+        # ⚠️ **必须带 `Range: bytes=0-`**：有些 CDN 会拒绝"不带 Range 的整段请求"而直接断连。
+        # 实测（2026-10-08）googlevideo 的音频流 URL 带 ``rqh=1``（要求 Range 头）：
+        # 无 Range 时**稳定** `curl: (56) Connection closed abruptly`，带上就是 206 + 完整内容。
+        # 对**支持** Range 的服务器 ``bytes=0-`` 等价于整段（Content-Length 仍是总长），
+        # 对**不支持**的服务器会被忽略（200 整段）—— 两边都安全。
         # curl_cffi 用 stream=True + aiter_content, 没有上下文管理器形态
         response = await client.get(
             self.url,
-            headers=self._headers({"Accept-Encoding": "identity"}),
+            headers=self._headers({"Accept-Encoding": "identity", "Range": "bytes=0-"}),
             allow_redirects=True,
             stream=True,
         )
