@@ -127,7 +127,19 @@ curl_cffi 拿到 200。
   facebook `watch/?v=` 与 `v` 参数保留、bilibili `view/detail` 需 cookie、
   yt-dlp 条目缺 `thumbnail`/`description` 时不再 KeyError、保留原语言音轨、
   **youtube 社区帖子**（一个 parser 管视频 + 帖子，帖子读页面 `ytInitialData`）、
-  **yt-dlp 客户端抽到 `provider_api/ytdlp.py`**（`parsers/base/ytdlp.py` 只留骨架）。
+  **yt-dlp 客户端抽到 `provider_api/ytdlp.py`**（`parsers/base/ytdlp.py` 只留骨架）、
+  **facebook / snapchat / youtube 视频改自研**（不再调用 yt-dlp，只留 bilibili 兜底）。
+- **facebook / snapchat / youtube 视频不再走 yt-dlp**（2026-10-08）：
+  - facebook 读页面 `data-sjs` 里的明文渐进式直链（`videoDeliveryLegacyFields.browser_native_hd_url`，
+    三种页面形态 watch/post/reel **不同构**）；DASH-only 明确抛错、不半吊子解析 MPD。
+  - snapchat 读 spotlight 页 `__NEXT_DATA__` 的 `contentUrl`（明文）；它的
+    `videoMetadata.description` 是**固定模板**，不当正文。
+  - youtube 走 innertube player + **`VISIONOS` client**（`provider_api/youtube_video.py`）。
+    **选型判据：既要返回明文 url、又不要 PO token** —— `ANDROID` 只给 1 条 360p 合一档、
+    `ANDROID_VR` 给全 27 条但直链**必然 403**（`GVS_PO_TOKEN_POLICY: required=True`）、
+    `IOS` 一条不给。高画质是分离流 ⇒ ffmpeg `-c copy` mux。
+    **别把 `ANDROID_VR` 加回 CLIENTS 当兜底**：player 请求"成功"会让它永远挡住兜底，
+    症状是"解析全对、下载全 403"。
 
 ## 8. 平台配置的容错（本地修改）
 
