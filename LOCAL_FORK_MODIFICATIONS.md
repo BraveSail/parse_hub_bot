@@ -139,6 +139,12 @@ curl_cffi 拿到 200。
     `IOS` 一条不给。高画质是分离流 ⇒ ffmpeg `-c copy` mux。
     **别把 `ANDROID_VR` 加回 CLIENTS 当兜底**：player 请求"成功"会让它永远挡住兜底，
     症状是"解析全对、下载全 403"。
+  - ⚠️ **player 请求必须带 `X-Goog-Visitor-Id`**（2026-10-08）：缺它时 VISIONOS 会返回
+    `LOGIN_REQUIRED`（用户报「YouTube 解析失败」的真因，**不是代理问题**）。visitorData 取
+    `youtubei/v1/guide` 的 `responseContext.visitorData`（**别抓 `/watch` 页 HTML** ——
+    实测会 429 限流，一失败就退化）。它是访客身份、可跨视频复用 ⇒ 进程内缓存 1 小时。
+    **且 代理与这个头缺一不可**：161 直连时带上它仍被拦（WARP 必须保留）。
+    详见 `doc/2026-10-08-youtube-visitor-id.md`。
 
 - **youtube 帖子的正文链接要还原**（2026-10-08）：
   YouTube 会把帖子正文里 run 的**显示文本**截断成 `https://…list...`（页面源码里就是字面的省略号），
@@ -203,6 +209,17 @@ fr / id / it / ja / ko / nl / pl / pt-br / ru / th / tr / vi / zh-hant。
 现在保存格式与输出后缀都跟 Pillow 检测到的真实格式走（`_PIL_FORMAT_SUFFIX` 做格式名 → 后缀映射），
 真 JPEG 走原路径零变化。填充 / 切割 / 取色三条路径实测对 `P` 模式本来就安全。
 ⚠️ `process_image` 的 `needs_rgb = image_mode == "RGBA"` **只管 RGBA**，别以为它兜住了所有模式。
+
+## 11.1 下载器整段路径也必须带 Range 头（2026-10-08）
+
+`utils/downloader.py::_download_single` 原本**不带** `Range` 头。googlevideo 的部分直链
+query 里有 **`rqh=1`**（要求 Range 头）：不带 Range 的整段请求会被**直接断连**
+（`curl: (56) Connection closed abruptly`，稳定复现），而 `Range: bytes=0-` 正常返回 206 整段。
+
+⇒ 单连接路径统一带 `Range: bytes=0-`（对支持 Range 的服务器等价整段、对不支持者会被忽略）。
+症状很有迷惑性：**>10MB 的流能下（走分片）、小流必挂**，看起来像"网络不稳"。
+
+**上游同步注意**：`lib/` 是 subtree，合上游时这一行可能被覆盖掉。
 
 ## 上游同步
 
