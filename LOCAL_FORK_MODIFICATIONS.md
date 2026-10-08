@@ -160,11 +160,13 @@ curl_cffi 拿到 200。
   - ⚠️ B 站 `view/detail` **对匿名请求直接风控**，端到端验证必须走 `ParseService`（会带 cookie）；
     裸用 `ParseHub().parse(url)` 会稳定 412，别误判成解析器坏了。密度过高也会 412（冷却后恢复）。
 
-- **图片扩展名要跟 URL 走**（2026-10-08）：twitter 解析器构造 `ImageRef` 时没传 `ext`
-  ⇒ 用默认 `jpg`，而图片 URL 写着 `.png` ⇒ 下载出"后缀撒谎"的 `xxx.jpg`（内容其实是 PNG），
-  下游媒体处理按后缀存图时会炸（见 §11）。`_image_ext_from_url()` 先取 URL **path** 的扩展名，
-  path 没有时取 query 的 `format=`（X 的卡片图 `…/card_img/123/AbC?format=jpg` path 无扩展名），
-  都没有才退回 `jpg`。⚠️ 其他平台的 parser 多数也没传 ext（清单见 `doc/2026-10-08-media-p-mode-jpeg.md`）。
+- **图片扩展名一律按 URL 取**（2026-10-08）：`ImageRef.ext` 默认 `jpg`，各 parser 构造时普遍
+  没传 ⇒ 图片实为 PNG/WebP 也被命名成 `.jpg`，下游按后缀处理媒体会炸（见 §11）。
+  现在**统一**走 `utils/helpers.image_ext_from_url()`（path 扩展名 → query `format=` → default），
+  16 个平台全部接入，pixiv 自己那份重复的 `_guess_ext` 已删除并入。
+  动图（`AniRef`）传 `ANIMATED_EXTS`（twitter 的动图 URL 是 mp4）。
+  **纯增量**：URL 给不出可信扩展名时返回 default，行为与"不传 ext"一致。
+  详见 `doc/2026-10-08-unify-image-ext.md`（含真机验证结果与**未验证平台清单**）。
 
 ## 8. 平台配置的容错（本地修改）
 
