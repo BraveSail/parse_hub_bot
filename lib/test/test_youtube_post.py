@@ -10,6 +10,10 @@ fixture 是从真实页面裁剪出来的（只留帖子本体 + JSON-LD 的 ``d
 - ``youtube_post_multi_image.html`` —— ANIPLUS Asia，2 张图
 - ``youtube_post_video.html`` —— ANIPLUS Asia，分享的视频（无配图）
 - ``youtube_post_poll.html`` —— MrBeast，投票
+- ``youtube_post_truncated_links.html`` —— Ani-One，**正文里的链接被 YouTube 截断**
+  （显示文本 ``https://www.youtube.com/playlist?list...``），完整地址挂在 run 的
+  ``navigationEndpoint`` 上（站内走 ``browseEndpoint.canonicalBaseUrl``、
+  外链走 ``urlEndpoint.url`` 的 ``/redirect?…&q=``）
 """
 
 import asyncio
@@ -123,6 +127,63 @@ def test_single_image_url_keeps_the_size_suffix_off():
     post = parse_post_page(_html("youtube_post_single_image.html"))
     assert "=" not in post.images[0].url
     assert post.images[0].thumb_url  # 最小档留着当缩略图
+
+
+# ------------------------------------------------------- 正文里被截断的链接
+
+
+TRUNCATED_POST_ID = "UgkxNoA6S6qRc2Yc7QXHcECdW9JHe7XLDpAB"
+
+
+def test_truncated_internal_link_is_restored_from_browse_endpoint():
+    """**核心回归**：YouTube 把显示文本截断成 ``…list...``，完整地址在
+    ``navigationEndpoint.browseEndpoint.canonicalBaseUrl``（站内路径要补域名）。
+    """
+    post = parse_post_page(
+        _html("youtube_post_truncated_links.html"),
+        url=f"https://www.youtube.com/post/{TRUNCATED_POST_ID}",
+    )
+    assert "https://www.youtube.com/playlist?list=PLcsS6p8iu5r4" in post.text
+    assert "list..." not in post.text
+
+
+def test_truncated_external_link_unwraps_the_youtube_redirect():
+    """外链（X）的完整地址在 ``urlEndpoint.url`` 里，且包了一层
+    ``youtube.com/redirect?…&q=<URL 编码的真实地址>`` —— 要解出 ``q=`` 并去掉追踪 token。
+    """
+    post = parse_post_page(_html("youtube_post_truncated_links.html"))
+    assert "https://x.com/fxkurumi_info/status/2105266424730255588" in post.text
+    assert "youtube.com/redirect" not in post.text
+    assert "status/21..." not in post.text
+
+
+def test_hashtags_are_not_touched_by_the_link_restore():
+    """``#hashtag`` 有独立渲染通道，不能被替换成 URL（否则标签行/正文链接化全废）。"""
+    post = parse_post_page(_html("youtube_post_truncated_links.html"))
+    for tag in ("#AniOne", "#FX戰士久留美", "#線上看", "#Anime"):
+        assert tag in post.text, tag
+
+
+def test_other_prose_is_left_alone():
+    """非 URL 形态的文本一个字都不改（还原只对 ``^https?://`` / ``^www.`` 生效）。"""
+    post = parse_post_page(_html("youtube_post_truncated_links.html"))
+    assert "👈發薪日：錢錢該如何花" in post.text
+    assert "ℹ️ 來源 | X @ " in post.text
+
+
+def test_a_url_without_a_navigation_endpoint_keeps_its_text():
+    """run 没有 navigationEndpoint 时保持原样 —— 拿不到真地址就不动它。"""
+    from parsehub.provider_api.youtube import _text_of
+
+    node = {"runs": [{"text": "https://example.com/no-endpoint"}]}
+    assert _text_of(node) == "https://example.com/no-endpoint"
+
+
+def test_plain_text_runs_are_joined_verbatim():
+    from parsehub.provider_api.youtube import _text_of
+
+    node = {"runs": [{"text": "前"}, {"text": "中"}, {"text": "后"}]}
+    assert _text_of(node) == "前中后"
 
 
 def test_multi_image_post():

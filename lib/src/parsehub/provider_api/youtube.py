@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -283,16 +284,90 @@ def _find_first(node: Any, key: str) -> Any:
     return None
 
 
+_URL_ISH_RE = re.compile(r"^(?:https?://|www\.)", re.I)
+
+#: YouTube 的外链包一层跳转: ``youtube.com/redirect?…&q=<URL 编码的真实地址>``。
+_REDIRECT_HOSTS = ("www.youtube.com", "youtube.com", "m.youtube.com")
+
+
+def _unwrap_redirect(url: str) -> str:
+    """把 YouTube 的 ``/redirect?…&q=<真实地址>`` 还原成真实地址（去掉追踪 token）。
+
+    不是 redirect 形态时原样返回。
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return url
+    if parsed.netloc not in _REDIRECT_HOSTS or not parsed.path.startswith("/redirect"):
+        return url
+    target = urllib.parse.parse_qs(parsed.query).get("q")
+    if not target or not target[0]:
+        return url
+    return target[0]
+
+
+def _run_link_url(run: dict[str, Any]) -> str:
+    """从一个 run 的 ``navigationEndpoint`` 取**真实链接**。
+
+    YouTube 会把 run 的**显示文本**截断（``https://www.youtube.com/playlist?list...``），
+    但完整地址在同一条 run 里，有三种载体（按出现顺序取）:
+
+    1. ``urlEndpoint.url`` —— 外链，通常包一层 ``youtube.com/redirect?...&q=<真实地址>``
+    2. ``commandMetadata.webCommandMetadata.url`` —— 同上的另一种出现形态
+    3. ``browseEndpoint.canonicalBaseUrl`` —— 站内路径（``/playlist?list=…``）
+
+    ⚠️ 三个载体都可能是**相对路径**（``/playlist?list=…``），所以最后统一补域名 ——
+    实测 run[1] 的 ② 就是相对路径，只在 ② 返回会导致正文里出现 ``/playlist?list=…``
+    这种半截链接。
+
+    取不到返回空串（调用方保持原显示文本）。
+    """
+    endpoint = run.get("navigationEndpoint")
+    if not isinstance(endpoint, dict):
+        return ""
+    url = (endpoint.get("urlEndpoint") or {}).get("url")
+    if not url:
+        commands = endpoint.get("commandMetadata") or {}
+        url = (commands.get("webCommandMetadata") or {}).get("url")
+    if not url:
+        url = (endpoint.get("browseEndpoint") or {}).get("canonicalBaseUrl")
+    if not url:
+        return ""
+    text = str(url).strip()
+    if text.startswith("/"):
+        # 站内相对路径（/playlist?list=…、/hashtag/…）—— 补域名为绝对地址
+        return f"https://www.youtube.com{text}"
+    return _unwrap_redirect(text)
+
+
 def _text_of(node: Any) -> str:
-    """``{"runs": [{"text": ...}]}`` 或 ``{"simpleText": ...}`` → 纯文本。"""
+    """``{"runs": [{"text": ...}]}`` 或 ``{"simpleText": ...}`` → 纯文本。
+
+    **run 的文本是 URL 形态时改用 navigationEndpoint 里的真实链接** —— YouTube 会把显示文本
+    截断成 ``…list...`` / ``…/status/21...``（页面源码里就是字面的省略号），而完整地址只挂在
+    navigationEndpoint 上。不还原的话正文里留下的是断链。
+
+    只对 ``^https?://`` / ``^www.`` 开头的 run 生效, 所以 ``#hashtag`` 不受影响（它有独立的
+    渲染通道, 且渲染层按名字做链接化）。
+    """
     if not isinstance(node, dict):
         return ""
     if isinstance(node.get("simpleText"), str):
         return str(node["simpleText"])
     runs = node.get("runs")
-    if isinstance(runs, list):
-        return "".join(str(run.get("text", "")) for run in runs if isinstance(run, dict))
-    return ""
+    if not isinstance(runs, list):
+        return ""
+    parts: list[str] = []
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        text = str(run.get("text", ""))
+        if _URL_ISH_RE.match(text.strip()):
+            if real := _run_link_url(run):
+                text = real
+        parts.append(text)
+    return "".join(parts)
 
 
 _COMPACT_COUNT_RE = re.compile(r"\s*([\d.,]+)\s*([KMB]?)", re.I)
