@@ -135,26 +135,49 @@ def test_single_image_url_keeps_the_size_suffix_off():
 TRUNCATED_POST_ID = "UgkxNoA6S6qRc2Yc7QXHcECdW9JHe7XLDpAB"
 
 
-def test_truncated_internal_link_is_restored_from_browse_endpoint():
-    """**核心回归**：YouTube 把显示文本截断成 ``…list...``，完整地址在
-    ``navigationEndpoint.browseEndpoint.canonicalBaseUrl``（站内路径要补域名）。
+def test_truncated_internal_link_keeps_its_text_but_points_at_the_full_url():
+    """**核心回归**：正文**保留 YouTube 给的省略号原文**，但锚点的 href 是完整地址
+    （站内路径来自 ``browseEndpoint.canonicalBaseUrl``，要给相对路径补域名）。
     """
     post = parse_post_page(
         _html("youtube_post_truncated_links.html"),
         url=f"https://www.youtube.com/post/{TRUNCATED_POST_ID}",
     )
-    assert "https://www.youtube.com/playlist?list=PLcsS6p8iu5r4" in post.text
-    assert "list..." not in post.text
+    assert (
+        '<a href="https://www.youtube.com/playlist?list=PLcsS6p8iu5r4">'
+        "https://www.youtube.com/playlist?list...</a>"
+    ) in post.text
+    # 显示形态不变：省略号还在（用户明确要求"保留原格式"）
+    assert "list..." in post.text
 
 
 def test_truncated_external_link_unwraps_the_youtube_redirect():
     """外链（X）的完整地址在 ``urlEndpoint.url`` 里，且包了一层
-    ``youtube.com/redirect?…&q=<URL 编码的真实地址>`` —— 要解出 ``q=`` 并去掉追踪 token。
+    ``youtube.com/redirect?…&q=<URL 编码的真实地址>`` —— href 要用解出来的真实地址，
+    显示文本仍是原文的省略号形态。
     """
     post = parse_post_page(_html("youtube_post_truncated_links.html"))
-    assert "https://x.com/fxkurumi_info/status/2105266424730255588" in post.text
+    assert (
+        '<a href="https://x.com/fxkurumi_info/status/2105266424730255588">'
+        "https://x.com/fxkurumi_info/status/21...</a>"
+    ) in post.text
+    # 跳转壳不能出现在结果里（它带一堆追踪参数）
     assert "youtube.com/redirect" not in post.text
-    assert "status/21..." not in post.text
+
+
+def test_an_untruncated_url_is_left_exactly_as_is():
+    """文本与真实地址**相同**（没被截断）时不做任何包装 —— 原有行为不变。"""
+    from parsehub.provider_api.youtube import _text_of
+
+    node = {
+        "runs": [
+            {
+                "text": "https://example.com/full/path",
+                "navigationEndpoint": {"urlEndpoint": {"url": "https://example.com/full/path"}},
+            }
+        ]
+    }
+    assert _text_of(node) == "https://example.com/full/path"
 
 
 def test_hashtags_are_not_touched_by_the_link_restore():

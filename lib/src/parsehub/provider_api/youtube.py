@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import urllib.parse
@@ -344,12 +345,17 @@ def _run_link_url(run: dict[str, Any]) -> str:
 def _text_of(node: Any) -> str:
     """``{"runs": [{"text": ...}]}`` 或 ``{"simpleText": ...}`` → 纯文本。
 
-    **run 的文本是 URL 形态时改用 navigationEndpoint 里的真实链接** —— YouTube 会把显示文本
-    截断成 ``…list...`` / ``…/status/21...``（页面源码里就是字面的省略号），而完整地址只挂在
-    navigationEndpoint 上。不还原的话正文里留下的是断链。
+    **显示文本被平台截断时**（``…list...`` / ``…/status/21...``），用 HTML 锚点把**原显示文本**
+    当成链接文字、`href` 指向 navigationEndpoint 里的完整地址 —— **保留平台原本的样子**，
+    只是让它可以点、且点到的是真实目标（用户要求：「保留原格式，省略号但是链接是完整的」）。
+
+    用 HTML ``<a>`` 而不是 markdown 链接: 正文既可能落在引用块里（块内 markdown 行内语法不解析），
+    也可能落在正文，HTML 标签两处都有效（与 bilibili 的标签处理同一形态）。渲染层本来就跳过
+    ``<a>`` 段内的标签链接化，并专门保护 href 里的 markdown 定界符。
 
     只对 ``^https?://`` / ``^www.`` 开头的 run 生效, 所以 ``#hashtag`` 不受影响（它有独立的
-    渲染通道, 且渲染层按名字做链接化）。
+    渲染通道, 且渲染层按名字做链接化）。文本与真实地址**相同**时不做任何包装（未截断的链接
+    保持原有行为）。
     """
     if not isinstance(node, dict):
         return ""
@@ -364,8 +370,9 @@ def _text_of(node: Any) -> str:
             continue
         text = str(run.get("text", ""))
         if _URL_ISH_RE.match(text.strip()):
-            if real := _run_link_url(run):
-                text = real
+            real = _run_link_url(run)
+            if real and real != text.strip():
+                text = f'<a href="{html.escape(real, quote=True)}">{html.escape(text)}</a>'
         parts.append(text)
     return "".join(parts)
 
