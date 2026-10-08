@@ -580,27 +580,67 @@ def _thumb_file_id(document, client) -> str | None:
 def extract_cache_media(rich_message) -> list:
     """从发送后返回的富文本消息里取出媒体 file_id (写回缓存用, 下次零上传)。
 
-    blocks 路径与 markdown 路径返回的结构不同, 这里统一递归找 Photo/Video/Document。
+    blocks 路径与 markdown 路径返回的结构不同, 这里统一递归找 Photo/Video/Document/Animation。
+
+    ⚠️ **封面的字段在 ``video`` 上, 不在块上**（2026-10-08 实测踩坑）:
+    ``RichBlockVideo`` 只有 ``video`` / ``has_spoiler`` / ``caption`` —— 写
+    ``getattr(node, "cover", …)`` 永远拿到 ``None``, 于是缓存命中时视频**没有封面**
+    (用户报「缓存…没图了」)。正确来源是 ``node.video`` 的 ``video_cover``(兜底 ``thumb``),
+    与直发路径 ``cache_media_from_message`` 的取法一致。
     """
     from services.cache import CacheMedia, CacheMediaType
 
     found: list = []
+
+    def _file_id(obj) -> str | None:
+        """从一个 pyrogram 媒体对象上取 file_id(未绑 client 时可能为 None)。"""
+        if obj is None:
+            return None
+        for attr in ("file_id", "document"):
+            value = getattr(obj, attr, None)
+            if isinstance(value, str) and value:
+                return value
+            nested = getattr(value, "file_id", None) if value is not None else None
+            if isinstance(nested, str) and nested:
+                return nested
+        return None
+
+    def _cover_file_id(video) -> str | None:
+        """视频封面: ``video.video_cover``(兜底 ``video.thumb``) —— 块上**没有** cover 字段。"""
+        for attr in ("video_cover", "thumb"):
+            return_value = getattr(video, attr, None)
+            if return_value is not None:
+                cover = _file_id(return_value)
+                if cover:
+                    return cover
+        return None
 
     def walk(node) -> None:
         if node is None or isinstance(node, (str, int)):
             return
         name = type(node).__name__
         if name == "RichBlockPhoto":
-            file_id = getattr(getattr(node, "photo", None), "file_id", None)
+            file_id = _file_id(getattr(node, "photo", None))
             if file_id:
                 found.append(CacheMedia(type=CacheMediaType.PHOTO, file_id=file_id))
                 return
         if name == "RichBlockVideo":
             video = getattr(node, "video", None)
-            file_id = getattr(video, "file_id", None) or getattr(getattr(video, "document", None), "file_id", None)
-            cover = getattr(getattr(node, "cover", None), "file_id", None)
+            file_id = _file_id(video)
             if file_id:
-                found.append(CacheMedia(type=CacheMediaType.VIDEO, file_id=file_id, cover_file_id=cover))
+                found.append(
+                    CacheMedia(type=CacheMediaType.VIDEO, file_id=file_id, cover_file_id=_cover_file_id(video))
+                )
+                return
+        if name == "RichBlockAnimation":
+            file_id = _file_id(getattr(node, "animation", None))
+            if file_id:
+                found.append(CacheMedia(type=CacheMediaType.ANIMATION, file_id=file_id))
+                return
+        if name == "RichBlockDocument":
+            file_id = _file_id(getattr(node, "document", None))
+            if file_id:
+                found.append(CacheMedia(type=CacheMediaType.DOCUMENT, file_id=file_id))
                 return
         for attr in ("blocks", "items"):
             value = getattr(node, attr, None)

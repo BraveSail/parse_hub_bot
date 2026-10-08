@@ -186,6 +186,119 @@ def test_extract_cache_media_reads_file_ids_from_blocks():
     assert all(m.type == CacheMediaType.PHOTO for m in found)
 
 
+# ── 视频封面：字段在 video 上，不在块上（2026-10-08 回归）─────────────────
+#
+# 用户报「缓存正文又没图了」：缓存条目里 `cover_file_id` 恒为 None ⇒ 缓存命中时
+# 视频没有封面。根因是取错了字段 —— pyrogram 的 `RichBlockVideo` 只有
+# `video` / `has_spoiler` / `caption`（**没有 `cover`**），所以 `getattr(node, "cover", None)`
+# 永远是 None。正确来源是 `node.video.video_cover`（兜底 `video.thumb`）。
+
+
+def _video_block(file_id="vid", cover_file_id=None, thumb_file_id=None):
+    class _Cover:
+        def __init__(self, fid):
+            self.file_id = fid
+
+    class _Video:
+        def __init__(self):
+            self.file_id = file_id
+            self.video_cover = _Cover(cover_file_id) if cover_file_id else None
+            self.thumb = _Cover(thumb_file_id) if thumb_file_id else None
+
+    class RichBlockVideo:
+        def __init__(self):
+            self.video = _Video()
+
+    return RichBlockVideo()
+
+
+def test_extract_takes_the_cover_from_the_video_not_the_block():
+    """**核心回归**：封面取 `video.video_cover`（块上没有 cover 字段）。"""
+
+    class RichMessage:
+        blocks = [_video_block("vid-file-id", cover_file_id="cover-file-id")]
+
+    found = extract_cache_media(RichMessage())
+
+    assert len(found) == 1
+    assert found[0].file_id == "vid-file-id"
+    assert found[0].cover_file_id == "cover-file-id", "封面必须从 video 上取, 否则缓存命中时没封面"
+
+
+def test_extract_falls_back_to_the_video_thumb_for_the_cover():
+    """没有 video_cover 时用 thumb 当封面 —— 宁可用缩略图也别没有。"""
+
+    class RichMessage:
+        blocks = [_video_block("v", thumb_file_id="thumb-file-id")]
+
+    assert extract_cache_media(RichMessage())[0].cover_file_id == "thumb-file-id"
+
+
+def test_extract_reaches_media_nested_inside_a_quote_card():
+    """**核心回归（数量对齐）**：引用卡片里的媒体嵌在 blockquote / details 容器里，
+    必须递归取到 —— 少认一项会让计数错位（缓存命中时正文没图）。"""
+
+    class RichBlockVideo:
+        def __init__(self, fid, cover=None):
+            class _C:
+                def __init__(self, f):
+                    self.file_id = f
+
+            class _V:
+                def __init__(self):
+                    self.file_id = fid
+                    self.video_cover = _C(cover) if cover else None
+
+            self.video = _V()
+
+    class RichBlockDetails:
+        def __init__(self, blocks):
+            self.blocks = blocks
+
+    class RichBlockBlockQuotation:
+        def __init__(self, blocks):
+            self.blocks = blocks
+
+    class RichMessage:
+        # 正文一个视频 + 引用卡片里（容器 → details → 视频）另一个
+        blocks = [
+            RichBlockVideo("body-vid", cover="body-cover"),
+            RichBlockBlockQuotation(
+                [RichBlockDetails([RichBlockVideo("quoted-vid", cover="quoted-cover")])]
+            ),
+        ]
+
+    found = extract_cache_media(RichMessage())
+
+    assert [m.file_id for m in found] == ["body-vid", "quoted-vid"], "嵌套里的媒体不能漏"
+    assert [m.cover_file_id for m in found] == ["body-cover", "quoted-cover"]
+
+
+def test_extract_handles_documents_and_animations():
+    """document / animation 形态也要认 —— 只认 photo/video 会静默少项。"""
+
+    class _Doc:
+        def __init__(self, fid):
+            self.file_id = fid
+
+    class RichBlockDocument:
+        def __init__(self, fid):
+            self.document = _Doc(fid)
+
+    class RichBlockAnimation:
+        def __init__(self, fid):
+            self.animation = _Doc(fid)
+
+    class RichMessage:
+        blocks = [RichBlockDocument("doc-id"), RichBlockAnimation("ani-id")]
+
+    found = extract_cache_media(RichMessage())
+    assert [(m.type, m.file_id) for m in found] == [
+        (CacheMediaType.DOCUMENT, "doc-id"),
+        (CacheMediaType.ANIMATION, "ani-id"),
+    ]
+
+
 # ── 缓存命中的敏感内容必须打码 ─────────────────────────────────────────
 #
 # 回归: 缓存路径以前造的是**不带 spoiler** 的 InputMediaPhoto, 而且走 markdown 路径

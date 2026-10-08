@@ -592,7 +592,13 @@ async def send_rich_media(
 
     if raw_url and media:
         cached_media = extract_cache_media(getattr(message, "rich_message", None))
-        if cached_media:
+        # ⚠️ **全有才写**（2026-10-08）: 服务端返回的结构里若有一项没认出来（嵌套在引用块里、
+        # 或某个分支拿不到 file_id），条目里就会少一项。而下面那两个计数是**按数量**推的 ——
+        # 少一项时 `quoted_items` 仍会算成 1，于是缓存命中时把**正文的媒体**放进引用卡片、
+        # 正文反而没图（用户报「缓存正文又没图了」）。
+        # 宁可这次不写（下次重新解析 + 上传，只是贵一点），也不要写一条**位置错**的缓存。
+        expected = len(media)
+        if len(cached_media) == expected:
             # 缓存里媒体是平铺的: 末尾 N 项属于被引用块、其前 M 项属于被回复块
             # (用占位符数量推, 两者一一对应)
             quoted_items = min(len(quoted_placeholders), len(cached_media))
@@ -608,6 +614,10 @@ async def send_rich_media(
             )
             logger.debug(
                 f"富文本媒体已写入缓存: count={len(cached_media)}, 引用{quoted_items} 回复{reply_items}"
+            )
+        else:
+            logger.warning(
+                f"媒体提取数量不符, 本次不写 file_id 缓存: 期望{expected} 提取到{len(cached_media)}"
             )
     return True
 
