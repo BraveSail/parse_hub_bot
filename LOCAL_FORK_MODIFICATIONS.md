@@ -127,8 +127,7 @@ curl_cffi 拿到 200。
   facebook `watch/?v=` 与 `v` 参数保留、bilibili `view/detail` 需 cookie、
   yt-dlp 条目缺 `thumbnail`/`description` 时不再 KeyError、保留原语言音轨、
   **youtube 社区帖子**（一个 parser 管视频 + 帖子，帖子读页面 `ytInitialData`）、
-  **yt-dlp 客户端抽到 `provider_api/ytdlp.py`**（`parsers/base/ytdlp.py` 只留骨架）、
-  **facebook / snapchat / youtube 视频改自研**（不再调用 yt-dlp，只留 bilibili 兜底）。
+  **facebook / snapchat / youtube 视频改自研**（不再调用 yt-dlp）。
 - **facebook / snapchat / youtube 视频不再走 yt-dlp**（2026-10-08）：
   - facebook 读页面 `data-sjs` 里的明文渐进式直链（`videoDeliveryLegacyFields.browser_native_hd_url`，
     三种页面形态 watch/post/reel **不同构**）；DASH-only 明确抛错、不半吊子解析 MPD。
@@ -140,6 +139,17 @@ curl_cffi 拿到 200。
     `IOS` 一条不给。高画质是分离流 ⇒ ffmpeg `-c copy` mux。
     **别把 `ANDROID_VR` 加回 CLIENTS 当兜底**：player 请求"成功"会让它永远挡住兜底，
     症状是"解析全对、下载全 403"。
+
+- **yt-dlp 已彻底移除**（2026-10-08，`feat!: drop yt-dlp entirely`）：
+  - bilibili 不再有 yt-dlp 兜底（原来 `BiliYtParse` 在 API 失败时用它），只走自身 API；
+    失败时**带上真实原因**（原实现吞成一句「Bilibili 解析失败」，看不出是风控 / cookie / 接口变更）。
+  - 连带删除：`parsers/base/ytdlp.py`、`provider_api/ytdlp.py`、依赖 `yt-dlp[default]`
+    （及 yt-dlp-ejs / brotli / brotlicffi / mutagen / websockets 这些传递依赖）、
+    **Dockerfile 里的 deno**（只为 yt-dlp 解 nsig 装的）。**ffmpeg 保留**（YouTube 1080p 要 mux）。
+  - `types/serialize.py` 的「构造不了的结果类不缓存」机制**保留**（防的是任何需要运行期句柄的类，
+    不只是原来那两个 yt-dlp 类），测试改用自建类钉住。
+  - ⚠️ B 站 `view/detail` **对匿名请求直接风控**，端到端验证必须走 `ParseService`（会带 cookie）；
+    裸用 `ParseHub().parse(url)` 会稳定 412，别误判成解析器坏了。密度过高也会 412（冷却后恢复）。
 
 ## 8. 平台配置的容错（本地修改）
 
