@@ -47,6 +47,14 @@ commits in `git log upstream/master..master`.
 - **bilibili**：`view/detail` 端点匿名必被风控，需带 cookie。
 - **yt-dlp**：条目可能**没有 `thumbnail` / `description`**（facebook 实测），下标访问会 KeyError
   让整条解析失败 → 一律 `.get()`；保留原语言音轨（格式排序）。
+- **youtube 社区帖子**：一个 parser 同时管视频与帖子（`YtbParse` 按 URL 分派）。帖子**不能走 yt-dlp**
+  （它把 `/post/<id>` 当频道 tab，报 `[youtube:tab] post: This channel does not have a … tab`），
+  改读页面里的 `ytInitialData`（`provider_api/youtube.py` 的 `fetch_post` / `parse_post_page`）；
+  绝对发布时间只在该页 JSON-LD 的 `datePublished`（`publishedTimeText` 是相对时间）。投票只有
+  选项 + 总票数（**每项票数匿名拿不到**），渲染成与 twitter/linux.do 同形态的表格。
+- **yt-dlp 客户端已抽到 `provider_api/ytdlp.py`**（`extract_info` / `download_video`）：子进程、
+  进度行、cookie 与 info JSON 物化属通用基础设施；`parsers/base/ytdlp.py` 只留解析器骨架
+  （`YtParser` / `YtVideoParseResult` / `YtVideoInfo`，导出面不变）。
 
 ## 5. 依赖 / 构建
 

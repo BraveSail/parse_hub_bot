@@ -716,6 +716,8 @@ class TestPlatformUrlMatching(unittest.TestCase):
                 "https://youtu.be/1h_uc3K4Cpg",
                 "https://m.youtube.com/watch?v=1h_uc3K4Cpg",
                 "https://music.youtube.com/watch?v=1h_uc3K4Cpg&list=RDMM1h_uc3K4Cpg",
+                # 社区帖子（不再是"不支持的形态"）—— 走页面数据, 见 test_youtube_post.py
+                "https://www.youtube.com/post/Ugkxexample",
             ],
             Platform.ZUIYOU: [
                 "https://share.xiaochuankeji.cn/hybrid/share/post?pid=393346270",
@@ -753,7 +755,6 @@ class TestPlatformUrlMatching(unittest.TestCase):
             "https://www.tiktok.com/qishui/share/video/123456",
             "https://weibo.com/u/1234567890",
             "https://www.youtube.com/live/1h_uc3K4Cpg",
-            "https://www.youtube.com/post/Ugkxexample",
             "https://www.youtube.com/@example",
         ]
 

@@ -18,9 +18,12 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
 
 from ..utils import http
+from ..utils.helpers import to_datetime
 
 #: 视频 ID: watch?v= / youtu.be/ / embed/ / shorts/ / live/
 VIDEO_ID_RE = re.compile(
@@ -72,11 +75,14 @@ def find_youtube_links(text: str | None) -> list[str]:
     return out
 
 
-def _trim_cover(url: str) -> str:
+def trim_cover(url: str) -> str:
     """去掉尺寸后缀取原图。
 
     ``…=s900-c-k-c0x00ffffff-no-rj`` 这类尾巴是 YouTube 的尺寸修饰, 截掉 ``=`` 后
     的部分拿到原图 —— 让下载器按自己要的尺寸处理, 而不是被 s900 钉死。
+
+    帖子配图同理: ``…=s1080-c-fcrop64=1,00001999ffffe666-rw-nd-v1`` 截掉后拿到的是
+    **未经方形裁剪的原图**（页面给的最大档是被裁过的正方形, 拿它当原图会丢边）。
     """
     return url.split("=", 1)[0] if "=" in url else url
 
@@ -101,7 +107,7 @@ async def _fetch_video(video_url: str, *, proxy=None) -> YoutubeCard | None:
             return None
         data = json.loads(resp.text)
     title = (data.get("title") or "").strip()
-    cover = _trim_cover((data.get("thumbnail_url") or "").strip())
+    cover = trim_cover((data.get("thumbnail_url") or "").strip())
     if not title or not cover:
         return None
     return YoutubeCard(url=video_url, title=title, cover_url=cover)
@@ -116,7 +122,7 @@ async def _fetch_channel(channel_url: str, *, proxy=None) -> YoutubeCard | None:
     if not (title_m and image_m):
         return None
     title = title_m.group(1).strip()
-    cover = _trim_cover(image_m.group(1).strip())
+    cover = trim_cover(image_m.group(1).strip())
     if not title or not cover:
         return None
     return YoutubeCard(url=channel_url, title=title, cover_url=cover)
@@ -141,4 +147,334 @@ async def fetch_card(url: str, *, proxy=None) -> YoutubeCard | None:
     return None
 
 
-__all__ = ["YoutubeCard", "fetch_card", "find_youtube_links"]
+# ─────────────────────────────────────────────────────────── 社区帖子 (community post)
+#
+# 帖子不是视频: yt-dlp 拿不到它 —— ``[youtube:tab] post: This channel does not have a
+# Ugk… tab``（它把 ``/post/<id>`` 当成频道 tab）。只能读页面里的 ``ytInitialData``
+# （匿名可访问, 实测整页 ~814 KB）, 帖子本体在
+# ``…sectionListRenderer → itemSectionRenderer → backstagePostThreadRenderer
+# → post.backstagePostRenderer``。
+#
+# 拿得到: 正文 / 作者（显示名 + ``@handle`` + channelId）/ 附件（单图、多图、分享的视频、
+# 投票）/ 点赞数 / 正文里的标签; **绝对发布时间只在页头 JSON-LD 的 ``datePublished``**
+# （``publishedTimeText`` 是 "50 minutes ago" 这种相对时间, 不能当发布时间用）。
+# 拿不到: 投票**每项**的票数与占比 —— 匿名只给选项文案与总票数（choice 里只有
+# ``signinEndpoint``）, 要登录才有。
+
+POST_URL_RE = re.compile(r"youtube\.com/post/([A-Za-z0-9_-]+)")
+"""帖子链接里的 ID（``/post/<id>``）。"""
+
+_YT_INITIAL_DATA_MARKER = "var ytInitialData = "
+_DATE_PUBLISHED_RE = re.compile(r'"(?:datePublished|publishDate)"\s*:\s*"([^"]+)"')
+_HASHTAG_BROWSE_ID = "FEhashtag"
+
+
+class YoutubePostError(Exception):
+    """帖子取数失败（页面没有数据 / 帖子已删除 / 需要登录）。"""
+
+    def __init__(self, msg: str):
+        self.msg = msg
+        super().__init__(msg)
+
+
+@dataclass
+class YoutubePostImage:
+    """帖子配图 —— ``url`` 是去掉尺寸后缀的**原图**，``thumb_url`` 是页面给的最小档。"""
+
+    url: str
+    thumb_url: str = ""
+    width: int = 0
+    height: int = 0
+
+
+@dataclass
+class YoutubePostVideo:
+    """帖子里分享的视频（只给封面与标题, 解析器只渲染链接, 不下载）。"""
+
+    video_id: str
+    title: str = ""
+    cover_url: str = ""
+
+
+@dataclass
+class YoutubePostPoll:
+    """投票 —— 匿名只能拿到选项文案与总票数（每项票数需要登录）。"""
+
+    choices: list[str] = field(default_factory=list)
+    total_votes: int | None = None
+    total_votes_text: str = ""
+
+
+@dataclass
+class YoutubePost:
+    post_id: str
+    text: str = ""
+    author_name: str = ""
+    author_handle: str = ""
+    channel_id: str = ""
+    published_at: datetime | None = None
+    like_count: int | None = None
+    hashtags: list[str] = field(default_factory=list)
+    images: list[YoutubePostImage] = field(default_factory=list)
+    video: YoutubePostVideo | None = None
+    poll: YoutubePostPoll | None = None
+
+
+def post_id_from_url(url: str) -> str:
+    """从链接里取帖子 ID；不是帖子链接时返回空串。"""
+    match = POST_URL_RE.search(url or "")
+    return match.group(1) if match else ""
+
+
+def _extract_json_object(text: str, start: int) -> dict[str, Any] | None:
+    """从 ``start``（指向 ``{``）开始按**花括号配平**取一个 JSON 对象。
+
+    不用正则匹配到 ``};</script>``: 页面里这类内联数据的结尾形态会变, 配平法只看括号,
+    字符串与转义都跳过, 与 yt-dlp 之外的实现无关。
+    """
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : index + 1])
+                except ValueError:
+                    return None
+    return None
+
+
+def _yt_initial_data(html: str) -> dict[str, Any] | None:
+    index = html.find(_YT_INITIAL_DATA_MARKER)
+    if index < 0:
+        return None
+    brace = html.find("{", index + len(_YT_INITIAL_DATA_MARKER))
+    if brace < 0:
+        return None
+    return _extract_json_object(html, brace)
+
+
+def _find_first(node: Any, key: str) -> Any:
+    """深度优先找第一个出现的 ``key``（帖子数据嵌在很深的固定层级里）。"""
+    stack = [node]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            if key in current:
+                return current[key]
+            stack.extend(current.values())
+        elif isinstance(current, list):
+            stack.extend(current)
+    return None
+
+
+def _text_of(node: Any) -> str:
+    """``{"runs": [{"text": ...}]}`` 或 ``{"simpleText": ...}`` → 纯文本。"""
+    if not isinstance(node, dict):
+        return ""
+    if isinstance(node.get("simpleText"), str):
+        return str(node["simpleText"])
+    runs = node.get("runs")
+    if isinstance(runs, list):
+        return "".join(str(run.get("text", "")) for run in runs if isinstance(run, dict))
+    return ""
+
+
+_COMPACT_COUNT_RE = re.compile(r"\s*([\d.,]+)\s*([KMB]?)", re.I)
+
+
+def _compact_count(text: str) -> int | None:
+    """``"1.1K"`` / ``"1.8M"`` / ``"9"`` → int（YouTube 的点赞与票数是缩写形式）。"""
+    match = _COMPACT_COUNT_RE.match(text or "")
+    if not match:
+        return None
+    try:
+        number = float(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    factor = {"": 1, "k": 1_000, "m": 1_000_000, "b": 1_000_000_000}[match.group(2).lower()]
+    return int(number * factor)
+
+
+def _image_from_renderer(renderer: Any) -> YoutubePostImage | None:
+    if not isinstance(renderer, dict):
+        return None
+    thumbnails = (renderer.get("image") or {}).get("thumbnails")
+    if not isinstance(thumbnails, list) or not thumbnails:
+        return None
+    biggest = max(thumbnails, key=lambda t: int(t.get("width") or 0))
+    smallest = min(thumbnails, key=lambda t: int(t.get("width") or 0))
+    url = trim_cover(str(biggest.get("url") or ""))
+    if not url:
+        return None
+    return YoutubePostImage(
+        url=url,
+        thumb_url=str(smallest.get("url") or url),
+        width=int(biggest.get("width") or 0),
+        height=int(biggest.get("height") or 0),
+    )
+
+
+def _collect_attachment(
+    attachment: Any,
+) -> tuple[list[YoutubePostImage], YoutubePostVideo | None, YoutubePostPoll | None]:
+    images: list[YoutubePostImage] = []
+    video: YoutubePostVideo | None = None
+    poll: YoutubePostPoll | None = None
+    if not isinstance(attachment, dict):
+        return images, video, poll
+
+    if single := attachment.get("backstageImageRenderer"):
+        if image := _image_from_renderer(single):
+            images.append(image)
+
+    multi = (attachment.get("postMultiImageRenderer") or {}).get("images")
+    for item in multi if isinstance(multi, list) else []:
+        if isinstance(item, dict):
+            if image := _image_from_renderer(item.get("backstageImageRenderer")):
+                images.append(image)
+
+    if renderer := attachment.get("videoRenderer"):
+        video_id = str(renderer.get("videoId") or "")
+        thumbnails = (renderer.get("thumbnail") or {}).get("thumbnails") or []
+        cover_url = ""
+        if thumbnails:
+            biggest = max(thumbnails, key=lambda t: int(t.get("width") or 0))
+            cover_url = str(biggest.get("url") or "")
+        if video_id:
+            video = YoutubePostVideo(
+                video_id=video_id,
+                title=_text_of(renderer.get("title")).strip(),
+                cover_url=cover_url,
+            )
+
+    if renderer := attachment.get("pollRenderer"):
+        choices = [
+            _text_of(choice.get("text")).strip()
+            for choice in (renderer.get("choices") or [])
+            if isinstance(choice, dict)
+        ]
+        choices = [choice for choice in choices if choice]
+        total_text = str((renderer.get("totalVotes") or {}).get("simpleText") or "")
+        if choices:
+            poll = YoutubePostPoll(
+                choices=choices,
+                total_votes=_compact_count(total_text),
+                total_votes_text=total_text,
+            )
+    return images, video, poll
+
+
+def _parse_hashtags(text_runs: Any) -> list[str]:
+    """正文里的标签（``navigationEndpoint.browseEndpoint.browseId`` 为 ``FEhashtag``）。
+
+    名字取 run 的文本（``#信者ゼロ``）去掉 ``#`` —— 标签页的 ``params`` 是编码后的
+    二进制, 解不出名字；文本本身就是用户看到的标签。
+    """
+    tags: list[str] = []
+    for run in text_runs if isinstance(text_runs, list) else []:
+        if not isinstance(run, dict):
+            continue
+        browse = ((run.get("navigationEndpoint") or {}).get("browseEndpoint")) or {}
+        if browse.get("browseId") != _HASHTAG_BROWSE_ID:
+            continue
+        name = str(run.get("text") or "").strip().lstrip("#").strip()
+        if name and name not in tags:
+            tags.append(name)
+    return tags
+
+
+def _post_renderer(data: dict[str, Any]) -> dict[str, Any] | None:
+    thread = _find_first(data, "backstagePostThreadRenderer")
+    if isinstance(thread, dict):
+        renderer = (thread.get("post") or {}).get("backstagePostRenderer")
+        if isinstance(renderer, dict):
+            return renderer
+    fallback = _find_first(data, "backstagePostRenderer")
+    return fallback if isinstance(fallback, dict) else None
+
+
+def parse_post_page(html: str, *, url: str = "") -> YoutubePost:
+    """把帖子页面的 HTML 解析成 ``YoutubePost``（纯函数, 便于离线测试）。"""
+    data = _yt_initial_data(html)
+    if data is None:
+        raise YoutubePostError("页面里没有 ytInitialData（可能被地区限制或需要登录）")
+    renderer = _post_renderer(data)
+    if renderer is None:
+        raise YoutubePostError("帖子不存在或已删除")
+
+    post_id = str(renderer.get("postId") or post_id_from_url(url))
+    author_endpoint = renderer.get("authorEndpoint") or {}
+    browse = author_endpoint.get("browseEndpoint") or {}
+    canonical = str(browse.get("canonicalBaseUrl") or "")
+    handle = canonical.rstrip("/").rsplit("/", 1)[-1].lstrip("@") if canonical else ""
+    if not handle:
+        handle = str(browse.get("browseId") or "")
+
+    published_at = None
+    if match := _DATE_PUBLISHED_RE.search(html):
+        published_at = to_datetime(match.group(1))
+
+    runs = (renderer.get("contentText") or {}).get("runs")
+    images, video, poll = _collect_attachment(renderer.get("backstageAttachment"))
+
+    return YoutubePost(
+        post_id=post_id,
+        text=_text_of(renderer.get("contentText")),
+        author_name=_text_of(renderer.get("authorText")).strip(),
+        author_handle=handle,
+        channel_id=str(browse.get("browseId") or ""),
+        published_at=published_at,
+        like_count=_compact_count(str((renderer.get("voteCount") or {}).get("simpleText") or "")),
+        hashtags=_parse_hashtags(runs),
+        images=images,
+        video=video,
+        poll=poll,
+    )
+
+
+async def fetch_post(
+    url: str,
+    *,
+    proxy: str | None = None,
+    cookie: dict[str, str] | None = None,
+) -> YoutubePost:
+    """抓帖子页面并解析。失败抛 ``YoutubePostError``。"""
+    async with http.AsyncClient(
+        proxy=proxy, cookies=cookie, timeout=30, follow_redirects=True
+    ) as client:
+        resp = await client.get(url)
+    if resp.status_code != 200:
+        raise YoutubePostError(f"获取帖子页面失败: HTTP {resp.status_code}")
+    return parse_post_page(resp.text or "", url=url)
+
+
+__all__ = [
+    "YoutubeCard",
+    "YoutubePost",
+    "YoutubePostError",
+    "YoutubePostImage",
+    "YoutubePostPoll",
+    "YoutubePostVideo",
+    "fetch_card",
+    "fetch_post",
+    "find_youtube_links",
+    "parse_post_page",
+    "post_id_from_url",
+    "trim_cover",
+]
