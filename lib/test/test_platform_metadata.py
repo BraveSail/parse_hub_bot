@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from parsehub.parsers.base.ytdlp import YtVideoInfo
 from parsehub.parsers.parser.bilibili import BiliParse
 from parsehub.parsers.parser.douyin import DouyinApiResult, DouyinMediaType
 from parsehub.parsers.parser.facebook import FacebookParse
@@ -60,125 +59,7 @@ def test_twitter_parser_forwards_metadata():
     assert result.view_count == 24574
 
 
-# ── yt-dlp (bilibili 兜底) ────
-
-
-def yt_info(**extra):
-    info = {
-        "title": "T",
-        "description": "D",
-        "thumbnail": "https://cdn.example/t.jpg",
-        "webpage_url": "https://www.facebook.com/watch/?v=1",
-        "duration": 74,
-        "width": 640,
-        "height": 360,
-        "timestamp": 1417766402,
-        "view_count": 2823887,
-    }
-    info.update(extra)
-    return YtVideoInfo(
-        title=info["title"],
-        description=info["description"],
-        thumbnail=info["thumbnail"],
-        url=info["webpage_url"],
-        duration=info["duration"],
-        width=info["width"],
-        height=info["height"],
-        info_json=info,
-    )
-
-
-def test_ytdlp_reads_timestamp_and_view_count():
-    """facebook 实测: timestamp (unix 秒) + view_count, 无点赞/评论"""
-    dl = yt_info()
-    assert dl.published_at == datetime(2014, 12, 5, 8, 0, 2, tzinfo=UTC)
-    assert dl.view_count == 2823887
-
-
-def test_ytdlp_without_stats():
-    dl = yt_info(timestamp=None, view_count=None)
-    assert dl.published_at is None
-    assert dl.view_count is None
-
-
-def test_ytdlp_tolerates_missing_thumbnail_and_description():
-    """facebook 的条目可能没有缩略图/简介: 用下标访问会直接 KeyError 让整条解析失败"""
-    info = {
-        "title": "T",
-        "webpage_url": "https://www.facebook.com/watch?v=1",
-        "timestamp": 1759406400,
-        "view_count": 5,
-    }
-    parsed = YtVideoInfo(
-        title=info["title"],
-        description="",
-        thumbnail="",
-        url=info["webpage_url"],
-        info_json=info,
-    )
-    assert parsed.thumbnail == ""
-    assert parsed.published_at == datetime(2025, 10, 2, 12, 0, tzinfo=UTC)
-    assert parsed.view_count == 5
-
-
-def test_ytdlp_release_timestamp_as_fallback():
-    dl = yt_info(timestamp=None, release_timestamp=1759406400)
-    assert dl.published_at == datetime(2025, 10, 2, 12, 0, tzinfo=UTC)
-
-
-def test_ytdlp_parse_result_carries_metadata():
-    from parsehub.parsers.base.ytdlp import YtVideoParseResult
-
-    result = YtVideoParseResult(dl=yt_info(), title="T")
-    assert result.published_at == datetime(2014, 12, 5, 8, 0, 2, tzinfo=UTC)
-    assert result.view_count == 2823887
-
-
-# ── 作者行: @handle 与主页（以前 yt-dlp 系完全不传, YouTube 作者行只有名字）──
-
-
-def test_ytdlp_handle_is_stripped_of_its_at_sign():
-    """``uploader_id`` 是 ``@BlueArchive_JP`` 形态 —— 去掉 @ 由上层统一加"""
-    dl = yt_info(uploader_id="@BlueArchive_JP")
-    assert dl.author_handle == "BlueArchive_JP"
-
-
-def test_ytdlp_handle_accepts_a_plain_username():
-    """老视频的 ``uploader_id`` 是纯用户名（没有 @），别把它当异常"""
-    dl = yt_info(uploader_id="JoHannesWingsuit")
-    assert dl.author_handle == "JoHannesWingsuit"
-
-
-def test_ytdlp_handle_is_empty_when_absent():
-    """拿不到 handle 不能崩 —— 作者行退化成只显示名字"""
-    assert yt_info().author_handle == ""
-
-
-def test_ytdlp_prefers_the_real_profile_url():
-    """主页用 yt-dlp 给的真实 URL（一定可打开），不自己拼模板"""
-    dl = yt_info(uploader_url="https://www.youtube.com/@BlueArchive_JP")
-    assert dl.author_url == "https://www.youtube.com/@BlueArchive_JP"
-
-
-def test_ytdlp_falls_back_to_the_channel_url():
-    """只有 channel_url 时用它 —— 自己拼 ``youtube.com/@{channel_id}`` 会打不开"""
-    dl = yt_info(channel_url="https://www.youtube.com/channel/UCmgf8DJrAXFnU7j3u0kklUQ")
-    assert dl.author_url == "https://www.youtube.com/channel/UCmgf8DJrAXFnU7j3u0kklUQ"
-
-
-def test_ytdlp_result_carries_the_handle_and_profile_url():
-    """**核心**: 结果对象要带上 handle 与主页 —— 以前这两个字段一直是空的,
-    于是 YouTube 的作者行只有名字, 与其它平台（名字 + @用户名, 可点）不一致"""
-    from parsehub.parsers.base.ytdlp import YtVideoParseResult
-
-    dl = yt_info(
-        uploader="ブルーアーカイブ-Blue Archive-",
-        uploader_id="@BlueArchive_JP",
-        uploader_url="https://www.youtube.com/@BlueArchive_JP",
-    )
-    result = YtVideoParseResult(dl=dl, title="T")
-    assert result.author_handle == "BlueArchive_JP"
-    assert result.author_url == "https://www.youtube.com/@BlueArchive_JP"
+# ── 作者行 / 匹配规则 ──────────────────────────────────────────
 
 
 @pytest.mark.parametrize(

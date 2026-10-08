@@ -79,20 +79,20 @@ def test_post_id_from_url():
     assert post_id_from_url("") == ""
 
 
-def test_a_post_url_is_parsed_from_the_page_not_through_ytdlp():
-    """帖子必须走页面数据 —— 若走到 yt-dlp 那条路, 这里会抛 AssertionError。"""
+def test_a_post_url_is_parsed_from_the_page_not_through_the_video_path():
+    """帖子必须走页面数据 —— 若落到视频路径（player API）这里会抛 AssertionError。"""
     calls = {"fetch_post": 0}
 
     async def fake_fetch_post(url, **_kwargs):
         calls["fetch_post"] += 1
         return parse_post_page(_html("youtube_post_single_image.html"), url=url)
 
+    def boom(*_args, **_kwargs):
+        raise AssertionError("帖子不该走 innertube player（视频）路径")
+
     with (
         patch("parsehub.parsers.parser.youtube.fetch_post", new=fake_fetch_post),
-        patch(
-            "parsehub.parsers.base.ytdlp.YtParser._parse",
-            side_effect=AssertionError("帖子不该走 yt-dlp"),
-        ),
+        patch("parsehub.parsers.parser.youtube.fetch_video", new=boom),
     ):
         result = asyncio.run(YtbParse().parse(f"https://www.youtube.com/post/{SINGLE_IMAGE_ID}"))
 

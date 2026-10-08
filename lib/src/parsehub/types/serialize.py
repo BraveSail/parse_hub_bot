@@ -129,8 +129,9 @@ def _required_init_params(cls: type) -> set[str]:
 def can_rebuild_from_cache(result: AnyParseResult) -> bool:
     """这条结果能不能从缓存里**原样**读回来（同一个类、同一套行为）。
 
-    不能的情况: 类要求**运行期句柄** —— yt-dlp 系的 ``YtVideoParseResult`` 必填 ``dl``
-    （一个 ``YtVideoInfo``), 缓存里存不下这种东西。
+    不能的情况: 类要求**运行期句柄** —— 构造它必须传入一个只有解析现场才有的对象
+    （历史上 yt-dlp 系的 ``YtVideoParseResult`` 必填 ``dl``，即一份 info JSON；
+    那套类已于 2026-10-08 随 yt-dlp 一并移除，但**这个判据对将来的同类情况依然有效**）。
 
     这类结果**不要写进结果层缓存**: 写了也永远读不出来 (``result_from_cache_dict`` 会拒绝),
     只会让每次读都触发一次"删除 + 重新解析 + 再写", 并在日志里刷 warning。
@@ -280,14 +281,16 @@ def result_from_cache_dict(data: dict[str, Any]) -> AnyParseResult:
     try:
         result = build(cls)
     except TypeError as exc:
-        # 类**找得到但构造不了** —— 平台子类要求运行期句柄 (yt-dlp 系的 `YtVideoParseResult`
-        # 必填 `dl`, 缓存里不可能有)。**不要退回通用类**:
+        # 类**找得到但构造不了** —— 平台子类要求运行期句柄 (历史上是 yt-dlp 系的
+        # `YtVideoParseResult` 必填 `dl`, 缓存里不可能有)。**不要退回通用类**:
         #
         # 退通用类 = 静默换上另一套下载逻辑。2026-10-06 实测的故障: YouTube 缓存命中后退成
         # ``VideoParseResult``, 它没有 yt-dlp 的下载实现, 于是走基类的分片下载器去下
         # ``VideoRef.url`` —— 那是 ``www.youtube.com/shorts/...`` 的**页面 URL**,
         # 下回来 1.2MB HTML, 产物不是媒体, 媒体处理阶段直接
         # ``ffprobe failed to get container: {}`` 失败 (用户报的就是这个)。
+        # （触发它的那套 yt-dlp 类已于 2026-10-08 移除，但"宁可重新解析也不要换错类"这条
+        # 教训与机制都保留 —— 它防的是**任何**构造不出原类的场景。）
         #
         # 抛出去让调用方**重新解析**: ``services/cache.py`` 会把这条缓存删掉并按未命中处理,
         # 于是行为与现场解析完全一致。代价是这些平台不再享受结果层缓存 (它们本来也几乎命中不了

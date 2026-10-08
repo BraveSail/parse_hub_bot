@@ -8,7 +8,6 @@ import json
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from parsehub.parsers.base.ytdlp import YtVideoParseResult
 from parsehub.types.media_ref import AniRef, ImageRef, LivePhotoRef, VideoRef
 from parsehub.types.platform import Platform
 from parsehub.types.result import (
@@ -24,6 +23,18 @@ from parsehub.types.serialize import (
 )
 
 PUBLISHED = datetime(2026, 10, 1, 19, 48, tzinfo=timezone(timedelta(hours=8)))
+
+
+class _NeedsRuntimeState(VideoParseResult):
+    """测试专用：构造必须传入**解析现场才有的句柄**（``dl``），否则 ``TypeError``。
+
+    用它钉住「构造不了的结果类必须拒绝重建」这条机制，不再依赖生产类
+    （原来借用的是 yt-dlp 系的 ``YtVideoParseResult``，那套已随 yt-dlp 移除）。
+    """
+
+    def __init__(self, *, dl, title: str = "", content: str = "", **kwargs):
+        self.dl = dl
+        super().__init__(title=title, content=content, **kwargs)
 
 
 def _roundtrip(result):
@@ -244,7 +255,11 @@ class RoundtripTest(unittest.TestCase):
         self.assertGreater(checked, 5, f"只检查到 {checked} 个平台子类, 断言没覆盖到位")
 
     def test_a_class_that_needs_runtime_state_is_refused(self):
-        """yt-dlp 系的结果类带必填的 `dl`(下载器句柄), 缓存里不可能有 —— **必须拒绝重建**。
+        """构造需要**运行期句柄**的结果类 —— **必须拒绝重建**。
+
+        这类类的典型是"必须传入解析现场才有的对象才能构造"（历史上 yt-dlp 系的
+        ``YtVideoParseResult`` 必填 `dl`；那套类已随 yt-dlp 移除，这里用测试自建的类
+        钉住**机制本身**）。缓存里不可能有那种对象，硬要重建只能拿到行为不同的对象。
 
         2026-10-06 实测的故障（就是这个"退回通用类"造成的）: YouTube 缓存命中后退成
         ``VideoParseResult``, 它没有 yt-dlp 的下载实现, 于是走基类的分片下载器去下
@@ -256,7 +271,7 @@ class RoundtripTest(unittest.TestCase):
         拿错对象去下载才是。
         """
         data = result_to_cache_dict(VideoParseResult(title="t", content="c"))
-        data["impl"] = YtVideoParseResult.__name__
+        data["impl"] = _NeedsRuntimeState.__name__
         with self.assertRaises(ResultRebuildUnavailable):
             result_from_cache_dict(data)
 

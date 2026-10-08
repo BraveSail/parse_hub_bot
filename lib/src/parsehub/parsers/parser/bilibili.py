@@ -23,7 +23,6 @@ from ...types import (
 )
 from ...utils.helpers import UA, format_author_link, format_quote_block, get_author_name, profile_url
 from ..base.base import BaseParser
-from ..base.ytdlp import YtParser, YtVideoParseResult
 
 
 class BiliParse(BaseParser):
@@ -114,7 +113,7 @@ class BiliParse(BaseParser):
         # quoted_media_count 仍算着它的媒体, 引用块却不存在, 图片会掉进正文
         return format_quote_block(body, author, sign_only=True)
 
-    async def _do_parse(self, raw_url: str) -> YtVideoParseResult | BiliVideoParseResult | ImageParseResult:
+    async def _do_parse(self, raw_url: str) -> BiliVideoParseResult | ImageParseResult:
         if await self.is_dynamic(raw_url):
             dynamic = await self.get_dynamic_info(raw_url)
             content = self.hashtag_handler(dynamic.content or "", dynamic.topics)
@@ -154,12 +153,14 @@ class BiliParse(BaseParser):
         else:
             try:
                 return await self.bili_api_parse(raw_url)
+            except ParseError:
+                raise
             except Exception as e:
-                logger.opt(exception=e).warning("Bilibili API 解析失败, 尝试 yt-dlp 解析")
-                try:
-                    return await self.ytp_parse(raw_url)
-                except Exception as e:
-                    raise ParseError("Bilibili 解析失败") from e
+                # 这里**没有** yt-dlp 兜底（2026-10-08 移除）—— B 站 API 被风控时不再有后备路径。
+                # 所以失败原因要完整带出来: 原实现把它吞成一句"Bilibili 解析失败",
+                # 排查时看不到到底是风控、cookie 失效还是接口变了。
+                logger.opt(exception=e).warning("Bilibili API 解析失败")
+                raise ParseError(f"Bilibili 解析失败: {e}") from e
 
     @staticmethod
     def _is_bvid(url: str) -> bool:
@@ -256,9 +257,6 @@ class BiliParse(BaseParser):
             ),
         )
 
-    async def ytp_parse(self, url: str) -> YtVideoParseResult:
-        return await BiliYtParse(proxy=self.proxy, cookie=self.cookie)._do_parse(url)
-
     @staticmethod
     def hashtag_handler(desc: str, topics: Sequence[Mapping[str, str]] | None = None) -> str:
         """把 ``#话题#`` 渲染成指向 B 站搜索页的超链接。
@@ -301,22 +299,6 @@ class BiliParse(BaseParser):
             return f'<a href="{url}">#{topic}#</a>'
 
         return re.sub(r"#[^#]+#", _to_link, desc)
-
-
-class BiliYtParse(YtParser, register=False):
-    @property
-    def _video_parse_result_type(self) -> type[BiliYtVideoParseResult]:
-        return BiliYtVideoParseResult
-
-
-class BiliYtVideoParseResult(YtVideoParseResult):
-    @property
-    def cli_args(self) -> list[str]:
-        return [
-            *super().cli_args,
-            "-S",
-            "+codec:h264,lang,filesize~500M",
-        ]
 
 
 class BiliVideoParseResult(VideoParseResult):

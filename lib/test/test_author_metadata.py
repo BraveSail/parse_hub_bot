@@ -8,9 +8,8 @@ import pytest
 from _fakes import FakeResponse, patch_async_get
 
 from parsehub import ParseHub, Platform
-from parsehub.parsers.base.ytdlp import YtParser
 from parsehub.parsers.parser.bangumi import BangumiParser
-from parsehub.parsers.parser.bilibili import BiliParse, BiliYtParse
+from parsehub.parsers.parser.bilibili import BiliParse
 from parsehub.parsers.parser.coolapk import CoolapkParser
 from parsehub.parsers.parser.douban import DoubanParser
 from parsehub.parsers.parser.douyin import DouyinApiResult, DouyinParser
@@ -136,22 +135,6 @@ def test_tiktok_image_and_video_authors(image, author):
     info = TikTokApiResult.parse(detail)
     result = TikTokParser._build_image_result(info) if image else TikTokParser._build_video_result(info)
     assert result.author_name == AUTHOR
-
-
-@pytest.mark.parametrize("parser_type", [BiliYtParse])
-@pytest.mark.parametrize("field", ["uploader", "channel", "creator", "uploader_id"])
-def test_ytdlp_platforms_preserve_author(parser_type, field):
-    """仍走 yt-dlp 的平台（bilibili 的兜底分支）。
-
-    **Facebook 视频**与 **YouTube 视频**已改自研, 不再经过 ``YtParser._extract_info`` ——
-    Facebook 的作者映射由 ``test_facebook.py`` 覆盖 (post 页取外层 story 的 actors、
-    reel 页取 ``video_owner``), YouTube 由 ``test_youtube_video.py`` 覆盖。
-    """
-    payload = {"title": "T", "description": "Body", "thumbnail": "", field: AUTHOR}
-    with patch.object(YtParser, "_extract_info", new=AsyncMock(return_value=payload)):
-        result = asyncio.run(parser_type()._do_parse(VIDEO))
-    assert result.author_name == AUTHOR
-    assert result.to_dict()["author_name"] == AUTHOR
 
 
 @pytest.mark.parametrize("layout", ["horizontal", "vertical"])

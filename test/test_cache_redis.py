@@ -127,16 +127,19 @@ def test_an_entry_that_needs_runtime_state_is_a_miss_not_a_downgrade():
 def test_a_result_that_cannot_be_rebuilt_is_not_written():
     """读不回来的结果**不要写结果层** —— 写了也永远重建不了, 每次读都要删+重解析+重写。
 
-    yt-dlp 系（``YtbVideoParseResult`` 等）就是这种: 必填运行期句柄。
+    判据是"构造需要解析现场才有的句柄"（历史上 yt-dlp 系的类必填 `dl`；那套已随
+    yt-dlp 移除，这里用测试自建的类钉住机制本身）。
     """
-    from parsehub.parsers.base.ytdlp import YtVideoInfo, YtVideoParseResult
+    from parsehub.types.result import VideoParseResult
 
     from services import redis_client
 
-    dl = YtVideoInfo(
-        title="t", description="", thumbnail="", url="https://x", info_json={}, duration=1
-    )
-    result = YtVideoParseResult(dl=dl, title="t")
+    class _NeedsRuntimeState(VideoParseResult):
+        def __init__(self, *, dl, title: str = "", **kwargs):
+            self.dl = dl
+            super().__init__(title=title, **kwargs)
+
+    result = _NeedsRuntimeState(dl=object(), title="t")
 
     fake = MagicMock()
     fake.set = AsyncMock()

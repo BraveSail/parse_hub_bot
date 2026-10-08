@@ -29,11 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         media-types \
         curl unzip ca-certificates \
-    && curl -fsSL https://deno.land/install.sh | sh \
     && rm -rf /var/lib/apt/lists/*
 
-ENV DENO_INSTALL="/root/.deno"
-ENV PATH="/app/.venv/bin:$DENO_INSTALL/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH"
 ENV LD_PRELOAD=libjemalloc.so.2
 
 WORKDIR /app
