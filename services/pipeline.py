@@ -27,11 +27,13 @@ class StatusReporter(Protocol):
 
     处理过程与最终结果是**同一种排版**（富文本），所以有三个入口：
 
-    - ``report``: 阶段切换（解析中/下载中/…），此时**还没有**解析结果 -> 同版式骨架
+    - ``report``: 阶段切换但**还没有**解析结果 -> 同版式骨架。现在只给"等别的任务"
+      这类没有正文可发的场景用（解析阶段不再发首帧，见 ``ParsePipeline._execute``）
     - ``report_progress``: 进度刷新（下载百分比），内容密集变化 -> 实现方可以节流
-    - ``report_result``: **已有**解析结果 -> 完整排版（标题/作者/正文/标签/页脚），只差媒体
+    - ``report_result``: **已有**解析结果 -> 完整排版（标题/作者/正文/标签/页脚），只差媒体。
+      **它常常就是整条流程的第一条消息**（解析完成后才发），所以首次发送的路径必须走通
 
-    ``report`` 与 ``report_result`` 不该被节流覆盖 —— "解析中 → 下载中"这种快速切换
+    ``report`` 与 ``report_result`` 不该被节流覆盖 —— "下载中 → 处理中"这种快速切换
     被吞掉的话，用户就看不到阶段推进了。
     """
 
@@ -207,7 +209,11 @@ class ParsePipeline:
             logger.debug("使用缓存的解析结果")
             parse_result = self._parse_result
         else:
-            await self._reporter.report(self._t("解 析 中..."))
+            # 解析阶段**不发进度消息**（用户要求「消息首帧取消掉解析中，直接发解析到的
+            # 文字结果」）: 第一条消息就是解析完的完整文字排版（下面 `report_result`），
+            # 少了"先发一帧只有解析中的骨架、再编辑成正文"的那次跳版。
+            # 代价是解析期间聊天里没有反馈 —— 解析失败仍会由 `_step` 里的 `report_error`
+            # 新建一条消息报错（reporter 的 `_msg is None` 分支处理首次发送）。
             parse_result = await self._step("解析", lambda: ps.parse(self._url))
             if parse_result is None:
                 return None
