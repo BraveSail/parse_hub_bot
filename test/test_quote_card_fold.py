@@ -275,6 +275,34 @@ def test_blocks_still_understand_the_expandable_form():
     assert type(blocks[0]).__name__ == "InputRichBlockExpandableBlockQuotation"
 
 
+def test_a_folding_quote_keeps_a_table_in_one_piece():
+    """折叠卡里的表格不能被拆半 —— 拆开后两边都不再是表格；被挪出来的行要连
+    表格其余部分一起进 details（用户报「引用里的投票也格式化一下」）。"""
+    body = "\n".join(
+        [
+            "正文一",
+            "正文二",
+            "正文三",
+            "正文四",
+            "正文五",
+            "| 选项 | 票数 | 占比 |",
+            "| --- | --- | --- |",
+            "| A | 3 | 75% |",
+            "| B | 1 | 25% |",
+            "| C | 2 | 50% |",
+            "| D | 1 | 25% |",
+        ]
+    )
+    markdown = _render(_quote(body))
+    assert "<details>" in markdown, markdown
+    head, _, tail = markdown.partition("<details>")
+    _, _, rest = tail.partition("</summary>")
+    preview_rows = [ln for ln in head.splitlines() if ln.strip().startswith("|")]
+    rest_rows = [ln for ln in rest.splitlines() if ln.strip().startswith("|")]
+    assert not preview_rows, f"表格残片留在预览里: {preview_rows}"
+    assert len(rest_rows) == 6, rest_rows
+
+
 if __name__ == "__main__":
     import pytest
 

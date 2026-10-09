@@ -67,3 +67,13 @@ def test_format_quote_block_sign_only_keeps_the_author_line():
     assert format_quote_block("正文", "author", sign_only=True) == format_quote_block("正文", "author")
     # 连作者都没有 -> 仍然是空串 (sign_only 也救不了)
     assert format_quote_block("", "", sign_only=True) == ""
+
+
+def test_format_quote_block_keeps_table_rows_bare():
+    """引用块里的表格行**不带斜体包裹** —— 包了服务端就不再把整组行认成表格,
+    poll 表格会显示成一坨带竖线的斜体文字（用户报「引用里的投票也格式化一下」）。"""
+    block = format_quote_block("正文\n| 选项 | 票数 |\n| --- | --- |")
+    assert "> <i>正文</i>" in block
+    assert "> | 选项 | 票数 |" in block
+    assert "> | --- | --- |" in block
+    assert "<i>|" not in block

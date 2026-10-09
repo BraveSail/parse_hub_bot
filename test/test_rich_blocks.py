@@ -8,6 +8,7 @@ from pyrogram.types import (
     InputRichBlockParagraph,
     InputRichBlockPreformatted,
     InputRichBlockSectionHeading,
+    InputRichBlockTable,
 )
 from pyrogram.types.messages_and_media.rich_text import (
     RichTextBold,
@@ -76,6 +77,28 @@ def test_blocks_quote_and_list():
     assert isinstance(blocks[0], InputRichBlockBlockQuotation)
     assert isinstance(blocks[1], InputRichBlockList)
     assert len(blocks[1].items) == 2
+
+
+def test_a_poll_table_inside_a_quote_becomes_a_table_block():
+    """引用块里的 markdown 表格要转成 ``Table`` 块 —— 以前行被合并成段落,
+    投票表格在敏感内容里散架（用户报「引用里的投票也格式化一下」）。"""
+    quoted = (
+        "> <i>作者</i>\n>\n> ---\n>\n> <i>正文</i>\n> | 选项 | 票数 | 占比 |\n> | --- | --- | --- |\n> | A | 3 | 75% |"
+    )
+    blocks = markdown_to_blocks(quoted)
+    quote = blocks[0]
+    assert isinstance(quote, InputRichBlockBlockQuotation)
+    tables = [b for b in quote.blocks if isinstance(b, InputRichBlockTable)]
+    assert tables, [type(b).__name__ for b in quote.blocks]
+    rows = [[c.text for c in row] for row in tables[0].cells]
+    assert rows == [["选项", "票数", "占比"], ["A", "3", "75%"]], rows
+
+
+def test_a_pipe_line_without_a_separator_stays_text():
+    """孤零零一行 ``| x |`` 不算表格 (markdown 规矩) —— 不能转出 Table 块"""
+    blocks = markdown_to_blocks("> <i>作者</i>\n> | x |")
+    quote = blocks[0]
+    assert not [b for b in quote.blocks if isinstance(b, InputRichBlockTable)]
 
 
 def test_blocks_checkbox_list():

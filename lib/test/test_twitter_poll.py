@@ -184,6 +184,20 @@ def test_a_poll_inside_the_replied_post_renders_in_its_own_block():
     assert lines[table_at].startswith("> "), lines[table_at]
 
 
+def test_the_quoted_poll_table_has_no_italic_wrapper():
+    """引用块里的表格行不能包 `<i>` —— 包了服务端就不再当它是表格
+    （用户报「引用里的投票也格式化一下」）；正文行仍要斜体。"""
+    quoted = _tweet(tweet_id="2", full_text="引用里的投票", poll=_poll([("A", 3), ("B", 1)]))
+    text = _render(_tweet(full_text="主帖", quoted_status=quoted))
+    lines = text.splitlines()
+    table_at = next(i for i, ln in enumerate(lines) if "| 选项 |" in ln)
+    for ln in lines[table_at : table_at + 4]:
+        assert ln.startswith("> "), ln
+        assert "<i>" not in ln, f"表格行被斜体包裹: {ln}"
+    body_at = next(i for i, ln in enumerate(lines) if "引用里的投票" in ln)
+    assert "<i>" in lines[body_at], lines[body_at]
+
+
 if __name__ == "__main__":
     import pytest
 

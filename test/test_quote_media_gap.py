@@ -6,10 +6,12 @@
 ⚠️ 空行与半角空格段都会被服务端**折叠**（实测块结构与不加时完全相同）——
 间距会静默消失，改动时别退回这两种写法。
 
-两个方向都要：
+三个方向都要：
 
 - 卡片在前、图片在后（bgm 的纯图楼层：上下文卡片 + 本层的图）
 - 图片在前、卡片在后（twitter：主帖的图 + 末尾的引用卡片）
+- **卡片与卡片相邻**（回复卡片 + 引用卡片、正文为空时 —— 用户报「引用和引用
+  之间也分割线隔一下」）
 
 **卡片内部的图不参与** —— ``> ![](…)`` 是卡片的一部分，和卡片贴在一起才对
 （加了间距就掉出卡片）。
@@ -78,7 +80,7 @@ def _blocks(md: str) -> list[str]:
 
 
 def _gap_positions(md: str) -> list[int]:
-    """**间距**分割线的下标 —— 只数"卡片与媒体相邻"的那些。
+    """**间距**分割线的下标 —— 只数"卡片与媒体 / 卡片与卡片相邻"的那些。
 
     ⚠️ 不能数全局的 ``---``：作者行与内容之间本来就有一条同样的分割线
     （``_meta_divider``），那是元信息分区，不是这里的间距。
@@ -89,7 +91,9 @@ def _gap_positions(md: str) -> list[int]:
         if seg != GAP or i == 0 or i + 1 >= len(blocks):
             continue
         before, after = blocks[i - 1], blocks[i + 1]
-        if (_is_card(before) and _is_media(after)) or (_is_media(before) and _is_card(after)):
+        if (_is_card(before) and (_is_media(after) or _is_card(after))) or (
+            _is_media(before) and _is_card(after)
+        ):
             out.append(i)
     return out
 
@@ -203,6 +207,32 @@ def test_the_undeclared_path_does_not_gap_distant_things():
     """**回归**: 卡片与图不相邻（中间隔着正文）→ 位置路径也不该插间距"""
     md = _render(f"{QUOTED}\n\n{BODY}", quoted_media=QUOTED_MEDIA)
     assert _gap_positions(md) == [], _blocks(md)
+
+
+# ── 卡片与卡片相邻（用户报「引用和引用之间也分割线隔一下」） ─────────────
+
+
+def test_two_adjacent_cards_get_a_gap():
+    """**核心**: 正文为空 ⇒ 回复卡片与引用卡片直接相邻，中间要插分割线
+    （富文本里两段之间只隔一个空行会被服务端折叠、贴在一起）。"""
+    md = _render(f"{REPLY}\n\n{QUOTED}", roles=["reply", "quoted"], body_media=())
+    blocks = _blocks(md)
+    i = next(i for i, seg in enumerate(blocks) if seg.startswith("> <i>回复块的作者"))
+    assert blocks[i + 1] == GAP, blocks
+    assert blocks[i + 2].startswith("> <i>引用块的作者"), blocks
+
+
+def test_adjacent_cards_gap_is_exactly_one():
+    md = _render(f"{REPLY}\n\n{QUOTED}", roles=["reply", "quoted"], body_media=())
+    assert len(_gap_positions(md)) == 1, _blocks(md)
+
+
+def test_the_undeclared_path_gaps_adjacent_cards_too():
+    """位置推断那条路径同样要隔开 —— 两套路径观感一致"""
+    md = _render(f"{REPLY}\n\n{QUOTED}", body_media=())
+    blocks = _blocks(md)
+    i = next(i for i, seg in enumerate(blocks) if seg.startswith("> <i>回复块的作者"))
+    assert blocks[i + 1] == GAP, blocks
 
 
 if __name__ == "__main__":

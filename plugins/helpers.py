@@ -143,8 +143,13 @@ def _append_gap_before_media(parts: list[str]) -> None:
 
 
 def _append_gap_before_card(parts: list[str]) -> None:
-    """引用卡片**前面是媒体块**时，插一条分割线（同上，方向相反）。"""
-    if parts and _is_media_block(parts[-1]):
+    """引用卡片**前面是媒体块或另一张引用卡片**时，插一条分割线（同上，方向相反）。
+
+    卡片与卡片相邻时也要隔开 —— "回复了 A 且引用 B"的推文、正文为空时两块直接
+    贴上（富文本里两段之间只隔一个空行会被折叠），用户报「引用和引用之间也分割线
+    隔一下」。
+    """
+    if parts and (_is_media_block(parts[-1]) or _is_quote_card(parts[-1])):
         parts.append(_QUOTE_GAP)
 
 #: 元数据时间按该时区渲染 (容器是 UTC, 必须显式指定, 否则会差 8 小时)
@@ -874,17 +879,26 @@ def escape_setext_underlines(text: str) -> str:
     return "\n".join(out)
 
 
+#: 表格行（``| a | b |``，可带引用前缀 ``> ``）—— 它们之间不需要 markdown 硬换行
+#: （表格语义自身保留结构），而"行尾两空格"有让服务端把行拼起来、表格解析失败的风险。
+_TABLE_ROW_RE = re.compile(r"^>?\s*\|.*\|$")
+
+
 def preserve_linebreaks(text: str) -> str:
     """把单换行变成 markdown 硬换行 (行尾两个空格)。
 
     富文本 markdown 解析时**单个换行会被吞成空格** —— threads 这种一行一条的
     排版会挤成一整段。行尾补两个空格即保留换行, 又不像空行那样拉开段间距。
+
+    **表格行跳过** —— 表格的结构由行写法自身承载, 补了硬换行反而可能让服务端
+    把行拼起来。
     """
     lines = text.split("\n")
     out: list[str] = []
     for index, line in enumerate(lines):
         followed_by_text = index + 1 < len(lines) and bool(lines[index + 1].strip())
-        out.append(line.rstrip() + "  " if line.strip() and followed_by_text else line)
+        is_table_row = bool(_TABLE_ROW_RE.match(line.strip()))
+        out.append(line.rstrip() + "  " if line.strip() and followed_by_text and not is_table_row else line)
     return "\n".join(out)
 
 
@@ -1381,6 +1395,17 @@ def split_fold_preview(content: str) -> tuple[str, str]:
 
     preview = "\n".join(lines[:end]).rstrip()
     rest = "\n".join(lines[end:]).strip()
+
+    # 表格不能被拆开: 切点落在表格中间时, 把 preview 末尾那组表格行整体挪给 rest
+    # —— 拆成两半后两边都不再是表格 (「引用里的投票」在折叠卡片里散架)。
+    if rest and _TABLE_ROW_RE.match(rest.split("\n", 1)[0].strip()):
+        prev_lines = preview.split("\n")
+        moved: list[str] = []
+        while prev_lines and _TABLE_ROW_RE.match(prev_lines[-1].strip()):
+            moved.insert(0, prev_lines.pop())
+        if moved:
+            rest = "\n".join([*moved, *rest.split("\n")]).strip()
+        preview = "\n".join(prev_lines).rstrip()
 
     # 只有一行 (或首行就吃满): 按字符切出预览, 否则没有可折的剩余
     if not rest and len(preview) > _FOLD_PREVIEW_CHARS:

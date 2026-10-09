@@ -53,6 +53,10 @@ if TYPE_CHECKING:
     from pyrogram import Client
     from pyrogram.types import InputMediaPhoto, InputMediaVideo
 
+#: 表格行判据与渲染层同源（``plugins.helpers._TABLE_ROW_RE``）——
+#: 正文表格、引用块内表格、preserve_linebreaks 的跳过逻辑共用同一个定义。
+from plugins.helpers import _TABLE_ROW_RE
+
 logger = __import__("loguru").logger.bind(name="RichBlocks")
 
 
@@ -179,18 +183,48 @@ def parse_inline(text: str) -> str | list:
 
 _MEDIA_PLACEHOLDER_RE = re.compile(r"^!\[\]\(tg://(?:photo|video)\?id=([\w-]+)\)$")
 
+_TABLE_SEPARATOR_CELL_RE = re.compile(r":?-{2,}:?")
+
+
+def _table_block(rows: list[str]) -> InputRichBlockTable | None:
+    """markdown 表格行组 → ``Table`` 块; 没有 ``|---|`` 分隔行时返回 None。
+
+    与主转换器同源判据: **必须有分隔行**才算表格 —— 正文里孤零零一行 ``| x |``
+    不能被误判成表格。单元格里平台侧转义的 ``\\|`` 在这里还原（列分隔早已解析）。
+    """
+    candidate: list[list[str]] = []
+    has_separator = False
+    for row in rows:
+        cells = [cell.strip().replace("\\|", "|") for cell in row.strip().strip("|").split("|")]
+        if all(not cell or _TABLE_SEPARATOR_CELL_RE.fullmatch(cell) for cell in cells):
+            has_separator = True
+        else:
+            candidate.append(cells)
+    if not (has_separator and candidate):
+        return None
+    return InputRichBlockTable(
+        [
+            [RichBlockTableCell(parse_inline(cell), is_header=(row_index == 0)) for cell in cells]
+            for row_index, cells in enumerate(candidate)
+        ]
+    )
+
 
 def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) -> list[InputRichBlock]:
     """引用块（``>`` 行）内的子块。
 
-    三种行各有归属: 独立的分隔线 → ``Divider``（署名行与正文之间的那条线,
+    四种行各有归属: 独立的分隔线 → ``Divider``（署名行与正文之间的那条线,
     与主帖同一形态）; 媒体占位 → 调用方给的媒体块（**以前这里会把它当普通文字,
-    切 blocks 时引用块里的图就丢了**）; 其余合并成段落。
+    切 blocks 时引用块里的图就丢了**）; **markdown 表格行组 → ``Table`` 块**
+    （投票等 —— 以前会被合并成段落, poll 表格在敏感内容里散架）; 其余合并成段落。
 
-    没有分隔线也没有媒体时保持老行为: **整段合成一个段落**，不改动既有渲染。
+    没有分隔线、媒体、表格时保持老行为: **整段合成一个段落**，不改动既有渲染。
     """
     has_special = any(
-        line.strip() in ("---", "***", "___") or _MEDIA_PLACEHOLDER_RE.match(line.strip()) for line in quoted
+        line.strip() in ("---", "***", "___")
+        or _MEDIA_PLACEHOLDER_RE.match(line.strip())
+        or _TABLE_ROW_RE.match(line.strip())
+        for line in quoted
     )
     if not has_special:
         text = "\n".join(quoted).strip()
@@ -198,25 +232,44 @@ def _quote_children(quoted: list[str], media_blocks: dict[str, InputRichBlock]) 
 
     children: list[InputRichBlock] = []
     buf: list[str] = []
+    table_rows: list[str] = []
 
-    def flush() -> None:
+    def flush_text() -> None:
         text = "\n".join(buf).strip()
         if text:
             children.append(InputRichBlockParagraph(parse_inline(text)))
         buf.clear()
 
+    def flush_table() -> None:
+        if not table_rows:
+            return
+        rows = list(table_rows)
+        table_rows.clear()
+        if table := _table_block(rows):
+            children.append(table)
+        else:
+            # 像表格但没有分隔行 → 不是表格, 当普通文本 (与主循环的落点一致)
+            buf.extend(rows)
+
     for line in quoted:
         stripped = line.strip()
         if stripped in ("---", "***", "___"):
-            flush()
+            flush_table()
+            flush_text()
             children.append(InputRichBlockDivider())
         elif m := _MEDIA_PLACEHOLDER_RE.match(stripped):
-            flush()
+            flush_table()
+            flush_text()
             if (block := media_blocks.get(m.group(1))) is not None:
                 children.append(block)
+        elif _TABLE_ROW_RE.match(stripped):
+            flush_text()
+            table_rows.append(line)
         else:
+            flush_table()
             buf.append(line)
-    flush()
+    flush_table()
+    flush_text()
     # 首尾多余的分隔线去掉 (块边界不需要线)
     while children and type(children[0]).__name__ == "InputRichBlockDivider":
         children.pop(0)
@@ -357,38 +410,23 @@ def markdown_to_blocks(markdown: str, *, media_blocks: dict[str, InputRichBlock]
             continue
 
         # markdown 表格 (连续以 | 开头的行) —— 服务端只认 markdown 语法,
-        # blocks 路径得自己转成 Table 块 (首行当表头, 第二行的 |---| 是分隔行)
-        if stripped.startswith("|") and stripped.endswith("|"):
-            # 先看一眼: **必须有 |---|---| 分隔行**才算表格 (markdown 的规矩) ——
-            # 否则正文里孤零零一行 `| x |` 会被误判成表格。
+        # blocks 路径得自己转成 Table 块 (判据与构造见 _table_block)。
+        # `>` 开头的行不是正文表格 —— 它们归下面的引用块分支 (剥前缀后交
+        # _quote_children, 那里识别块内表格)。
+        if _TABLE_ROW_RE.match(stripped) and not stripped.startswith(">"):
             look = i
-            candidate: list[list[str]] = []
-            has_separator = False
+            rows: list[str] = []
             while (
                 look < len(lines)
-                and lines[look].strip().startswith("|")
-                and lines[look].strip().endswith("|")
+                and _TABLE_ROW_RE.match(lines[look].strip())
+                and not lines[look].strip().startswith(">")
             ):
-                cells = [cell.strip() for cell in lines[look].strip().strip("|").split("|")]
-                if all(not cell or re.fullmatch(r":?-{2,}:?", cell) for cell in cells):
-                    has_separator = True
-                else:
-                    candidate.append(cells)
+                rows.append(lines[look])
                 look += 1
-            if has_separator and candidate:
+            if table := _table_block(rows):
                 flush_paragraph(paragraph)
                 i = look
-                blocks.append(
-                    InputRichBlockTable(
-                        [
-                            [
-                                RichBlockTableCell(parse_inline(cell), is_header=(row_index == 0))
-                                for cell in cells
-                            ]
-                            for row_index, cells in enumerate(candidate)
-                        ]
-                    )
-                )
+                blocks.append(table)
                 continue
             # 不是表格 (没有分隔行): 落到下面按普通文本处理
 
