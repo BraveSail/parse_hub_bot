@@ -38,6 +38,27 @@ HTTPError = _curl_errors.RequestException
 """请求失败的基类（对应原来的 httpx.HTTPError）。"""
 HTTPStatusError = _curl_errors.HTTPError
 """raise_for_status() 抛出的状态码错误，带 .response。"""
+IncompleteRead = getattr(_curl_errors, "IncompleteRead", _curl_errors.HTTPError)
+"""服务端在响应中途断流（curl 18 ``end of response with N bytes missing``）。
+
+⚠️ **它继承 ``HTTPError``**，也就是本项目别名的 ``HTTPStatusError``。
+所以捕获 ``HTTPStatusError`` 的地方必须**让它先命中**，否则传输中断会被当成
+状态码错误处理 —— 历史表现就是拿成功码拼出「分片下载失败: HTTP 206」
+并且因为 206 不在可重试集合里而完全不重试。
+
+旧版 curl_cffi 没有这个类（用 getattr 兜底到 HTTPError，行为退回旧状，不会 ImportError）。
+"""
+
+#: 传输层错误 —— 请求过程本身断了，与「服务器回答了但状态码不对」是**两回事**。
+#: 捕获 ``HTTPStatusError`` 之前必须先让这里命中（`IncompleteRead` 是它的子类）。
+TRANSPORT_ERRORS: tuple[type[Exception], ...] = (
+    IncompleteRead,
+    _curl_errors.Timeout,
+    _curl_errors.ConnectionError,
+    _curl_errors.ContentDecodingError,
+    _curl_errors.SessionClosed,
+    _curl_errors.ProxyError,
+)
 TimeoutException = _curl_errors.Timeout
 ReadTimeout = _curl_errors.ReadTimeout
 NetworkError = _curl_errors.ConnectionError

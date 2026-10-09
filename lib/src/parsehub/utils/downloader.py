@@ -69,6 +69,20 @@ def _is_retryable_status(status_code: int) -> bool:
     return status_code == 429 or 500 <= status_code < 600
 
 
+def _describe_transport_error(error: BaseException) -> str:
+    """把传输类异常讲成**可排障**的一句话。
+
+    重点是**不要**退回成状态码 —— `IncompleteRead` 是 `HTTPStatusError` 的子类，
+    历史上就是因为它，缓冲区里那个成功的 206 被拼进了错误信息
+    （「分片下载失败: HTTP 206」），把排查方向带偏。
+    """
+    text = str(error).strip()
+    if isinstance(error, http.IncompleteRead):
+        # curl 的原话已经很具体：``curl: (18) end of response with N bytes missing``
+        return f"响应中途断开（{text}）" if text else "响应中途断开"
+    return text or type(error).__name__
+
+
 @dataclass(frozen=True, slots=True)
 class RangeProbe:
     supports_range: bool
@@ -110,8 +124,8 @@ class SegmentDownloader:
         connections: int = 4,
         min_split_size: int = 10 * 1024 * 1024,
         timeout: float | http.Timeout | None = None,
+        backup_urls: tuple[str, ...] = (),
     ):
-        self.url = url
         self.save_path = save_path
         self.headers = dict(headers or {})
         self.proxy = proxy
@@ -124,6 +138,14 @@ class SegmentDownloader:
         self.min_split_size = max(1, min_split_size)
         self.timeout = timeout
 
+        #: 主地址 + 备用地址（同一份内容的多份 CDN 副本）。
+        #: **同一个地址内部**先走 `max_retries` 重试；全用尽再换下一个地址**整体重下**
+        #: （不逐分片混源 —— 一份文件必须来自同一副本，否则字节可能不一致）。
+        self.url_candidates: tuple[str, ...] = (url, *(u for u in backup_urls if u and u != url))
+        self._url_index = 0
+        #: 备用地址是**换地址**才动，所以要单独记：用它才能判「是否真的回退过」
+        self._attempts_on_current_url = 0
+
         self.resolved_path: Path | None = None
         self.temp_dir: Path | None = None
         self.complete_path: Path | None = None
@@ -133,21 +155,55 @@ class SegmentDownloader:
         #: 本次下载实际切了几个分片 (速度日志要打出来 —— 分片数直接决定并发度)
         self._part_count = 0
 
+    @property
+    def url(self) -> str:
+        """当前正在用的地址（换备用地址后它跟着变，日志与请求都用这里）。"""
+        return self.url_candidates[self._url_index]
+
     async def run(self) -> str:
+        """下载：同一地址内先重试，用尽后换下一个地址（备用 CDN 副本）整体重下。"""
+        last_error: Exception | None = None
+        for url_index, url in enumerate(self.url_candidates):
+            self._url_index = url_index
+            if url_index:
+                logger.warning(
+                    f"主地址下载失败，改用备用地址 ({url_index}/{len(self.url_candidates) - 1}): "
+                    f"host={urlparse(url).netloc} 上次错误={last_error}"
+                )
+            self._attempts_on_current_url = 0
+            error = await self._download_current_url()
+            if error is None:
+                return str(self.resolved_path)
+            last_error = error
+
+        raise DownloadError(f"达到最大重试次数，下载失败: {last_error}") from last_error
+
+    async def _download_current_url(self) -> Exception | None:
+        """在当前地址上跑完重试预算。成功返回 ``None``，否则返回最后一次错误。"""
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
             self._reset_progress()
             rate_limited = False
             status: int | None = None
+            self._attempts_on_current_url = attempt + 1
             try:
                 async with self._client() as client:
                     self.resolved_path = await self._resolve_path(client)
                     await self._download_once(client)
-                    return str(self.resolved_path)
+                    return None
             except DownloadError as e:
                 last_error = e
                 if attempt == self.max_retries:
-                    raise
+                    return e
+            except http.TRANSPORT_ERRORS as e:
+                # 同 `_download_part`：必须排在 HTTPStatusError 之前（IncompleteRead 是它的子类）
+                last_error = e
+                logger.warning(
+                    f"下载传输中断: url={self.url} 已收 {self._downloaded} 字节 "
+                    f"attempt={attempt + 1}/{self.max_retries + 1} err={e}"
+                )
+                if attempt == self.max_retries:
+                    return DownloadError(f"传输中断: {_describe_transport_error(e)}")
             except http.HTTPStatusError as e:
                 status = e.response.status_code
                 last_error = e
@@ -161,20 +217,20 @@ class SegmentDownloader:
                     f"    响应头 = {_response_headers_of(e.response)}"
                 )
                 if attempt == self.max_retries or not (_is_retryable_status(status) or rate_limited):
-                    raise DownloadError(f"HTTP错误: {status}") from e
+                    return DownloadError(f"HTTP错误: {status}")
             except (http.TimeoutException, http.NetworkError, http.RemoteProtocolError, http.ReadError) as e:
                 last_error = e
                 logger.warning(f"下载网络错误: url={self.url} attempt={attempt + 1}/{self.max_retries + 1} err={e}")
                 if attempt == self.max_retries:
-                    raise DownloadError(f"网络连接错误: {e}") from e
+                    return DownloadError(f"网络连接错误: {e}")
             except Exception as e:
                 last_error = e
                 if attempt == self.max_retries:
-                    raise DownloadError(f"下载失败: {e}") from e
+                    return DownloadError(f"下载失败: {e}")
 
             await asyncio.sleep(_retry_delay(attempt, status_code=status))
 
-        raise DownloadError(f"达到最大重试次数，下载失败: {last_error}")
+        return last_error
 
     def _client(self) -> http.AsyncClient:
         limits = http.Limits(
@@ -376,6 +432,17 @@ class SegmentDownloader:
                 return
             except FallbackToSingle:
                 raise
+            except http.TRANSPORT_ERRORS as e:
+                # ⚠️ **必须在 HTTPStatusError 之前**：`IncompleteRead` 是它的子类，
+                # 放后面会让「传输中断」被当成「状态码错误」，拿成功码拼错误信息
+                # （线上原话：`分片下载失败: HTTP 206`）并且不重试。
+                status = None
+                logger.warning(
+                    f"分片传输中断: url={self.url} Range=bytes={part.start}-{part.end} "
+                    f"已收 {received}/{part.size} 字节 attempt={attempt + 1}/{self.max_retries + 1} err={e}"
+                )
+                if attempt == self.max_retries:
+                    raise DownloadError(f"分片传输中断: {_describe_transport_error(e)}") from e
             except http.HTTPStatusError as e:
                 status = e.response.status_code
                 rate_limited = _is_rate_limited(status)
@@ -543,6 +610,7 @@ async def download(
     connections: int = 4,
     min_split_size: int = 10 * 1024 * 1024,
     timeout: float | http.Timeout | None = None,
+    backup_urls: tuple[str, ...] = (),
 ) -> str:
     """
     下载单个文件。服务端支持 Range 时使用多连接分片下载；不支持时回退普通单连接下载。
@@ -559,6 +627,9 @@ async def download(
     :param connections: 单文件最大并发连接数，1 表示禁用分片
     :param min_split_size: 文件小于该值时不分片
     :param timeout: 超时配置
+    :param backup_urls: 同一份内容的**备用地址**（同一平台给的多份 CDN 副本）。
+        主地址重试耗尽后按序整体换用 —— 某个副本部分损坏时（实测 B 站 Akamai
+        镜像在固定偏移断流，curl 18）换副本是唯一可行的规避。
     :return: 文件路径
 
     .. note::
@@ -577,6 +648,7 @@ async def download(
         connections=connections,
         min_split_size=min_split_size,
         timeout=timeout,
+        backup_urls=backup_urls,
     )
     return await downloader.run()
 

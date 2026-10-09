@@ -66,6 +66,29 @@ def test_the_parse_still_works_when_there_is_no_backup():
     assert result.media.url == PREFERRED
 
 
+def test_backup_urls_are_carried_for_fallback():
+    """备用地址要**带下去**给下载器兜底（主地址那份副本可能局部不可读）。
+
+    它只作为兜底，不改变「首选 ``durl.url``」这条规则 —— 见上面两条用例。
+    """
+    result = _parse({"data": {"durl": [{"url": PREFERRED, "backup_url": [BACKUP]}]}})
+    assert result.media.backup_urls == (BACKUP,), result.media.backup_urls
+    # 首选仍然是官方地址
+    assert result.media.url == PREFERRED
+
+
+def test_backup_urls_keep_the_host_untouched():
+    """备用地址必须**原样**保留 —— 它同样带签名，改域名等于伪造"""
+    result = _parse({"data": {"durl": [{"url": PREFERRED, "backup_url": [BACKUP]}]}})
+    assert result.media.backup_urls[0] == BACKUP
+
+
+def test_backup_urls_is_empty_when_absent():
+    """响应里没有 backup_url 时是空元组，下载路径行为完全不变"""
+    result = _parse({"data": {"durl": [{"url": PREFERRED}]}})
+    assert result.media.backup_urls == ()
+
+
 def test_change_source_is_gone():
     """那个改域名的函数已删除（防止有人把它加回来）"""
     assert not hasattr(BiliParse, "change_source")

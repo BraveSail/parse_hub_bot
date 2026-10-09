@@ -24,6 +24,17 @@ from .platform import Platform
 from .post import PostType
 
 
+def _media_to_dict(media: AnyMediaRef) -> dict:
+    """``MediaRef`` → dict，**剔除只供下载器内部使用的字段**。
+
+    目前只有 ``backup_urls``：它是「主地址那份副本坏掉时换哪一个」的实现细节，
+    属于下载策略而非内容描述，不该进序列化结果（缓存条目 / 对外接口）。
+    """
+    data = asdict(media)
+    data.pop("backup_urls", None)
+    return data
+
+
 class ParseResult(ABC):  # noqa: B024
     """解析结果基类"""
 
@@ -142,12 +153,17 @@ class ParseResult(ABC):  # noqa: B024
         return result
 
     def to_dict(self) -> dict:
-        """转换为字典"""
+        """转换为字典
+
+        ``backup_urls`` 是**下载期的内部兜底字段**（主地址那份 CDN 副本坏掉时换用的
+        备用地址），不参与对外契约：它进 ``to_dict`` 就会写进缓存/接口，把下载器的
+        实现细节泄露给消费方，也让序列化快照跟着下载策略变动。
+        """
         media: list[dict] | dict | None = None
         if isinstance(self.media, Sequence):
-            media = [asdict(m) for m in self.media]
+            media = [_media_to_dict(m) for m in self.media]
         elif self.media:
-            media = asdict(self.media)
+            media = _media_to_dict(self.media)
 
         return {
             "platform": self.platform.id if self.platform else None,
@@ -227,6 +243,7 @@ class ParseResult(ABC):  # noqa: B024
                     progress_args=dl_progress_args,
                     progress_kwargs=dl_progress_kwargs,
                     connections=connections,
+                    backup_urls=getattr(media, "backup_urls", ()),
                 )
             except Exception as e:
                 shutil.rmtree(output_dir, ignore_errors=True)

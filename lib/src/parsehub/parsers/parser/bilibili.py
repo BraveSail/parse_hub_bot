@@ -251,6 +251,11 @@ class BiliParse(BaseParser):
         #   2. 改写域名是**伪造签名** —— B 站的播放签名与 host 绑定，换域名靠兼容性侥幸能用，
         #      一旦收紧就整条下载失败（实测把 path 换到别的域名会 403 / 超时）。
         video_url = durl["url"]
+        # 备用地址**从这一次响应里读**（不额外发请求），原样保留给下载器兜底：
+        # 主地址那份 CDN 副本可能局部不可读（实测某条视频的 Akamai 镜像在固定偏移断流，
+        # curl 18 `end of response with N bytes missing`），此时换副本是唯一可行的规避。
+        # 只在主地址失败后才用，所以仍以 ``durl.url`` 为首选 —— 上面那两条理由不变。
+        backup_urls = tuple(u for u in (durl.get("backup_url") or []) if isinstance(u, str) and u.strip())
         content = desc.strip()
         if content == "-":
             content = ""
@@ -265,6 +270,7 @@ class BiliParse(BaseParser):
             view_count=(view.get("stat") or {}).get("view"),
             video=VideoRef(
                 url=video_url,
+                backup_urls=backup_urls,
                 thumb_url=data["View"]["pic"],
                 duration=duration,
                 width=dimension.get("width", 0),

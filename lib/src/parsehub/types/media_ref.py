@@ -10,6 +10,7 @@ class MediaRef:
         thumb_url: 缩略图 URL
         width: 宽度
         height: 高度
+        backup_urls: 同一份内容的**备用地址**，主地址下不动时按序换用
     """
 
     url: str
@@ -17,6 +18,7 @@ class MediaRef:
     thumb_url: str | None = None
     width: int = 0
     height: int = 0
+    backup_urls: tuple[str, ...] = ()
 
 
 @dataclass(kw_only=True)
