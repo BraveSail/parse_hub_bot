@@ -30,7 +30,7 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label, markdown_needs_blocks
+from plugins.helpers import build_rich_markdown, markdown_needs_blocks
 from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
@@ -40,8 +40,7 @@ from plugins.parse.inline_rich import (
 )
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
-from repo.settings import SettingsConfig
-from services import ParsePipeline, ParseService, SettingsService, StatusReporter, UserService
+from services import ParsePipeline, ParseService, SettingsService, UserService
 from services.cache import persistent_cache
 from utils.helpers import to_list, with_request_id
 
@@ -71,58 +70,31 @@ def _result(title: str, description: str, markdown: str, media: list | None = No
     )
 
 
-async def _send_placeholder(
+async def _send_first_frame(
     cli: Client,
     guest_query_id: str,
+    markdown: str,
+    parse_result: object | None,
     _t: PreLocaleSelector,
-    *,
-    config: SettingsConfig,
-    raw_url: str = "",
 ) -> str | None:
-    """先发一条占位结果, 返回它的 ``inline_message_id`` (拿不到则 None)。
+    """把**首帧**发进 guest 通道, 返回它的 ``inline_message_id`` (拿不到则 None)。
 
-    **为什么要先发占位**: guest 消息就是 inline 消息, 但它的 id 只有**发出之后**
-    才存在 —— 想用它当进度载体, 就得先占个位。
+    guest 消息就是一条 inline 消息, 所以"发出这条消息"既是回复本身、也是进度载体
+    —— 于是**不需要**先发一条「解 析 中」占位: 首帧内容就是解析到的文字排版
+    (页脚带处理状态), 与私聊/群一模一样。
 
-    占位内容就是**第一帧处理过程**: 与最终结果同版式的富文本骨架
-    (进度行 + 页脚的来源链接), 所以后面每次更新都不跳版。
+    ``parse_result`` 为 None 时 (例如一上来就解析失败) 用错误文本当首帧。
     """
-    label = _t("解 析 中...")
-    markdown = build_progress_markdown(
-        None,
-        progress=format_label(label),
-        config=config,
-        lang=_t.locale,
-        view_label=_t("查看"),
-        raw_url=raw_url,
-    )
+    title = _clip(getattr(parse_result, "title", None), 90) or _clip(getattr(parse_result, "content", None), 90) or "-"
+    description = _clip(getattr(parse_result, "content", None), 200)
     try:
-        sent = await cli.answer_guest_query(guest_query_id, _result(label, "", markdown))
-    except Exception as e:  # noqa: BLE001 - 占位失败就退回"只有结果", 不该打断解析
-        logger.warning(f"guest 占位发送失败, 本次没有进度反馈: {type(e).__name__}: {str(e)[:120]}")
+        sent = await cli.answer_guest_query(guest_query_id, _result(title, description, markdown))
+    except Exception as e:  # noqa: BLE001 - 首帧发不出去就退回"只有结果", 不该打断解析
+        logger.warning(f"guest 首帧发送失败, 本次没有进度反馈: {type(e).__name__}: {str(e)[:120]}")
         return None
     mid = getattr(sent, "inline_message_id", None)
-    logger.debug(f"guest 占位已发出: inline_message_id={mid}")
+    logger.debug(f"guest 首帧已发出: inline_message_id={mid}")
     return mid
-
-
-class _NullReporter:
-    """拿不到召唤消息时的兜底: 没有可编辑的载体, 进度只能丢弃 (结果照发)。"""
-
-    async def report(self, text: str) -> None:  # noqa: ARG002
-        return
-
-    async def report_progress(self, text: str) -> None:  # noqa: ARG002
-        return
-
-    async def report_result(self, parse_result: object, text: str) -> None:  # noqa: ARG002
-        return
-
-    async def report_error(self, stage: str, error: Exception) -> None:  # noqa: ARG002
-        logger.debug(f"guest 流水线错误: stage={stage} error={error}")
-
-    async def dismiss(self) -> None:
-        return
 
 
 def _denied_result(text: str) -> InlineQueryResultArticle:
@@ -205,24 +177,23 @@ async def _answer(
         config = await SettingsService(session).get_config_by_user(user_id)
     _t = t_[locale]
 
-    # 进度载体 = guest 消息自己: 先发一条占位, 拿 inline_message_id, 后面一路编辑。
-    # 发不出去就退回静默 (只有结果), 行为与以前一致。
     service = ParseService()
     raw_url = await service.get_raw_url(url)
 
-    # 占位 = 第一帧处理过程 (同版式的骨架), 拿它的 inline_message_id 当进度载体
-    inline_message_id = await _send_placeholder(cli, guest_query_id, _t, config=config, raw_url=raw_url)
-    reporter: StatusReporter = (
-        InlineStatusReporter(
-            cli,
-            inline_message_id,
-            t=_t,
-            user_config=config,
-            raw_url=raw_url,
-            spoiler_tag=spoiler_tag,
-        )
-        if inline_message_id
-        else _NullReporter()
+    # 进度载体 = guest 消息自己, 但**不在解析前发**: 载体在"第一次真要发内容"时才建立
+    # (``InlineStatusReporter._ensure_carrier`` → ``_send_first_frame``)。于是首帧就是
+    # 解析到的文字排版, 不再有「解 析 中」占位 (用户要求「首帧取消掉解析中」)。
+    # 载体建立失败时后续进度静默丢弃, 结果由 `_deliver` 走 answer 直发 —— 不会丢。
+    reporter = InlineStatusReporter(
+        cli,
+        None,
+        t=_t,
+        user_config=config,
+        raw_url=raw_url,
+        spoiler_tag=spoiler_tag,
+        first_send=lambda markdown, parse_result: _send_first_frame(
+            cli, guest_query_id, markdown, parse_result, _t
+        ),
     )
 
     # ① 缓存命中: 直接用 file_id 发, 跳过解析/下载/转码/上传 (与私聊/群/inline 一致)
@@ -240,7 +211,8 @@ async def _answer(
         await _deliver(
             cli,
             guest_query_id,
-            inline_message_id,
+            # 缓存命中不经过进度: 首帧就是结果本身 (载体还不存在 → 走 answer 直发)
+            None,
             title=_clip(pr.title, 90) or _clip(pr.content, 90) or "-",
             description=_clip(pr.content, 200),
             markdown=markdown,
@@ -293,7 +265,8 @@ async def _answer(
         await _deliver(
             cli,
             guest_query_id,
-            inline_message_id,
+            # 载体由 reporter 在首帧(解析完那一条)时建立, 结果编辑进同一条
+            reporter.inline_message_id,
             title=title,
             description=description,
             markdown=markdown,

@@ -10,7 +10,10 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from parsehub.types import ImageParseResult, Platform
+
 from plugins.parse import guest as guest_mod
+from plugins.parse.reporters import InlineStatusReporter
 from services.cache import CacheEntry, CacheParseResult
 
 
@@ -89,8 +92,8 @@ def test_cache_hit_sends_without_running_the_pipeline():
     kwargs = deliver.await_args.kwargs
     assert kwargs["markdown"] == "**缓存正文**"     # 用的是缓存渲染结果
     assert kwargs["title"] == "标题"
-    # 进度载体是开头的占位拿到的 guest 消息 id
-    assert deliver.await_args.args[2] == MID
+    # 缓存命中不经过进度: 首帧就是结果本身, 载体还不存在 (走 answer 直发)
+    assert deliver.await_args.args[2] is None
 
 
 def test_cache_miss_falls_through_to_the_pipeline():
@@ -109,14 +112,18 @@ def test_cache_miss_falls_through_to_the_pipeline():
 # 于是 guest 从来没有处理过程、只有结果。用户报的就是这个。
 
 
-def test_progress_uses_the_placeholder_as_its_carrier():
-    """占位拿到的 id 要交进 _deliver, 否则结果没处编辑"""
+def test_progress_uses_the_guest_message_itself_as_its_carrier():
+    """进度载体是 guest 消息自己 —— 缓存命中时首帧就是结果, 所以还没有载体 (None)
+
+    （载体由 ``InlineStatusReporter._ensure_carrier`` 在"第一次真要发内容"时建立,
+    不在解析前发占位。见 ``test_the_first_frame_is_the_parsed_layout``。）
+    """
     _pipeline, deliver, _ok = _run_answer(cached=_cached_entry(), pipeline_should_run=False)
-    assert deliver.await_args.args[2] == MID
+    assert deliver.await_args.args[2] is None
 
 
-def test_without_a_placeholder_the_pipeline_gets_a_null_reporter():
-    """占位发不出去 (拿不到 id) 时退回静默, 解析照跑 —— 结果不能因此丢"""
+def test_the_reporter_can_build_its_carrier_on_first_send():
+    """现场解析路径: reporter 没有载体但带 ``first_send`` —— 首帧由它现场建立"""
     seen: dict = {}
 
     @asynccontextmanager
@@ -132,7 +139,6 @@ def test_without_a_placeholder_the_pipeline_gets_a_null_reporter():
         seen["reporter"] = a[2]
         return ctx
 
-    deliver = AsyncMock()
     with (
         patch.object(guest_mod, "get_session", fake_session),
         patch.object(
@@ -147,13 +153,14 @@ def test_without_a_placeholder_the_pipeline_gets_a_null_reporter():
         ),
         patch.object(guest_mod.persistent_cache, "get", AsyncMock(return_value=None)),
         patch.object(guest_mod, "ParsePipeline", pipeline),
-        patch.object(guest_mod, "_deliver", deliver),
+        patch.object(guest_mod, "_deliver", AsyncMock()),
     ):
-        asyncio.run(
-            guest_mod._answer(_cli(inline_message_id=None), "q1", "https://x.com/a/status/1", 1, "zh-hans")
-        )
+        asyncio.run(guest_mod._answer(_cli(), "q1", "https://x.com/a/status/1", 1, "zh-hans"))
 
-    assert isinstance(seen["reporter"], guest_mod._NullReporter)
+    reporter = seen["reporter"]
+    assert isinstance(reporter, InlineStatusReporter)
+    assert reporter.inline_message_id is None, "载体不该在解析前就存在"
+    assert reporter._first_send is not None, "没有 first_send 就没法建立载体"
 
 
 def test_deliver_edits_the_guest_message():
@@ -188,3 +195,87 @@ def test_deliver_without_a_placeholder_goes_straight_to_guest_query():
         )
     edit.assert_not_awaited()
     cli.answer_guest_query.assert_awaited_once()
+
+
+# ── 首帧: 不再有「解 析 中」占位 ─────────────────────────────────────
+#
+# 用户要求「消息首帧取消掉解析中, 直接发解析到的文字结果」(2026-10-09)。
+# guest 的消息就是一条 inline 消息, 所以"发出首帧"既是回复也是载体 —— 载体因此
+# **不必**在解析前建立: ``InlineStatusReporter._ensure_carrier`` 在第一次真要发
+# 内容时才把它发出去, 那次发的内容就是首帧。
+
+
+def _parsed_result() -> ImageParseResult:
+    result = ImageParseResult(content="解析到的正文", photo=[])
+    result.title = "解析到的标题"
+    result.platform = Platform.TWITTER
+    result.raw_url = "https://x.com/a/status/1"
+    return result
+
+
+def _first_frame(answer_calls: list[dict]) -> str:
+    """第一次 answer_guest_query 发出的 markdown。"""
+    assert answer_calls, "guest 一条消息都没发出去"
+    content = answer_calls[0]["result"].input_message_content
+    return content.rich_message.markdown
+
+
+def test_the_first_frame_is_the_parsed_layout():
+    """**核心**: 首帧 = 解析到的文字排版 (标题/正文) + 页脚「下载中」, 不是「解析中」"""
+    answer_calls: list[dict] = []
+
+    async def _answer_guest_query(_qid, result, **kw):  # noqa: ANN001, ANN202
+        answer_calls.append({"result": result})
+        return SimpleNamespace(inline_message_id=MID)
+
+    @asynccontextmanager
+    async def fake_session():
+        yield None
+
+    class _Pipeline:
+        """真实调用 reporter 的流水线替身: 解析完 -> report_result(下载中) 就结束。"""
+
+        def __init__(self, *a, **kw):
+            self._reporter = a[2]
+
+        async def run(self):
+            await self._reporter.report_result(_parsed_result(), "下 载 中...")
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    cli = SimpleNamespace(answer_guest_query=AsyncMock(side_effect=_answer_guest_query))
+    with (
+        patch.object(guest_mod, "get_session", fake_session),
+        patch.object(
+            guest_mod,
+            "SettingsService",
+            return_value=SimpleNamespace(
+                get_config_by_user=AsyncMock(
+                    return_value=SimpleNamespace(
+                        video_cover=False, hide_title=False, hide_desc=False, hide_source=False
+                    )
+                )
+            ),
+        ),
+        patch.object(
+            guest_mod,
+            "ParseService",
+            return_value=SimpleNamespace(get_raw_url=AsyncMock(return_value="https://x.com/a/status/1")),
+        ),
+        patch.object(guest_mod.persistent_cache, "get", AsyncMock(return_value=None)),
+        patch.object(guest_mod, "ParsePipeline", _Pipeline),
+        patch.object(guest_mod, "_deliver", AsyncMock()),
+    ):
+        asyncio.run(guest_mod._answer(cli, "q1", "https://x.com/a/status/1", 1, "zh-hans"))
+
+    markdown = _first_frame(answer_calls)
+    assert "解析到的正文" in markdown, markdown
+    assert "解析到的标题" in markdown, markdown
+    assert "下 载 中" in markdown, markdown          # 页脚的处理状态保留
+    assert "解 析 中" not in markdown, markdown      # 首帧不再有「解析中」
+    assert "解 析 中" not in " ".join(str(c) for c in answer_calls)

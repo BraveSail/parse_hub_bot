@@ -45,7 +45,7 @@
 | 调用点 | 用途 | 保留理由 |
 | --- | --- | --- |
 | `pipeline.py` singleflight 分支 | 「已有相同任务正在解析, 等待解析完成...」 | 这不是"解析中"骨架，而是**必须让用户知道在等**的提示（解析要等另一个任务结束，可能很久） |
-| `plugins/parse/guest.py::_send_placeholder` | guest 的 answer 占位 | **技术必需**：guest 消息就是 inline 消息，它的 id 只有发出去之后才存在，而进度需要一个载体 —— 只能先占位。占位内容就是第一帧处理过程（否则后面每次更新都跳版） |
+| ~~`plugins/parse/guest.py::_send_placeholder`~~ | guest 的 answer 占位 | **2026-10-09 已删** —— 表里原来写的"技术必需"是**错判**：载体不必在解析前建立，可以等解析完再把**那份内容**发出去当首帧。见 `2026-10-09-guest-first-frame.md`。`report()` 现在只剩 singleflight 的等待提示需要（用 `build_progress_markdown(None)` 的骨架） |
 
 ⇒ `build_progress_markdown(parse_result=None)` 的骨架分支**不能删**，它支撑上面两处。
 

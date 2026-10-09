@@ -249,18 +249,25 @@ class MessageStatusReporter(StatusReporter):
 
 
 class InlineStatusReporter(StatusReporter):
-    """基于 inline_message_id 的状态报告器"""
+    """基于 inline_message_id 的状态报告器
+
+    **载体可以延迟建立**（``first_send``）：inline 的载体由 answer 阶段给出，所以
+    ``inline_message_id`` 一直有；而 guest 的载体是"即将发出的那条消息"本身 ——
+    与其先发一条「解析中」占位再编辑它，不如把**第一次真正要发的内容**直接发出去
+    （见 ``_ensure_carrier``）。于是 guest 与私聊/群一致：首帧就是解析到的文字结果。
+    """
 
     def __init__(
         self,
         cli: Client,
-        inline_message_id: str,
+        inline_message_id: str | None,
         *,
         t: PreLocaleSelector,
         user_config: SettingsConfig,
         raw_url: str = "",
         spoiler_tag: str = "",
         custom_content: str = "",
+        first_send: Callable[[str, Any], Awaitable[str | None]] | None = None,
     ):
         self._cli = cli
         self._mid = inline_message_id
@@ -269,12 +276,38 @@ class InlineStatusReporter(StatusReporter):
         self._raw_url = raw_url
         self._spoiler_tag = spoiler_tag
         self._custom_content = custom_content
+        #: 还没有载体时，用它把**首帧内容**发出去并拿回载体 id（guest 用）。
+        #: 签名为 ``(content, parse_result) -> inline_message_id | None``。
+        self._first_send = first_send
         self._last_markdown: str | None = None
         self._last_rich_at = 0.0
         # 最后一次拿到的解析结果 —— 进度刷新要用它渲染完整排版, 不能退回骨架
         self._parse_result: Any = None
         # 报错后要恢复的内容 (按下"回退"时的占位)
         self._last_text: str | None = None
+
+    @property
+    def inline_message_id(self) -> str | None:
+        """当前载体 id（可能因首帧还没发出而为 None）。"""
+        return self._mid
+
+    async def _ensure_carrier(self, content: str) -> bool:
+        """还没有载体时**现场建立**它 —— 载体就是这条 ``content`` 本身。
+
+        返回之后能否继续编辑。发不出去（``first_send`` 返回 None 或抛错）时返回
+        False：进度是尽力而为，不该打断解析（结果由调用方另发）。
+        """
+        if self._mid is not None:
+            return True
+        if self._first_send is None:
+            return False
+        try:
+            self._mid = await self._first_send(content, self._parse_result)
+        except Exception as e:  # noqa: BLE001 - 首帧发不出去不该打断解析
+            logger.warning(f"首帧发送失败, 本次没有进度反馈: {type(e).__name__}: {str(e)[:120]}")
+            self._mid = None
+        logger.debug(f"载体已建立: inline_message_id={self._mid}")
+        return self._mid is not None
 
     def _render(self, parse_result: Any, text: str) -> str:
         """与最终结果**同一种排版**的处理过程 markdown。"""
@@ -317,6 +350,11 @@ class InlineStatusReporter(StatusReporter):
             return
         self._last_markdown = markdown
         self._last_rich_at = monotonic()
+        if self._mid is None:
+            # guest: 载体还没建立 —— **首帧就是这条 markdown**, 直接把它发出去
+            # (而不是先发一条占位再编辑成它)
+            await self._ensure_carrier(markdown)
+            return
         try:
             await edit_inline_rich_message(self._cli, self._mid, markdown=markdown)
         except (FloodWait, SlowmodeWait):
@@ -333,7 +371,7 @@ class InlineStatusReporter(StatusReporter):
         text = self._t(f"{format_label(f'{stage}错误:')} \n```\n{error}```")
         if bs.demo_mode:
             text += self._t("\n\n<b>问题反馈: @MisakaSisters</b>")
-        await self._edit_inline_text(inline_message_id=self._mid, text=text)
+        await self._edit_inline_text(text=text)
 
         if self._user_config.keep_error_log:
             return
@@ -341,7 +379,7 @@ class InlineStatusReporter(StatusReporter):
         async def fn() -> None:
             # 报错提示挂 15 秒后回到报错前那条**富文本** (直接编辑, 绕过判重)
             await asyncio.sleep(15)
-            if self._last_markdown:
+            if self._last_markdown and self._mid:
                 try:
                     await edit_inline_rich_message(self._cli, self._mid, markdown=self._last_markdown)
                 except Exception as e:  # noqa: BLE001 - 恢复失败无所谓
@@ -355,8 +393,12 @@ class InlineStatusReporter(StatusReporter):
         # link preview 卡片, 卡片在正文之外、折叠盖不住 -> 内容遮了图还露着。
         # 进度/结果/收尾都走这里, 默认关掉; 调用方显式传了就用调用方的。
         kwargs.setdefault("link_preview_options", _NO_PREVIEW)
+        if self._mid is None:
+            # 载体还没建立时, 这条文本就是**首帧**(例如一上来就解析失败)
+            await self._ensure_carrier(str(kwargs.get("text") or ""))
+            return
         try:
-            await self._cli.edit_inline_text(**kwargs)
+            await self._cli.edit_inline_text(inline_message_id=self._mid, **kwargs)
         except (FloodWait, SlowmodeWait):
             pass
         except Forbidden as e:
