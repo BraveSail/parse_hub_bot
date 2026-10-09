@@ -1,53 +1,63 @@
-# guest 的首帧：也是解析结果，不再是「解析中」占位
+# guest 的首帧：answer 解析结果 → 拿句柄 → 编辑（与 inline 同构）
 
-日期：2026-10-09 · 来源：用户「guest消息没改？？」（承接同日「消息首帧取消掉解析中」）
+日期：2026-10-09 · 来源：用户「guest消息没改？？」→「什么载体，你直接学inline发首帧然后编辑不行吗？」
 
-## 我上一轮的错误结论
+## 结论
 
-同日的 `2026-10-09-first-frame-without-parsing-stage.md` 里，我把 guest 归成"技术必需"：
+用户说得对。guest 就该是 **answer 首帧 → 拿句柄 → 编辑**，与 inline 同构 ——
+inline 是"回调给句柄 → 编辑"，guest 只是句柄来源不同（自己 answer 出来的那条消息）。
+不该为它造"载体"这种抽象。
 
-> guest 消息就是 inline 消息，它的 id 只有发出去之后才存在，而进度需要一个载体 —— 只能先占位。
+## 我走过的两段弯路
 
-**前半句对，结论错**。「载体只能靠发消息拿到」不等于「载体必须在解析前拿到」——
-真正要建立的只是"发第一条消息"这件事，而**内容可以是解析完的那份**。
-用户当场追问，说明这个结论没验证就下了。
+1. **第一次**：把 guest 判成"技术必需先发占位"（"id 只有发出去之后才存在"）。错 ——
+   不必在**解析前**建立：`answer_guest_query` 的返回值（`SentGuestMessage.inline_message_id`，
+   底层 `SetBotGuestChatResult` 返回 `InputBotInlineMessageID`）就是可编辑句柄。
+2. **第二次**：改成"reporter 内部延迟建立载体"（`first_send` 回调 + `_ensure_carrier` + 只读属性）。
+   能跑，但把"发首帧"塞进了 reporter，还多一层回调注入 —— 而 inline 那边从来是
+   "句柄由调用方拿到再传进来"。用户一眼看出这层封装多余。
 
-## 现在：载体**延迟建立**
-
-`InlineStatusReporter` 新增 ``first_send`` 回调（`plugins/parse/reporters.py`）：
-第一次真要发内容（`_edit_rich` / `_edit_inline_text`）时，如果还没有载体，
-就把**这条内容本身**发出去（`_ensure_carrier`），拿回的 `inline_message_id` 之后用于编辑。
+## 现行实现（`plugins/parse/guest.py::_answer`，五步全显式）
 
 ```
-解析（无任何消息）→ report_result(解析结果, 下载中) → first_send: answer 这条内容 ← 首帧
-                  → 处理中 → … → _deliver: 编辑成最终结果（带媒体）
+① 缓存命中 → answer 结果本身（没有后续编辑，不需要句柄）
+② parse_result = await service.parse(url)        ← 先拿到内容
+③ mid = await _send_first_frame(...)             ← answer 首帧 = 解析到的文字排版（页脚「下载中」）
+④ reporter = InlineStatusReporter(cli, mid, …)   ← 与 inline 完全同构：只负责编辑
+⑤ ParsePipeline(…, parse_result=parse_result)    ← 下载/处理，一路编辑 → _deliver 编辑成结果
 ```
 
-- guest 侧删掉 `_send_placeholder`（那条「解 析 中...」骨架）与 `_NullReporter`，
-  改为传 `first_send=_send_first_frame`（内部 `answer_guest_query`）。
-- `_answer` 末尾用 `reporter.inline_message_id` 交给 `_deliver` —— 载体是延迟建立的，
-  所以由 reporter 持有（新增只读属性）。
-- **缓存命中路径**同样受益：不再先发"解析中"再编辑成结果，直接 answer 结果本身。
+- **reporter 回归"只接受已有句柄"**：`first_send` / `_ensure_carrier` / `inline_message_id`
+  属性全部删除，`__init__` 的 `inline_message_id` 又是必传的 `str`。
+- **解析只做一次**：结果用 `parse_result=` 传给流水线（它内部跳过解析）。
+- **不闪版**：首帧 markdown 与流水线第一次 `report_result("下 载 中...")` 逐字相同
+  （都走 `build_progress_markdown(parse_result, progress=…)`）⇒ reporter 判重直接跳过那次编辑。
+- **解析失败**：没有可编辑句柄，单独 `answer_guest_query` 一条错误文本（`config.hide_error` 时静默）。
+- **首帧发不出去**（拿不到句柄）：`_NullReporter`，结果仍由 `_deliver` 走 answer 兜底发出。
 
-## 与 inline 的关系
+## 与 inline 的对称
 
-inline 的载体由 answer 阶段给出（`chosen_result.inline_message_id`，且调用点已有
-"为 None 就 return"的守卫），所以 inline **不传** `first_send`，行为逐字不变。
+| | 句柄来源 | 编辑它的人 |
+| --- | --- | --- |
+| inline | 回调 `chosen_result.inline_message_id` | `InlineStatusReporter` |
+| guest | 自己 answer 首帧的 `SentGuestMessage.inline_message_id` | **同一个** `InlineStatusReporter` |
 
-## 代价（真实约束，不是借口）
+## 遗留的真实约束
 
-- **解析期间群里一条消息都没有**（与私聊/群一致：用户要的就是这个形态）。
-- **answer 被推迟到解析完成之后** —— 若解析耗时超过客户端等待窗口，这条 guest 消息
-  可能发不出去（`first_send` 返回 None 只是"本次没有进度"，结果仍由 `_deliver` 走
-  answer 直发兜底，但同样受那个窗口限制）。**这条需要真机验证**。
+- 解析期间群里一条消息都没有（用户要的就是这个形态）。
+- **answer 被推迟到解析完成之后** —— 若解析耗时超过客户端等待窗口，这条 guest 消息可能发不出去
+  （首帧失败时结果仍走 answer 兜底，但同样受那个窗口限制）。**需要真机验证**。
 
 ## 验证
 
-- `test/test_guest_cache.py`：
-  - `test_the_first_frame_is_the_parsed_layout`（**核心**）—— 跑真实 `_answer`（流水线替身
-    会真的调 `reporter.report_result`），断言**第一次** `answer_guest_query` 的 markdown
-    含解析到的标题/正文与页脚「下 载 中」，且**不含「解 析 中」**
-  - `test_the_reporter_can_build_its_carrier_on_first_send` —— 载体在解析前不存在、但带 `first_send`
-  - 旧契约的两条（占位当载体 / 无占位退回 `_NullReporter`）改造成新契约
-- **反向验证**：让 `_edit_rich` 在无载体时直接 return（= 旧行为）→ 核心用例立刻变红，恢复后绿。
-- bot 567 passed / lib 867 passed / `scripts/check.sh` 干净。
+- `test/test_guest_cache.py`（12 条）：
+  - `test_the_first_frame_is_the_parsed_layout` —— 第一次 `answer_guest_query` 的 markdown
+    含解析到的标题/正文与页脚「下 载 中」，**不含「解 析 中」**
+  - `test_the_first_frame_is_sent_before_the_pipeline_starts` —— 事件顺序必须是
+    `["answer", "pipeline"]`（先发首帧拿句柄，再跑下载）
+  - `test_the_pipeline_gets_the_already_parsed_result` —— 解析不重复
+  - `test_without_a_handle_the_pipeline_gets_a_null_reporter` —— 拿不到句柄时退回静默
+  - `test_the_parse_step_hands_the_handle_to_the_reporter` —— reporter 收到的就是首帧那个句柄
+- **反向验证**：把首帧内容换回 `build_progress_markdown(None, …)`（旧的骨架行为）→
+  `test_the_first_frame_is_the_parsed_layout` 立刻变红，恢复后绿。
+- bot 571 passed / lib 867 passed / `scripts/check.sh`（ruff + pylint）干净。

@@ -60,12 +60,21 @@ def _run_answer(*, cached, pipeline_should_run: bool):
         patch.object(
             guest_mod,
             "SettingsService",
-            return_value=SimpleNamespace(get_config_by_user=AsyncMock(return_value=SimpleNamespace(video_cover=False))),
+            return_value=SimpleNamespace(
+                get_config_by_user=AsyncMock(
+                    return_value=SimpleNamespace(
+                        video_cover=False, hide_title=False, hide_desc=False, hide_source=False, hide_error=False
+                    )
+                )
+            ),
         ),
         patch.object(
             guest_mod,
             "ParseService",
-            return_value=SimpleNamespace(get_raw_url=AsyncMock(return_value="https://x.com/a/status/1")),
+            return_value=SimpleNamespace(
+                get_raw_url=AsyncMock(return_value="https://x.com/a/status/1"),
+                parse=AsyncMock(return_value=_parsed_result()),
+            ),
         ),
         patch.object(guest_mod.persistent_cache, "get", AsyncMock(return_value=cached)),
         patch.object(
@@ -105,25 +114,28 @@ def test_cache_miss_falls_through_to_the_pipeline():
 # ── guest 的处理过程 ───────────────────────────────────────────────────
 #
 # guest 消息就是一条 inline 消息 (SentGuestMessage: "inline message sent by a guest
-# bot"), 所以进度载体就是它自己: 先发占位拿 inline_message_id, 再一路编辑到结果。
+# bot"), 所以**首帧那条消息本身就是句柄的来源**: answer 出去 -> 拿
+# `SentGuestMessage.inline_message_id` -> 用它与 inline 同构地编辑到结果。
 #
 # 以前是在**召唤消息上 reply** 一条状态消息 —— 但 guest 场景 bot 通常不在召唤群里
 # (这正是 guest 模式的意义), 那条 reply 发不出去 (实测 400 CHANNEL_PRIVATE),
 # 于是 guest 从来没有处理过程、只有结果。用户报的就是这个。
+#
+# 2026-10-09: 首帧内容从「解 析 中」占位改成**解析到的文字排版** —— 与私聊/群一致。
 
 
 def test_progress_uses_the_guest_message_itself_as_its_carrier():
-    """进度载体是 guest 消息自己 —— 缓存命中时首帧就是结果, 所以还没有载体 (None)
+    """进度句柄来自 guest 消息本身 —— 缓存命中时首帧就是结果, 不需要句柄 (None)
 
-    （载体由 ``InlineStatusReporter._ensure_carrier`` 在"第一次真要发内容"时建立,
-    不在解析前发占位。见 ``test_the_first_frame_is_the_parsed_layout``。）
+    （现场解析路径的句柄来自 answer 首帧，见
+    ``test_the_first_frame_is_sent_before_the_pipeline_starts``。）
     """
     _pipeline, deliver, _ok = _run_answer(cached=_cached_entry(), pipeline_should_run=False)
     assert deliver.await_args.args[2] is None
 
 
-def test_the_reporter_can_build_its_carrier_on_first_send():
-    """现场解析路径: reporter 没有载体但带 ``first_send`` —— 首帧由它现场建立"""
+def test_the_parse_step_hands_the_handle_to_the_reporter():
+    """解析出的句柄交给 reporter —— 它只负责编辑, 与 inline 完全同构"""
     seen: dict = {}
 
     @asynccontextmanager
@@ -144,13 +156,15 @@ def test_the_reporter_can_build_its_carrier_on_first_send():
         patch.object(
             guest_mod,
             "SettingsService",
-            return_value=SimpleNamespace(get_config_by_user=AsyncMock(return_value=SimpleNamespace(video_cover=False))),
+            return_value=SimpleNamespace(
+                get_config_by_user=AsyncMock(
+                    return_value=SimpleNamespace(
+                        video_cover=False, hide_title=False, hide_desc=False, hide_source=False, hide_error=False
+                    )
+                )
+            ),
         ),
-        patch.object(
-            guest_mod,
-            "ParseService",
-            return_value=SimpleNamespace(get_raw_url=AsyncMock(return_value="https://x.com/a/status/1")),
-        ),
+        patch.object(guest_mod, "ParseService", return_value=_service()),
         patch.object(guest_mod.persistent_cache, "get", AsyncMock(return_value=None)),
         patch.object(guest_mod, "ParsePipeline", pipeline),
         patch.object(guest_mod, "_deliver", AsyncMock()),
@@ -159,8 +173,8 @@ def test_the_reporter_can_build_its_carrier_on_first_send():
 
     reporter = seen["reporter"]
     assert isinstance(reporter, InlineStatusReporter)
-    assert reporter.inline_message_id is None, "载体不该在解析前就存在"
-    assert reporter._first_send is not None, "没有 first_send 就没法建立载体"
+    # 句柄就是 answer 首帧拿到的那一个, reporter 只是它的使用者 (与 inline 同构)
+    assert reporter._mid == MID
 
 
 def test_deliver_edits_the_guest_message():
@@ -213,30 +227,39 @@ def _parsed_result() -> ImageParseResult:
     return result
 
 
-def _first_frame(answer_calls: list[dict]) -> str:
+def _service():
+    """假的 ParseService: 取 raw_url 与解析都给结果 (解析现在由 _answer 自己调)。"""
+    return SimpleNamespace(
+        get_raw_url=AsyncMock(return_value="https://x.com/a/status/1"),
+        parse=AsyncMock(return_value=_parsed_result()),
+    )
+
+
+def _first_frame_markdown(answer_calls: list) -> str:
     """第一次 answer_guest_query 发出的 markdown。"""
     assert answer_calls, "guest 一条消息都没发出去"
-    content = answer_calls[0]["result"].input_message_content
-    return content.rich_message.markdown
+    return answer_calls[0].input_message_content.rich_message.markdown
 
 
-def test_the_first_frame_is_the_parsed_layout():
-    """**核心**: 首帧 = 解析到的文字排版 (标题/正文) + 页脚「下载中」, 不是「解析中」"""
-    answer_calls: list[dict] = []
+def _run_guest(answer_calls: list, events: list, *, mid: str | None = MID):
+    """跑一次真实 `_answer`（解析用替身、流水线用会真调 reporter 的替身）。"""
 
     async def _answer_guest_query(_qid, result, **kw):  # noqa: ANN001, ANN202
-        answer_calls.append({"result": result})
-        return SimpleNamespace(inline_message_id=MID)
+        events.append("answer")
+        answer_calls.append(result)
+        return SimpleNamespace(inline_message_id=mid)
 
     @asynccontextmanager
     async def fake_session():
         yield None
 
     class _Pipeline:
-        """真实调用 reporter 的流水线替身: 解析完 -> report_result(下载中) 就结束。"""
+        """流水线替身: 记录收到的 parse_result, 并让 reporter 走一次"下载中"就结束。"""
 
         def __init__(self, *a, **kw):
+            events.append("pipeline")
             self._reporter = a[2]
+            seen["parse_result"] = kw.get("parse_result")
 
         async def run(self):
             await self._reporter.report_result(_parsed_result(), "下 载 中...")
@@ -248,6 +271,7 @@ def test_the_first_frame_is_the_parsed_layout():
         def __exit__(self, *a):
             return False
 
+    seen: dict = {}
     cli = SimpleNamespace(answer_guest_query=AsyncMock(side_effect=_answer_guest_query))
     with (
         patch.object(guest_mod, "get_session", fake_session),
@@ -257,25 +281,96 @@ def test_the_first_frame_is_the_parsed_layout():
             return_value=SimpleNamespace(
                 get_config_by_user=AsyncMock(
                     return_value=SimpleNamespace(
-                        video_cover=False, hide_title=False, hide_desc=False, hide_source=False
+                        video_cover=False, hide_title=False, hide_desc=False, hide_source=False, hide_error=False
                     )
                 )
             ),
         ),
-        patch.object(
-            guest_mod,
-            "ParseService",
-            return_value=SimpleNamespace(get_raw_url=AsyncMock(return_value="https://x.com/a/status/1")),
-        ),
+        patch.object(guest_mod, "ParseService", return_value=_service()),
         patch.object(guest_mod.persistent_cache, "get", AsyncMock(return_value=None)),
         patch.object(guest_mod, "ParsePipeline", _Pipeline),
         patch.object(guest_mod, "_deliver", AsyncMock()),
     ):
         asyncio.run(guest_mod._answer(cli, "q1", "https://x.com/a/status/1", 1, "zh-hans"))
+    return seen
 
-    markdown = _first_frame(answer_calls)
+
+def test_the_first_frame_is_the_parsed_layout():
+    """**核心**: 第一次 answer 出去的就是解析到的文字排版 (标题/正文 + 页脚「下载中」)"""
+    answer_calls: list = []
+    _run_guest(answer_calls, [])
+
+    markdown = _first_frame_markdown(answer_calls)
     assert "解析到的正文" in markdown, markdown
     assert "解析到的标题" in markdown, markdown
-    assert "下 载 中" in markdown, markdown          # 页脚的处理状态保留
-    assert "解 析 中" not in markdown, markdown      # 首帧不再有「解析中」
-    assert "解 析 中" not in " ".join(str(c) for c in answer_calls)
+    assert "下 载 中" in markdown, markdown           # 页脚的处理状态保留
+    assert "解 析 中" not in markdown, markdown       # 首帧不再是「解析中」
+
+
+def test_the_first_frame_exactly_matches_the_first_progress_frame():
+    """首帧与流水线随后要发的「下载中」逐字相同 —— 所以那次编辑被判重跳过, 不闪版"""
+    answer_calls: list = []
+    _run_guest(answer_calls, [])
+    assert _first_frame_markdown(answer_calls).count("下 载 中") == 1
+
+
+def test_the_first_frame_is_sent_before_the_pipeline_starts():
+    """**顺序**: 先 answer 首帧拿句柄, 再用这个句柄构造 reporter 跑下载 —— 与 inline 同构"""
+    events: list = []
+    _run_guest([], events)
+    assert events == ["answer", "pipeline"], events
+
+
+def test_the_pipeline_gets_the_already_parsed_result():
+    """解析只做一次: 结果传给流水线, 不让它再解析一遍"""
+    seen = _run_guest([], [])
+    assert seen["parse_result"] is not None
+    assert seen["parse_result"].content == "解析到的正文"
+
+
+def test_without_a_handle_the_pipeline_gets_a_null_reporter():
+    """首帧发不出去 (拿不到句柄) 时退回静默, 解析照跑 —— 结果由 _deliver 兜底发出"""
+    seen: dict = {}
+    answer_calls: list = []
+
+    async def _answer_guest_query(_qid, result, **kw):  # noqa: ANN001, ANN202
+        answer_calls.append(result)
+        return SimpleNamespace(inline_message_id=None)  # 拿不到句柄
+
+    @asynccontextmanager
+    async def fake_session():
+        yield None
+
+    def _pipeline(*a, **kw):
+        seen["reporter"] = a[2]
+        ctx = MagicMock()
+        ctx.run = AsyncMock(return_value=None)
+        ctx.__enter__ = MagicMock(return_value=ctx)
+        ctx.__exit__ = MagicMock(return_value=False)
+        return ctx
+
+    with (
+        patch.object(guest_mod, "get_session", fake_session),
+        patch.object(
+            guest_mod,
+            "SettingsService",
+            return_value=SimpleNamespace(
+                get_config_by_user=AsyncMock(
+                    return_value=SimpleNamespace(
+                        video_cover=False, hide_title=False, hide_desc=False, hide_source=False, hide_error=False
+                    )
+                )
+            ),
+        ),
+        patch.object(guest_mod, "ParseService", return_value=_service()),
+        patch.object(guest_mod.persistent_cache, "get", AsyncMock(return_value=None)),
+        patch.object(guest_mod, "ParsePipeline", _pipeline),
+        patch.object(guest_mod, "_deliver", AsyncMock()),
+        patch.object(
+            guest_mod, "InlineStatusReporter", side_effect=AssertionError("没有句柄时不该构造 reporter")
+        ),
+    ):
+        cli = SimpleNamespace(answer_guest_query=AsyncMock(side_effect=_answer_guest_query))
+        asyncio.run(guest_mod._answer(cli, "q1", "https://x.com/a/status/1", 1, "zh-hans"))
+
+    assert isinstance(seen["reporter"], guest_mod._NullReporter)

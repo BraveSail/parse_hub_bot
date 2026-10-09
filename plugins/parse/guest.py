@@ -30,7 +30,7 @@ from pyrogram.types import (
 from db import get_session
 from i18n import t_
 from log import logger
-from plugins.helpers import build_rich_markdown, markdown_needs_blocks
+from plugins.helpers import build_progress_markdown, build_rich_markdown, format_label, markdown_needs_blocks
 from plugins.parse.access import access_gate
 from plugins.parse.covers import prepare_video_thumbs
 from plugins.parse.inline_rich import (
@@ -40,7 +40,8 @@ from plugins.parse.inline_rich import (
 )
 from plugins.parse.reporters import InlineStatusReporter
 from plugins.parse.rich_blocks import markdown_to_blocks
-from services import ParsePipeline, ParseService, SettingsService, UserService
+from repo.settings import SettingsConfig
+from services import ParsePipeline, ParseService, SettingsService, StatusReporter, UserService
 from services.cache import persistent_cache
 from utils.helpers import to_list, with_request_id
 
@@ -73,18 +74,33 @@ def _result(title: str, description: str, markdown: str, media: list | None = No
 async def _send_first_frame(
     cli: Client,
     guest_query_id: str,
-    markdown: str,
-    parse_result: object | None,
+    parse_result: object,
+    *,
+    config: SettingsConfig,
+    locale: str,
+    spoiler_tag: str,
+    raw_url: str,
     _t: PreLocaleSelector,
 ) -> str | None:
-    """把**首帧**发进 guest 通道, 返回它的 ``inline_message_id`` (拿不到则 None)。
+    """**首帧**：解析完就把解析到的文字排版发进 guest 通道，返回它的句柄。
 
-    guest 消息就是一条 inline 消息, 所以"发出这条消息"既是回复本身、也是进度载体
-    —— 于是**不需要**先发一条「解 析 中」占位: 首帧内容就是解析到的文字排版
-    (页脚带处理状态), 与私聊/群一模一样。
+    guest 必须自己发这条消息（inline 的首帧是客户端发的），而 ``answer_guest_query``
+    返回的 ``SentGuestMessage.inline_message_id`` 就是 ``EditInlineBotMessage`` 要的句柄
+    —— 所以这一步同时完成两件事：**回复本身**与**拿到后续编辑的句柄**。
+    内容带页脚「下载中」，媒体等下载完再编辑上去。
 
-    ``parse_result`` 为 None 时 (例如一上来就解析失败) 用错误文本当首帧。
+    与 inline 同构：inline 是"回调给句柄 → 编辑"，这里是"answer 首帧 → 拿句柄 → 编辑"。
+    区别只在于句柄的来源，reporter 那边一视同仁。
     """
+    markdown = build_progress_markdown(
+        parse_result,
+        progress=format_label(_t("下 载 中...")),
+        config=config,
+        lang=locale,
+        view_label=_t("查看"),
+        spoiler_tag=spoiler_tag,
+        raw_url=raw_url,
+    )
     title = _clip(getattr(parse_result, "title", None), 90) or _clip(getattr(parse_result, "content", None), 90) or "-"
     description = _clip(getattr(parse_result, "content", None), 200)
     try:
@@ -95,6 +111,25 @@ async def _send_first_frame(
     mid = getattr(sent, "inline_message_id", None)
     logger.debug(f"guest 首帧已发出: inline_message_id={mid}")
     return mid
+
+
+class _NullReporter:
+    """首帧发不出去时的兜底: 拿不到句柄就没法编辑, 进度只能丢弃 (结果照发)。"""
+
+    async def report(self, text: str) -> None:  # noqa: ARG002
+        return
+
+    async def report_progress(self, text: str) -> None:  # noqa: ARG002
+        return
+
+    async def report_result(self, parse_result: object, text: str) -> None:  # noqa: ARG002
+        return
+
+    async def report_error(self, stage: str, error: Exception) -> None:  # noqa: ARG002
+        logger.debug(f"guest 流水线错误: stage={stage} error={error}")
+
+    async def dismiss(self) -> None:
+        return
 
 
 def _denied_result(text: str) -> InlineQueryResultArticle:
@@ -180,23 +215,8 @@ async def _answer(
     service = ParseService()
     raw_url = await service.get_raw_url(url)
 
-    # 进度载体 = guest 消息自己, 但**不在解析前发**: 载体在"第一次真要发内容"时才建立
-    # (``InlineStatusReporter._ensure_carrier`` → ``_send_first_frame``)。于是首帧就是
-    # 解析到的文字排版, 不再有「解 析 中」占位 (用户要求「首帧取消掉解析中」)。
-    # 载体建立失败时后续进度静默丢弃, 结果由 `_deliver` 走 answer 直发 —— 不会丢。
-    reporter = InlineStatusReporter(
-        cli,
-        None,
-        t=_t,
-        user_config=config,
-        raw_url=raw_url,
-        spoiler_tag=spoiler_tag,
-        first_send=lambda markdown, parse_result: _send_first_frame(
-            cli, guest_query_id, markdown, parse_result, _t
-        ),
-    )
-
     # ① 缓存命中: 直接用 file_id 发, 跳过解析/下载/转码/上传 (与私聊/群/inline 一致)
+    # 首帧就是结果本身 —— 没有后续编辑, 所以不需要句柄
     if cached := await persistent_cache.get(raw_url):
         logger.debug(f"guest: file_id 缓存命中, 直接发送 url={raw_url}")
         markdown, cached_media, cached_blocks = build_cached_rich_content(
@@ -227,7 +247,47 @@ async def _answer(
         )
         return True
 
-    with ParsePipeline(url, raw_url, reporter, singleflight=False, t=_t) as pipeline:
+    # ② 解析 —— 与 inline 同构: **先拿到内容, 才发第一条消息**
+    # (以前是先发一条「解 析 中」占位再编辑成内容, 用户要求首帧直接是解析结果)
+    try:
+        parse_result = await service.parse(url)
+    except Exception as e:  # noqa: BLE001 - 解析失败走单独一条错误消息, 没有可编辑的句柄
+        logger.error(f"guest 解析失败: url={url} error={type(e).__name__}: {e}")
+        if not config.hide_error:
+            text = _t(f"{format_label('解析错误:')} \n```\n{e}```")
+            await cli.answer_guest_query(guest_query_id, _denied_result(text))
+        return None
+    if parse_result is None:
+        logger.warning(f"guest 解析无结果: url={url}")
+        return None
+
+    # ③ 首帧 = 解析到的文字排版 (页脚「下载中」), answer 出去并拿到句柄
+    mid = await _send_first_frame(
+        cli,
+        guest_query_id,
+        parse_result,
+        config=config,
+        locale=locale,
+        spoiler_tag=spoiler_tag,
+        raw_url=raw_url,
+        _t=_t,
+    )
+    # ④ 句柄就位后 reporter 与 inline 完全同构 (只负责编辑); 首帧没发出去就退回静默
+    reporter: StatusReporter = (
+        InlineStatusReporter(
+            cli,
+            mid,
+            t=_t,
+            user_config=config,
+            raw_url=raw_url,
+            spoiler_tag=spoiler_tag,
+        )
+        if mid
+        else _NullReporter()
+    )
+
+    # ⑤ 下载/处理: 解析结果传进流水线 (不重复解析), 首帧之后由 reporter 一路编辑
+    with ParsePipeline(url, raw_url, reporter, parse_result=parse_result, singleflight=False, t=_t) as pipeline:
         result = await pipeline.run()
         if result is None:
             logger.warning(f"guest 解析失败: url={url}")
@@ -265,8 +325,8 @@ async def _answer(
         await _deliver(
             cli,
             guest_query_id,
-            # 载体由 reporter 在首帧(解析完那一条)时建立, 结果编辑进同一条
-            reporter.inline_message_id,
+            # 首帧(answer)拿到的句柄: 结果编辑进同一条消息
+            mid,
             title=title,
             description=description,
             markdown=markdown,
