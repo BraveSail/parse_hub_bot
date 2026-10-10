@@ -1,21 +1,67 @@
 import html
 import re
 from collections.abc import Sequence
+from pathlib import Path
 from urllib.parse import quote
 
 from ...provider_api.weibo import MediaType, MixMediaInfoItem, PicInfo, WeiboAPI, WeiboTVContent
 from ...types import (
     AniRef,
+    DownloadResult,
     ImageParseResult,
     ImageRef,
     LivePhotoRef,
     MultimediaParseResult,
+    ParseResult,
     Platform,
+    ProgressCallback,
     VideoParseResult,
     VideoRef,
 )
 from ...utils.helpers import image_ext_from_url
 from ..base.base import BaseParser
+
+#: 微博的图床（``*.sinaimg.cn``）与视频 CDN（``*.weibocdn.com``）都按 Referer 防盗链:
+#: 不带 Referer 的下载**稳定** 403（实测 2026-10-10: 火山引擎 CDN ``deny code 68`` /
+#: ``x-ban: MISS`` 响应；带 ``Referer: https://weibo.com`` 同一 URL 立刻 200/206）。
+#: 用站点根而不是具体帖子页 —— 实测 ``https://weibo.com`` 与 ``https://m.weibo.cn/``
+#: 都可放行，根地址与内容无关、更不易失效。
+REFERER = "https://weibo.com"
+
+
+class WeiboParseResult(ParseResult):
+    """微博媒体下载要带 Referer（见 ``REFERER`` 的说明）。"""
+
+    async def _do_download(
+        self,
+        *,
+        output_dir: Path,
+        callback: ProgressCallback | None = None,
+        callback_args: tuple = (),
+        callback_kwargs: dict | None = None,
+        proxy: str | None = None,
+        headers: dict | None = None,
+        connections: int = 4,
+    ) -> DownloadResult:
+        headers = {"Referer": REFERER}
+        return await super()._do_download(
+            output_dir=output_dir,
+            callback=callback,
+            callback_args=callback_args,
+            callback_kwargs=callback_kwargs,
+            proxy=proxy,
+            headers=headers,
+            connections=connections,
+        )
+
+
+class WeiboVideoParseResult(WeiboParseResult, VideoParseResult): ...
+
+
+class WeiboImageParseResult(WeiboParseResult, ImageParseResult): ...
+
+
+class WeiboMultimediaParseResult(WeiboParseResult, MultimediaParseResult): ...
 
 
 class WeiboParser(BaseParser):
@@ -24,10 +70,12 @@ class WeiboParser(BaseParser):
     __match__ = r"^(http(s)?://)((m\.|video\.|)weibo\.(com|cn)/(?!(u/)).+|mapp\.api\.weibo\.cn/fx/.+)"
     __reserved_parameters__ = ["fid"]
 
-    async def _do_parse(self, raw_url: str) -> MultimediaParseResult | VideoParseResult | ImageParseResult:
+    async def _do_parse(
+        self, raw_url: str
+    ) -> WeiboMultimediaParseResult | WeiboVideoParseResult | WeiboImageParseResult:
         weibo = await WeiboAPI(self.proxy).parse(raw_url)
         if isinstance(weibo, WeiboTVContent):
-            return VideoParseResult(
+            return WeiboVideoParseResult(
                 content=self.f_text(weibo.text),
                 author_name=weibo.author_name,
                 video=VideoRef(
@@ -44,7 +92,7 @@ class WeiboParser(BaseParser):
         if not data.pic_infos and data.page_info and data.page_info.object_type == MediaType.VIDEO:
             playback = data.page_info.media_info and data.page_info.media_info.playback
             if playback:
-                return VideoParseResult(
+                return WeiboVideoParseResult(
                     content=text,
                     author_name=data.author_name,
                     video=VideoRef(
@@ -64,7 +112,7 @@ class WeiboParser(BaseParser):
         elif data.mix_media_info and data.mix_media_info.items:
             media_info = list(data.mix_media_info.items)
         if not media_info:
-            return MultimediaParseResult(content=text, media=[], author_name=data.author_name)
+            return WeiboMultimediaParseResult(content=text, media=[], author_name=data.author_name)
 
         for i in media_info:
             match i.type:
@@ -112,8 +160,8 @@ class WeiboParser(BaseParser):
                         )
         if all((isinstance(m, ImageRef) or isinstance(m, LivePhotoRef)) for m in media):
             photos = [m for m in media if isinstance(m, ImageRef | LivePhotoRef)]
-            return ImageParseResult(content=text, photo=photos, author_name=data.author_name)
-        return MultimediaParseResult(content=text, media=media, author_name=data.author_name)
+            return WeiboImageParseResult(content=text, photo=photos, author_name=data.author_name)
+        return WeiboMultimediaParseResult(content=text, media=media, author_name=data.author_name)
 
     def f_text(self, text: str | None, topics: Sequence[str] | None = None) -> str:
         # text = re.sub(r'<a  href="https://video.weibo.com.*?>.*的微博视频.*</a>', "", text)
