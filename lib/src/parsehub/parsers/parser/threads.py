@@ -22,8 +22,18 @@ class ThreadsParser(BaseParser):
         reply_media = ThreadsParser._to_refs(post.reply_to.media if post.reply_to else None)
         media.extend(reply_media)
         quote = ThreadsParser._build_quote(post)
+        # 帖子附带的**长文块**（caption 底下的"阅读更多"内容）渲染成**引用块**,
+        # 排在正文之后（用户要求:「这个长文改成引用块」）。走公共 helper ——
+        # 与其它平台的引用块同形（整块斜体）。
+        snippet_quote = format_quote_block(post.snippet) if post.snippet else ""
+        # 引用块的角色按出现顺序声明: 被回复帖在前（reply），长文块在后（quoted）——
+        # 渲染层据此归位，不靠位置猜。
+        roles = (["reply"] if quote else []) + (["quoted"] if snippet_quote else [])
+        # 三段按序拼接: 被回复帖引用块 → caption 正文 → 长文引用块。
+        # 每段各自 strip（``format_quote_block`` 末尾自带空行，直接 join 会堆出多余空行）。
+        content = "\n\n".join(p for p in (quote.strip(), post.content.strip(), snippet_quote.strip()) if p)
         return MultimediaParseResult(
-            content=f"{quote}{post.content}",
+            content=content,
             media=media,
             author_name=post.author_name,
             author_handle=post.author_handle,
@@ -33,7 +43,7 @@ class ThreadsParser(BaseParser):
             like_count=post.like_count,
             reply_media_count=len(reply_media),
             # 引用块的角色（被回复帖在最前）—— 渲染层据此归位媒体, 不再靠位置
-            quote_roles=["reply"] if quote else [],
+            quote_roles=roles,
         )
 
     @staticmethod

@@ -242,6 +242,9 @@ class ThreadsPost:
     published_at: datetime | None = None
     view_count: int | None = None
     like_count: int | None = None
+    #: 帖子附带的**长文块**（caption 底下的"阅读更多"内容）—— 与 caption 分开存，
+    #: 让 parser 决定它的渲染形态（现在是引用块，见 threads parser）。
+    snippet: str = ""
 
     @classmethod
     def from_graphql(cls, post: dict[str, Any]) -> ThreadsPost:
@@ -252,14 +255,16 @@ class ThreadsPost:
         # ``snippet_attachment_info`` 里, 而 ``caption.text`` 只是开头一句 ——
         # 页面上表现为 6 行截断 + "Read more"。不读它就会静默丢正文的后半段
         # 甚至只丢那一句之外的全部（用户报「抓不到下方内容」）。
+        # 与 caption **分开存**（``snippet`` 字段）：渲染形态（引用块）由 parser 决定，
+        # provider 只负责把两块文字都取出来。
         snippet = cls._snippet_text(post)
-        if snippet:
-            content = f"{content}\n\n{snippet}" if content else snippet
         # 文字级遮罩: threads 的 `styling_info.is_spoiler` 标在某一片段上
         # (用户报「识别不到遮罩文字」——那条帖子里有一整行是遮罩的)。
         # 映射成富文本的行内遮罩语法 `||…||` (实测服务端解析成 RichTextSpoiler)。
         # caption 与 snippet 两处的片段都要看（长文里也可能有遮罩行）。
         content = cls._apply_text_spoilers(content, post)
+        if snippet:
+            snippet = cls._apply_text_spoilers(snippet, post)
         # taken_at 是 unix 秒; 浏览量不在该 GraphQL 响应里 (页面上的 views 另走接口), 因此留 None
         return cls(
             content=content,
@@ -269,6 +274,7 @@ class ThreadsPost:
             published_at=to_datetime(post.get("taken_at")),
             view_count=to_int(post.get("view_count")),
             like_count=to_int(post.get("like_count")),
+            snippet=snippet,
         )
 
     @staticmethod

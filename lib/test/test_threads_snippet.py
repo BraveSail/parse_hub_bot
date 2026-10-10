@@ -9,16 +9,21 @@ Read more）」，而 GraphQL 的 ``caption.text`` **只有那一句** —— �
   （页面 SSR 也有，但那条路要抓 HTML —— 生产配了 cookie，走 GraphQL 零额外请求）。
 - fixture ``threads_snippet_post.json`` 是从真实响应裁剪的（caption 14 字 + 长文 623 字）。
 
-拼法：``caption.text`` 在前、长文在后、中间一个空行（与页面上的从上到下一次序一致）。
-拿不到 snippet 时**逐字不变**（老行为），不能因为加了它就让别的帖子变样。
+两个契约：
+1. ``ThreadsPost`` 里 caption 与长文**分开存**（``content`` / ``snippet``）——
+   渲染形态由 parser 决定。
+2. parser 把长文渲染成**引用块**放在正文之后（用户要求「这个长文改成引用块」），
+   并在 ``quote_roles`` 里声明 ``quoted``。
 """
 
+import asyncio
 import json
 from pathlib import Path
 
 import pytest
 
-from parsehub.provider_api.threads import ThreadsPost
+from parsehub.parsers.parser.threads import ThreadsParser
+from parsehub.provider_api.threads import ThreadsAPI, ThreadsPost
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -33,15 +38,17 @@ def _load_target() -> dict:
     return next(i["post"] for i in items if i["post"]["code"] == "DeTKrdrGjrZ")
 
 
-def test_the_long_snippet_is_attached_after_the_caption():
-    """**核心**: 长文（623 字）必须出现在正文里，且在 caption 之后。"""
+# ── provider: caption 与长文分开存 ──────────────────────────────────────
+
+def test_the_post_exposes_the_snippet_separately():
+    """**核心**: 长文（623 字）出现在 ``snippet`` 字段里，caption 留在 content。"""
     post = ThreadsPost.from_graphql(_load_target())
 
-    assert post.content.startswith(CAPTION), post.content[:80]
-    assert LONG_HEAD in post.content, "长文开头丢了（snippet 没被读取）"
-    assert LONG_TAIL in post.content, "长文结尾丢了（只接了半截）"
-    # 顺序：caption → 空行 → 长文
-    assert post.content.index(CAPTION) < post.content.index(LONG_HEAD)
+    assert post.content == CAPTION, post.content[:80]
+    assert LONG_HEAD in post.snippet, "长文开头丢了（snippet 没被读取）"
+    assert LONG_TAIL in post.snippet, "长文结尾丢了（只接了半截）"
+    # 长文不进 content（渲染形态由 parser 决定）
+    assert LONG_HEAD not in post.content
 
 
 def test_the_snippet_survives_intact():
@@ -50,12 +57,11 @@ def test_the_snippet_survives_intact():
     raw = target["text_post_app_info"]["snippet_attachment_info"]["text_fragments"]["fragments"][0]["plaintext"]
     post = ThreadsPost.from_graphql(target)
 
-    assert raw in post.content, "长文没有逐字保留"
-    assert len(post.content) >= len(raw) + len(CAPTION)
+    assert raw in post.snippet, "长文没有逐字保留"
 
 
 def test_without_a_snippet_the_content_is_unchanged():
-    """没有 snippet 的帖子：正文**逐字等于 caption**（老行为不变）。"""
+    """没有 snippet 的帖子：content 逐字等于 caption、snippet 为空（老行为不变）。"""
     post = ThreadsPost.from_graphql(
         {
             "code": "X",
@@ -65,6 +71,7 @@ def test_without_a_snippet_the_content_is_unchanged():
         }
     )
     assert post.content == "普通帖子"
+    assert post.snippet == ""
 
 
 def test_a_null_snippet_does_not_break_the_post():
@@ -83,23 +90,7 @@ def test_a_null_snippet_does_not_break_the_post():
     ):
         post = ThreadsPost.from_graphql({**base, "text_post_app_info": tpa})
         assert post.content == "只有正文", tpa
-
-
-def test_a_caption_less_post_still_shows_the_snippet():
-    """caption 为空时也应发出长文（不能因为空正文把整块吞掉）。"""
-    post = ThreadsPost.from_graphql(
-        {
-            "code": "X",
-            "caption": {"text": ""},
-            "user": {"username": "u", "full_name": "U"},
-            "text_post_app_info": {
-                "snippet_attachment_info": {
-                    "text_fragments": {"fragments": [{"plaintext": "只有长文"}]}
-                }
-            },
-        }
-    )
-    assert post.content == "只有长文"
+        assert post.snippet == "", tpa
 
 
 def test_spoiler_marking_still_works_with_the_snippet():
@@ -118,6 +109,83 @@ def test_spoiler_marking_still_works_with_the_snippet():
         }
     )
     assert "||秘密||" in post.content, post.content
+
+
+# ── parser: 长文渲染成引用块 ────────────────────────────────────────────
+
+def _parse_via_fixture(monkeypatch):
+    payload = json.loads((FIXTURES / "threads_snippet_post.json").read_text(encoding="utf-8"))
+
+    async def fake_post_graphql(self, *, doc_id, variables):  # noqa: ANN001, ARG001
+        return payload
+
+    monkeypatch.setattr(ThreadsAPI, "_post_graphql", fake_post_graphql)
+    return asyncio.run(ThreadsParser()._do_parse("https://www.threads.com/@snowmaple_official/post/DeTKrdrGjrZ"))
+
+
+def test_the_snippet_becomes_a_quote_block_after_the_body(monkeypatch):
+    """**核心**: 长文以 ``> `` 引用块出现，位置在正文之后。"""
+    result = _parse_via_fixture(monkeypatch)
+    content = result.content
+
+    # 正文（caption）仍在
+    assert CAPTION in content, content[:200]
+    # 长文在引用块里（每行 > 开头；公共 helper 会包 <i>）
+    lines = [ln for ln in content.splitlines() if LONG_HEAD in ln]
+    assert lines, "长文开头不在任何行里"
+    assert lines[0].lstrip().startswith(">"), f"长文不在引用块里: {lines[0][:80]!r}"
+    assert "<i>" in lines[0], "引用块应整块斜体（公共 helper 的形态）"
+    # caption 在长文之前（正文在前、引用块在后）
+    assert content.index(CAPTION) < content.index(LONG_HEAD)
+
+    # 引用块整块都在（首尾行都是 > 前缀）
+    quote_lines = [ln for ln in content.splitlines() if ln.lstrip().startswith(">")]
+    assert any(LONG_TAIL in ln for ln in quote_lines), "长文结尾不在引用块里"
+
+
+def test_the_snippet_quote_role_is_declared(monkeypatch):
+    """``quote_roles`` 声明 ``quoted``（长文块），渲染层据此归位媒体。"""
+    result = _parse_via_fixture(monkeypatch)
+
+    # 这条帖子本身是被回复帖: reply（被回复帖引用块）+ quoted（长文块）
+    assert result.quote_roles == ["reply", "quoted"], result.quote_roles
+
+
+def test_without_a_snippet_no_quote_block_is_added(monkeypatch):
+    """没有长文的帖子：正文里不出现引用块、roles 里不出现 quoted。"""
+    payload = {
+        "data": {
+            "data": {
+                "edges": [
+                    {
+                        "node": {
+                            "thread_items": [
+                                {
+                                    "post": {
+                                        "code": "X1",
+                                        "caption": {"text": "普通帖"},
+                                        "user": {"username": "u", "full_name": "U"},
+                                        "media_type": 19,
+                                        "image_versions2": {"candidates": []},
+                                        "text_post_app_info": {"is_reply": False, "snippet_attachment_info": None},
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    }
+
+    async def fake_post_graphql(self, *, doc_id, variables):  # noqa: ANN001, ARG001
+        return payload
+
+    monkeypatch.setattr(ThreadsAPI, "_post_graphql", fake_post_graphql)
+    result = asyncio.run(ThreadsParser()._do_parse("https://www.threads.com/@u/post/X1"))
+
+    assert ">" not in result.content, result.content
+    assert result.quote_roles == [], result.quote_roles
 
 
 if __name__ == "__main__":
