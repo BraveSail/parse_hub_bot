@@ -65,6 +65,7 @@
 4e9ce9dfe13d: Ukryj tytuł
 4fb5f29ee802: Proszę dołączyć link lub odpowiedzieć na wiadomość
 5348dcac296c: Analiza nie powiodła się
+55374d7b243c: Komentarze
 569c1f28ab00: Pakowanie...
 5861d620c41d: Pobieranie... | {current}/{total}
 5a9f36a77173: Pakuj
@@ -112,7 +113,6 @@ c4638f9eedae: Usunięto z listy dozwolonych
 d2282636abc7: Panel konfiguracji
 d34addb9b2f0: Pamięć podręczna wyczyszczona
 d5631690265c: Nie można rozpoznać celu konfiguracji
-d59c948c471c: Analizowanie...
 d5a73b0c7f2f: Przesyłanie
 7a425880c8d8: 'Wyczyszczono wszystkie pamięci podręczne (Redis): {persistent} trwałych · {result} wyników'
 e14de27e8559: '{target_label}'

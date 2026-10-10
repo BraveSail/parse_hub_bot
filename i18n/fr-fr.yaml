@@ -66,6 +66,7 @@
 4e9ce9dfe13d: Masquer le titre
 4fb5f29ee802: Veuillez ajouter un lien ou répondre à un message
 5348dcac296c: Échec de l'analyse
+55374d7b243c: Commentaires
 569c1f28ab00: Emballage en cours...
 5861d620c41d: Téléchargement en cours... | {current}/{total}
 5a9f36a77173: Emballer
@@ -113,7 +114,6 @@ c4638f9eedae: Retiré de la liste blanche
 d2282636abc7: Panneau de configuration
 d34addb9b2f0: Cache effacé
 d5631690265c: Impossible de reconnaître la cible de configuration
-d59c948c471c: Analyse en cours...
 d5a73b0c7f2f: Téléverser
 7a425880c8d8: 'Tous les caches vidés (Redis) : {persistent} persistants · {result} de résultat'
 e14de27e8559: '{target_label}'

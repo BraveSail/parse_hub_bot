@@ -65,6 +65,7 @@
 4e9ce9dfe13d: Nascondi titolo
 4fb5f29ee802: Per favore aggiungi un link o rispondi a un messaggio
 5348dcac296c: Analisi non riuscita
+55374d7b243c: Commenti
 569c1f28ab00: Impacchettamento in corso...
 5861d620c41d: Download in corso... | {current}/{total}
 5a9f36a77173: Impacchetta
@@ -112,7 +113,6 @@ c4638f9eedae: Rimosso dalla whitelist
 d2282636abc7: Pannello di configurazione
 d34addb9b2f0: Cache cancellata
 d5631690265c: Obiettivo di configurazione non riconosciuto
-d59c948c471c: Analisi in corso...
 d5a73b0c7f2f: Carica
 7a425880c8d8: 'Tutte le cache svuotate (Redis): {persistent} persistenti · {result} di risultato'
 e14de27e8559: '{target_label}'

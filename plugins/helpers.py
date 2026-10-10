@@ -89,7 +89,9 @@ def build_caption(
             like_label=metadata_like_label(parse_result, t_[lang] if lang else t_)
             if (view_label and lang)
             else "",
-            reply_label=t_[lang]("回复") if (view_label and lang) else "",
+            reply_label=metadata_reply_label(parse_result, t_[lang] if lang else t_)
+            if (view_label and lang)
+            else "",
         ),
         max_length=max_length,
         fold_summary=t_[lang]("展开全文") if lang else "",
@@ -160,6 +162,11 @@ _METADATA_TIMEZONE = "Asia/Shanghai"
 #: （页面上的 ``data_likes_list``）才是同一种正反馈，站点自己叫**「状态」**。
 _LIKE_LABEL_KEYS = {Platform.BANGUMI: "状态"}
 
+#: 页脚里"回复"那一段在**各平台叫什么**。微博把自己的回复叫**「评论」** ——
+#: 它的 ``comments_count`` 在站点 UI 上就是"评论"（页脚写「回复」会与用户在微博上
+#: 看到的字样不一致）。其余平台仍是「回复」。
+_REPLY_LABEL_KEYS = {Platform.WEIBO: "评论"}
+
 
 def metadata_like_label(parse_result: AnyParseResult, translate: Callable[[str], str]) -> str:
     """页脚里"点赞"那一段的文案 —— 平台有自己的叫法时用它，否则空串（走默认「点赞」）。
@@ -167,6 +174,12 @@ def metadata_like_label(parse_result: AnyParseResult, translate: Callable[[str],
     ``translate`` 传当前语言的 ``t_``（``t_[lang]``），这样文案跟随用户语言。
     """
     key = _LIKE_LABEL_KEYS.get(getattr(parse_result, "platform", None))
+    return translate(key) if key else ""
+
+
+def metadata_reply_label(parse_result: AnyParseResult, translate: Callable[[str], str]) -> str:
+    """页脚里"回复"那一段的文案 —— 平台有自己的叫法时用它（微博 → 「评论」），否则空串。"""
+    key = _REPLY_LABEL_KEYS.get(getattr(parse_result, "platform", None))
     return translate(key) if key else ""
 
 
@@ -510,7 +523,8 @@ def build_rich_markdown(
         view_label=view_label,
         # 平台自己的叫法优先（bgm 是「状态」）, 否则默认「点赞」
         like_label=metadata_like_label(parse_result, meta_t) if (view_label and lang) else "",
-        reply_label=meta_t("回复") if (view_label and lang) else "",
+        # 微博的回复位叫「评论」（站点自己的字样）, 其余平台默认「回复」
+        reply_label=metadata_reply_label(parse_result, meta_t) if (view_label and lang) else "",
     )
     if metadata:
         footer_parts.append(metadata)

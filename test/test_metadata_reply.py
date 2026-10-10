@@ -1,19 +1,21 @@
-"""页脚统计：bgm 的「状态」与各平台的「回复」。
+"""页脚统计：bgm 的「状态」与各平台的「回复 / 评论」。
 
-页脚形如「时间 · 1,455 查看 · 158 点赞 · 32 回复」。两点要钉住：
+页脚形如「时间 · 1,455 查看 · 158 点赞 · 32 回复」。三点要钉住：
 
 1. **bgm 的 like 位叫「状态」** —— 它没有"点赞"，表情回应（页面的 ``data_likes_list``）
    才是同一种正反馈，站点自己叫「状态」。其余平台仍是「点赞」。
-2. **回复数是通用项** —— 平台拿不到就**不显示**（不预留位置），与浏览量/点赞同一条原则。
+2. **微博的 reply 位叫「评论」** —— 它站点 UI 上就是"评论"（``comments_count``），
+   页脚跟着站点字样。其余平台仍是「回复」。
+3. **回复数是通用项** —— 平台拿不到就**不显示**（不预留位置），与浏览量/点赞同一条原则。
 """
 
 import types
 
 from parsehub import Platform
 
-from plugins.helpers import build_metadata_line, metadata_like_label
+from plugins.helpers import build_metadata_line, metadata_like_label, metadata_reply_label
 
-STATE, REPLY, LIKE = "状态", "回复", "点赞"
+STATE, REPLY, LIKE, COMMENT = "状态", "回复", "点赞", "评论"
 
 
 def _translate(key: str) -> str:
@@ -43,6 +45,42 @@ def test_other_platforms_keep_likes():
 
 def test_a_missing_platform_keeps_likes():
     assert metadata_like_label(types.SimpleNamespace(), _translate) == ""
+
+
+# ── 回复那一段的文案 ───────────────────────────────────────────────────
+
+def test_weibo_calls_it_comments():
+    """**核心**: 微博的 reply 位显示「评论」（站点 UI 的字样，不是「回复」）"""
+    assert metadata_reply_label(_result(Platform.WEIBO), _translate) == COMMENT
+
+
+def test_other_platforms_keep_replies():
+    """其余平台不给自定义文案 ⇒ 渲染层走默认的「回复」"""
+    for platform in (Platform.TWITTER, Platform.LINUXDO, Platform.BILIBILI, Platform.BANGUMI):
+        assert metadata_reply_label(_result(platform), _translate) == "", platform
+
+
+def test_a_missing_platform_keeps_replies():
+    assert metadata_reply_label(types.SimpleNamespace(), _translate) == ""
+
+
+def test_the_two_labels_do_not_bleed_into_each_other():
+    """微博只换 reply 位、bgm 只换 like 位 —— 互不影响"""
+    assert metadata_like_label(_result(Platform.WEIBO), _translate) == ""
+    assert metadata_reply_label(_result(Platform.BANGUMI), _translate) == ""
+
+
+def test_weibo_footer_renders_the_comment_label():
+    """端到端形态：微博页脚是「… · 40 点赞 · 8 评论」"""
+    line = build_metadata_line(
+        like_count=40,
+        reply_count=8,
+        lang="zh-hans",
+        view_label="查看",
+        like_label=metadata_like_label(_result(Platform.WEIBO), _translate),
+        reply_label=metadata_reply_label(_result(Platform.WEIBO), _translate),
+    )
+    assert line == "40 点赞 · 8 评论", line
 
 
 # ── 页脚组装 ───────────────────────────────────────────────────────────

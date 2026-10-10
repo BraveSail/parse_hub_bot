@@ -9,7 +9,7 @@ from typing import Any, Self, Union
 from urllib.parse import unquote, urlparse
 
 from ..utils import http
-from ..utils.helpers import get_author_name
+from ..utils.helpers import get_author_name, to_datetime, to_int
 
 #: 详情 API 的 ``text`` 字段里, 话题**已经是锚点**（服务端给好的）::
 #:
@@ -18,6 +18,31 @@ from ..utils.helpers import get_author_name
 #: 所以话题名（与边界）直接从 ``q=`` 参数解出来即可 —— 不必用正则去正文里猜:
 #: 正文里出现**单个** ``#`` 时正则会误配（``C# 与 Python# 都`` 会被当成一个话题）。
 _TOPIC_ANCHOR_RE = re.compile(r'(//s\.weibo\.com/weibo\?q=%23([^&"]+?)%23)')
+
+#: 播放量/统计数的**中文缩写**形态（TV 接口的 ``play_count``: ``"8.1万"`` / ``"8,340"`` /
+#: ``"1.2亿"``）。youtube 的 ``_compact_count`` 只认 K/M/B，中文站点用这个。
+_WEIBO_COUNT_RE = re.compile(r"\s*([\d,]+(?:\.\d+)?)\s*([万亿]?)")
+
+
+def parse_weibo_count(value: object) -> int | None:
+    """``"8.1万"`` / ``"8,340"`` / ``"1.2亿"`` / ``81818`` → int；识别不了返回 None。
+
+    微博在不同接口用不同形态给同一个数: 详情 API 给**精确整数**（``81818``）、
+    TV 接口给**中文缩写**（``"8.1万"``）。缺失（``None`` / 空串）不是错误, 返回 None
+    让调用点跳过那一段（与其它平台同一条原则）。
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return int(value)
+    match = _WEIBO_COUNT_RE.match(str(value).strip())
+    if not match:
+        return None
+    try:
+        number = float(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    return int(number * {"": 1, "万": 10_000, "亿": 100_000_000}[match.group(2)])
 
 
 class WeiboAPI:
@@ -162,6 +187,11 @@ class MediaInfo:
     duration: int = 0
     prefetch_size: int | None = None
     playback: Playback | None = None
+    #: **视频播放量**（累计）。字段名是微博的历史遗留（``online_users_number`` 听起来像
+    #: "当前在线人数"），实测它就是播放量：与 TV 接口的 ``play_count`` 对照，6 个样本
+    #: 全部吻合（2026-10-10；如 81818 vs "8.1万"、8338 vs "8,340"）。
+    #: 详情 API 给**精确整数**，TV 接口给**中文缩写** —— 两处形态不同但同一个数。
+    online_users_number: int | None = None
 
     @classmethod
     def parse(cls, media_dict: dict) -> Self:
@@ -172,7 +202,13 @@ class MediaInfo:
         prefetch_size = media_dict["prefetch_size"]
         playback_list = media_dict.get("playback_list", [])
         playback = Playback.parse(playback_list[0]) if playback_list else None
-        return cls(format_, mp4_hd_url, mp4_sd_url, duration, prefetch_size, playback)
+        online = to_int(media_dict.get("online_users_number"))
+        return cls(format_, mp4_hd_url, mp4_sd_url, duration, prefetch_size, playback, online)
+
+    @property
+    def play_count(self) -> int | None:
+        """播放量。字段名见 ``online_users_number`` 的说明。"""
+        return self.online_users_number
 
 
 @dataclass
@@ -341,6 +377,25 @@ class Data:
     mix_media_info: MixMediaInfo | None = None
     retweeted_status: "Data | None" = None
     author_name: str = ""
+    #: 发布时间, 微博形态 ``"Sat Oct 10 15:17:21 +0800 2026"``（``published_at`` 属性归一化）
+    created_at: str | None = None
+    #: 点赞数（微博 UI 叫「赞」）。整数或字符串（不同接口形态不同, ``to_int`` 都认）
+    attitudes_count: int | str | None = None
+    #: 评论数（``reply_count`` 属性转 int）
+    comments_count: int | str | None = None
+
+    @property
+    def published_at(self):
+        """发布时间归一化（无时区/or 解析不了 → None, 渲染层跳过那一段）。"""
+        return to_datetime(self.created_at)
+
+    @property
+    def like_count(self) -> int | None:
+        return to_int(self.attitudes_count)
+
+    @property
+    def reply_count(self) -> int | None:
+        return to_int(self.comments_count)
 
     @property
     def topics(self) -> list[dict[str, str]]:
@@ -420,6 +475,13 @@ class WeiboTVContent:
     video_duration: float
     cover_image: str
     author_name: str = ""
+    #: 发布时间: TV 接口给 unix 秒（``real_date``）
+    published_at: Any = None
+    #: 播放量（TV 接口 ``play_count`` 是**中文缩写** ``"8.1万"`` → parse_weibo_count）
+    play_count: int | None = None
+    #: 点赞数 / 评论数（TV 接口是整数；to_int 两种都认）
+    like_count: int | None = None
+    reply_count: int | None = None
 
     @classmethod
     def parse(cls, json_dict: dict) -> Self:
@@ -437,6 +499,10 @@ class WeiboTVContent:
             video_duration=duration_time,
             cover_image=cover_image,
             author_name=get_author_name(cpp.get("user")) or get_author_name(cpp, "author", "screen_name"),
+            published_at=to_datetime(cpp.get("real_date")),
+            play_count=parse_weibo_count(cpp.get("play_count")),
+            like_count=to_int(cpp.get("attitudes_count")),
+            reply_count=to_int(cpp.get("comments_count")),
         )
 
 

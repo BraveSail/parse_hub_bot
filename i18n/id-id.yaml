@@ -65,6 +65,7 @@
 4e9ce9dfe13d: Sembunyikan judul
 4fb5f29ee802: Harap sertakan tautan atau balas pesan
 5348dcac296c: Gagal mengurai
+55374d7b243c: Komentar
 569c1f28ab00: Sedang mengemas...
 5861d620c41d: Sedang mengunduh... | {current}/{total}
 5a9f36a77173: Mengemas
@@ -112,7 +113,6 @@ c4638f9eedae: Dihapus dari daftar putih
 d2282636abc7: Panel konfigurasi
 d34addb9b2f0: Cache dihapus
 d5631690265c: Target konfigurasi tidak dikenali
-d59c948c471c: Sedang memproses...
 d5a73b0c7f2f: Unggah
 7a425880c8d8: 'Semua cache dibersihkan (Redis): {persistent} persisten · {result} hasil'
 e14de27e8559: '{target_label}'

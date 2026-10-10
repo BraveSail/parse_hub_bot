@@ -65,6 +65,7 @@
 4e9ce9dfe13d: Ocultar título
 4fb5f29ee802: Por favor añade un enlace o responde a un mensaje
 5348dcac296c: Error de análisis
+55374d7b243c: Comentarios
 569c1f28ab00: Empaquetando...
 5861d620c41d: Descargando... | {current}/{total}
 5a9f36a77173: Empaquetar
@@ -112,7 +113,6 @@ c4638f9eedae: Eliminado de la lista blanca
 d2282636abc7: Panel de configuración
 d34addb9b2f0: Caché borrada
 d5631690265c: No se puede reconocer el objetivo de configuración
-d59c948c471c: Analizando...
 d5a73b0c7f2f: Subir
 7a425880c8d8: 'Todas las cachés vaciadas (Redis): {persistent} persistentes · {result} de resultado'
 e14de27e8559: '{target_label}'

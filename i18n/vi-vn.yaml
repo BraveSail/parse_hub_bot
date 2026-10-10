@@ -65,6 +65,7 @@
 4e9ce9dfe13d: Ẩn tiêu đề
 4fb5f29ee802: Vui lòng thêm liên kết hoặc trả lời một tin nhắn
 5348dcac296c: Phân tích thất bại
+55374d7b243c: Bình luận
 569c1f28ab00: Đang đóng gói...
 5861d620c41d: Đang tải xuống... | {current}/{total}
 5a9f36a77173: Đóng gói
@@ -113,7 +114,6 @@ c4638f9eedae: Đã xóa khỏi danh sách trắng
 d2282636abc7: Bảng cấu hình
 d34addb9b2f0: Đã xóa bộ nhớ đệm
 d5631690265c: Không thể nhận diện mục tiêu cấu hình
-d59c948c471c: Đang phân tích...
 d5a73b0c7f2f: Tải lên
 7a425880c8d8: 'Đã xóa toàn bộ bộ nhớ đệm (Redis): {persistent} lâu dài · {result} kết quả'
 e14de27e8559: '{target_label}'

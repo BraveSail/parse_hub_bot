@@ -66,6 +66,7 @@
 4e9ce9dfe13d: Titel ausblenden
 4fb5f29ee802: Bitte füge einen Link hinzu oder antworte auf eine Nachricht
 5348dcac296c: Analyse fehlgeschlagen
+55374d7b243c: Kommentare
 569c1f28ab00: Verpacken...
 5861d620c41d: Herunterladen... | {current}/{total}
 5a9f36a77173: Verpacken
@@ -114,7 +115,6 @@ c4638f9eedae: Von der Whitelist entfernt
 d2282636abc7: Konfigurationspanel
 d34addb9b2f0: Cache gelöscht
 d5631690265c: Konfigurationsziel kann nicht erkannt werden
-d59c948c471c: Analysiere...
 d5a73b0c7f2f: Hochladen
 7a425880c8d8: 'Alle Caches geleert (Redis): {persistent} persistent · {result} Ergebnis'
 e14de27e8559: '{target_label}'

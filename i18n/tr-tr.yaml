@@ -64,6 +64,7 @@
 4e9ce9dfe13d: Başlığı Gizle
 4fb5f29ee802: Lütfen bir link ekleyin veya bir mesaja yanıt verin
 5348dcac296c: Ayrıştırma başarısız
+55374d7b243c: Yorumlar
 569c1f28ab00: Paketleniyor...
 5861d620c41d: İndiriliyor... | {current}/{total}
 5a9f36a77173: Paketle
@@ -112,7 +113,6 @@ c4638f9eedae: İzin listesinden çıkarıldı
 d2282636abc7: Yapılandırma paneli
 d34addb9b2f0: Önbellek temizlendi
 d5631690265c: Yapılandırma hedefi tanınamadı
-d59c948c471c: Çözülüyor...
 d5a73b0c7f2f: Yükle
 7a425880c8d8: 'Tüm önbellekler temizlendi (Redis): {persistent} kalıcı · {result} sonuç'
 e14de27e8559: '{target_label}'

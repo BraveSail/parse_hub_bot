@@ -78,6 +78,10 @@ class WeiboParser(BaseParser):
             return WeiboVideoParseResult(
                 content=self.f_text(weibo.text),
                 author_name=weibo.author_name,
+                published_at=weibo.published_at,
+                view_count=weibo.play_count,
+                like_count=weibo.like_count,
+                reply_count=weibo.reply_count,
                 video=VideoRef(
                     url=weibo.video_url,
                     thumb_url=weibo.cover_image,
@@ -90,11 +94,16 @@ class WeiboParser(BaseParser):
         media: list[VideoRef | ImageRef | LivePhotoRef | AniRef] = []
 
         if not data.pic_infos and data.page_info and data.page_info.object_type == MediaType.VIDEO:
-            playback = data.page_info.media_info and data.page_info.media_info.playback
+            page_media = data.page_info.media_info
+            playback = page_media and page_media.playback
             if playback:
                 return WeiboVideoParseResult(
                     content=text,
                     author_name=data.author_name,
+                    published_at=data.published_at,
+                    view_count=page_media.play_count if page_media else None,
+                    like_count=data.like_count,
+                    reply_count=data.reply_count,
                     video=VideoRef(
                         url=playback.url,
                         thumb_url=data.page_info.page_pic,
@@ -112,7 +121,14 @@ class WeiboParser(BaseParser):
         elif data.mix_media_info and data.mix_media_info.items:
             media_info = list(data.mix_media_info.items)
         if not media_info:
-            return WeiboMultimediaParseResult(content=text, media=[], author_name=data.author_name)
+            return WeiboMultimediaParseResult(
+                content=text,
+                media=[],
+                author_name=data.author_name,
+                published_at=data.published_at,
+                like_count=data.like_count,
+                reply_count=data.reply_count,
+            )
 
         for i in media_info:
             match i.type:
@@ -160,8 +176,22 @@ class WeiboParser(BaseParser):
                         )
         if all((isinstance(m, ImageRef) or isinstance(m, LivePhotoRef)) for m in media):
             photos = [m for m in media if isinstance(m, ImageRef | LivePhotoRef)]
-            return WeiboImageParseResult(content=text, photo=photos, author_name=data.author_name)
-        return WeiboMultimediaParseResult(content=text, media=media, author_name=data.author_name)
+            return WeiboImageParseResult(
+                content=text,
+                photo=photos,
+                author_name=data.author_name,
+                published_at=data.published_at,
+                like_count=data.like_count,
+                reply_count=data.reply_count,
+            )
+        return WeiboMultimediaParseResult(
+            content=text,
+            media=media,
+            author_name=data.author_name,
+            published_at=data.published_at,
+            like_count=data.like_count,
+            reply_count=data.reply_count,
+        )
 
     def f_text(self, text: str | None, topics: Sequence[str] | None = None) -> str:
         # text = re.sub(r'<a  href="https://video.weibo.com.*?>.*的微博视频.*</a>', "", text)

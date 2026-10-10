@@ -66,6 +66,7 @@
 4e9ce9dfe13d: Hide Title
 4fb5f29ee802: Please add a link or reply to a message
 5348dcac296c: Parse failed
+55374d7b243c: Comments
 569c1f28ab00: Packaging...
 5861d620c41d: Downloading... | {current}/{total}
 5a9f36a77173: Package
@@ -112,7 +113,6 @@ c4638f9eedae: Removed from the whitelist
 d2282636abc7: Configuration panel
 d34addb9b2f0: Cache cleared
 d5631690265c: Unrecognized configuration target
-d59c948c471c: Parsing...
 d5a73b0c7f2f: Upload
 7a425880c8d8: 'Cleared all caches (Redis): {persistent} persistent · {result} result'
 e14de27e8559: '{target_label}'

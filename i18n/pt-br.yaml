@@ -65,6 +65,7 @@
 4e9ce9dfe13d: Ocultar título
 4fb5f29ee802: Por favor, adicione um link ou responda a uma mensagem
 5348dcac296c: Falha na análise
+55374d7b243c: Comentários
 569c1f28ab00: Empacotando...
 5861d620c41d: Baixando... | {current}/{total}
 5a9f36a77173: Empacotar
@@ -112,7 +113,6 @@ c4638f9eedae: Removido da lista de permissões
 d2282636abc7: Painel de configuração
 d34addb9b2f0: Cache limpo
 d5631690265c: Alvo da configuração não reconhecido
-d59c948c471c: Analisando...
 d5a73b0c7f2f: Enviar
 7a425880c8d8: 'Todos os caches limpos (Redis): {persistent} persistentes · {result} de resultado'
 e14de27e8559: '{target_label}'

@@ -66,6 +66,7 @@
 4e9ce9dfe13d: Titel verbergen
 4fb5f29ee802: Voeg een link toe of beantwoord een bericht
 5348dcac296c: Parsen mislukt
+55374d7b243c: Opmerkingen
 569c1f28ab00: Bezig met inpakken...
 5861d620c41d: Bezig met downloaden... | {current}/{total}
 5a9f36a77173: Inpakken
@@ -113,7 +114,6 @@ c4638f9eedae: Verwijderd van de whitelist
 d2282636abc7: Configuratiepaneel
 d34addb9b2f0: Cache gewist
 d5631690265c: Kan configuratiedoel niet herkennen
-d59c948c471c: Bezig met ontleden...
 d5a73b0c7f2f: Uploaden
 7a425880c8d8: 'Alle caches geleegd (Redis): {persistent} persistent · {result} resultaat'
 e14de27e8559: '{target_label}'
