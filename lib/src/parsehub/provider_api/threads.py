@@ -247,13 +247,22 @@ class ThreadsPost:
     def from_graphql(cls, post: dict[str, Any]) -> ThreadsPost:
         caption = post.get("caption")
         content = caption.get("text") if isinstance(caption, dict) else caption
+        content = str(content or "")
+        # 帖子"下方内容"（caption 底下的长文块）: threads 把附加长文放在
+        # ``snippet_attachment_info`` 里, 而 ``caption.text`` 只是开头一句 ——
+        # 页面上表现为 6 行截断 + "Read more"。不读它就会静默丢正文的后半段
+        # 甚至只丢那一句之外的全部（用户报「抓不到下方内容」）。
+        snippet = cls._snippet_text(post)
+        if snippet:
+            content = f"{content}\n\n{snippet}" if content else snippet
         # 文字级遮罩: threads 的 `styling_info.is_spoiler` 标在某一片段上
         # (用户报「识别不到遮罩文字」——那条帖子里有一整行是遮罩的)。
         # 映射成富文本的行内遮罩语法 `||…||` (实测服务端解析成 RichTextSpoiler)。
-        content = cls._apply_text_spoilers(str(content or ""), post)
+        # caption 与 snippet 两处的片段都要看（长文里也可能有遮罩行）。
+        content = cls._apply_text_spoilers(content, post)
         # taken_at 是 unix 秒; 浏览量不在该 GraphQL 响应里 (页面上的 views 另走接口), 因此留 None
         return cls(
-            content=str(content or ""),
+            content=content,
             media=cls._fetch_media(post),
             author_name=get_author_name(post.get("user")),
             author_handle=str((post.get("user") or {}).get("username") or ""),
@@ -261,6 +270,23 @@ class ThreadsPost:
             view_count=to_int(post.get("view_count")),
             like_count=to_int(post.get("like_count")),
         )
+
+    @staticmethod
+    def _snippet_text(post: dict[str, Any]) -> str:
+        """帖子附带的**长文块**（caption 底下的"阅读更多"内容）。
+
+        实测（2026-10-10）: 长文在
+        ``text_post_app_info.snippet_attachment_info.text_fragments.fragments[].plaintext``,
+        而 ``caption.text`` 只是开头一句（页面上 6 行截断 + "Read more"）。匿名请求该字段
+        为 ``null``（登录态/cookie 的 GraphQL 才返回）⇒ 拿不到就返回空串, 行为与之前一致。
+        """
+        tpa = post.get("text_post_app_info") or {}
+        snippet_info = tpa.get("snippet_attachment_info") or {}
+        if not isinstance(snippet_info, dict):
+            return ""
+        fragments = (snippet_info.get("text_fragments") or {}).get("fragments") or []
+        parts = [str(f.get("plaintext") or "") for f in fragments if isinstance(f, dict)]
+        return "\n\n".join(p for p in parts if p).strip()
 
     @staticmethod
     def _apply_text_spoilers(content: str, post: dict[str, Any]) -> str:
@@ -272,10 +298,17 @@ class ThreadsPost:
 
         按 ``plaintext`` 在正文里定位并逐个包裹（逐次从上次结束处往后找，避免同一段文字
         被重复包裹；找不到就跳过，**绝不臆造位置**）。
+
+        caption 与 snippet（长文块）两处片段都看 —— 内容可能出现在任意一处。
         """
         if not content:
             return content
-        fragments = (((post.get("text_post_app_info") or {}).get("text_fragments") or {}).get("fragments")) or []
+        tpa = post.get("text_post_app_info") or {}
+        sources = [
+            tpa.get("text_fragments"),
+            (tpa.get("snippet_attachment_info") or {}).get("text_fragments"),
+        ]
+        fragments = [f for s in sources if isinstance(s, dict) for f in (s.get("fragments") or [])]
         out = content
         cursor = 0
         for fragment in fragments:
